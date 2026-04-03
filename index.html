@@ -119,6 +119,27 @@
             z-index: 100;
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
         }
+
+        /* Strike Popup Styling */
+        #strike-popup {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            font-size: 80px;
+            font-weight: 900;
+            color: #f1c40f;
+            text-shadow: 0 0 20px #e67e22, 0 0 40px #d35400;
+            z-index: 200;
+            pointer-events: none;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-style: italic;
+        }
+        #strike-popup.show {
+            transform: translate(-50%, -50%) scale(1.2);
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -151,6 +172,8 @@
                 </table>
             </div>
         </div>
+
+        <div id="strike-popup">STRIKE!</div>
 
         <div class="instructions" id="hint">
             Drag to Position &bull; Flick UP to Launch
@@ -187,7 +210,6 @@
         let matchHistory = [];
         let currentFallenPins = 0;
         
-        // ADDED LOGIC STATE
         let impactOccurred = false;
         let resetTimer = null;
 
@@ -228,9 +250,8 @@
             scene.add(streetLamp2);
 
             world = new CANNON.World();
-            world.gravity.set(0, -18, 0); // Slightly stronger gravity for punchier physics
+            world.gravity.set(0, -18, 0);
 
-            // Physics Materials Tuning
             const ballGroundContact = new CANNON.ContactMaterial(ballMat, groundMat, { friction: 0.2, restitution: 0.1 });
             const ballPinContact = new CANNON.ContactMaterial(ballMat, pinMat, { friction: 0.4, restitution: 0.3 });
             const pinPinContact = new CANNON.ContactMaterial(pinMat, pinMat, { friction: 0.5, restitution: 0.2 });
@@ -259,7 +280,6 @@
         }
 
         function createStreetEnvironment() {
-            // Visual Lane
             const laneGeo = new THREE.BoxGeometry(4.5, 0.2, 100);
             const laneMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.95, metalness: 0.05 });
             const laneMesh = new THREE.Mesh(laneGeo, laneMat);
@@ -267,7 +287,6 @@
             laneMesh.receiveShadow = true; 
             scene.add(laneMesh);
 
-            // Visual Walls
             const wallGeo = new THREE.BoxGeometry(1.2, 18, 100);
             const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d });
             const leftWall = new THREE.Mesh(wallGeo, wallMat);
@@ -277,16 +296,13 @@
             rightWall.position.set(4.8, 9, -35);
             scene.add(rightWall);
 
-            // Physics Lane (Ground)
             const groundShape = new CANNON.Box(new CANNON.Vec3(2.25, 0.1, 50));
             const groundBody = new CANNON.Body({ mass: 0, material: groundMat });
             groundBody.addShape(groundShape);
             groundBody.position.set(0, 0, -35);
             world.addBody(groundBody);
 
-            // Physics Walls (so pins collide properly with the path sides)
             const physicsWallShape = new CANNON.Box(new CANNON.Vec3(0.6, 9, 50));
-            
             const leftWallBody = new CANNON.Body({ mass: 0, material: groundMat });
             leftWallBody.addShape(physicsWallShape);
             leftWallBody.position.set(-4.8, 9, -35);
@@ -334,7 +350,6 @@
             const stripeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
             const stripeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 16);
             
-            // Visual circle for scoring zone
             const SCORE_RADIUS = 0.22;
             const circleGeo = new THREE.RingGeometry(SCORE_RADIUS - 0.02, SCORE_RADIUS, 32);
             const circleMat = new THREE.MeshBasicMaterial({ color: 0xf1c40f, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
@@ -348,7 +363,6 @@
                     const x = (i - r * 0.5) * spacing;
                     const z = startZ - (r * spacing);
                     
-                    // Add scoring ring to the lane
                     const circle = new THREE.Mesh(circleGeo, circleMat);
                     circle.rotation.x = -Math.PI / 2;
                     circle.position.set(x, LANE_Y + 0.01, z);
@@ -365,23 +379,17 @@
 
                     scene.add(group);
 
-                    // Refined Physics Body using a precise Compound Shape to match the 3D Pin model
                     const pBody = new CANNON.Body({ 
                         mass: 1.5,
                         material: pinMat 
                     });
                     
-                    // Cannon.js Cylinders are Z-up by default. We need them Y-up.
                     const qCyl = new CANNON.Quaternion();
                     qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
 
-                    // 1. Base (flat bottom for perfect standing stability)
                     pBody.addShape(new CANNON.Cylinder(0.12, 0.12, 0.1, 12), new CANNON.Vec3(0, -0.35, 0), qCyl);
-                    // 2. Belly (wide part of the pin)
                     pBody.addShape(new CANNON.Sphere(0.16), new CANNON.Vec3(0, -0.18, 0));
-                    // 3. Neck (tapered central column)
                     pBody.addShape(new CANNON.Cylinder(0.08, 0.13, 0.3, 12), new CANNON.Vec3(0, 0.05, 0), qCyl);
-                    // 4. Head (top sphere)
                     pBody.addShape(new CANNON.Sphere(0.09), new CANNON.Vec3(0, 0.31, 0));
                     
                     pBody.linearDamping = 0.2;
@@ -394,7 +402,6 @@
                             pBody.type = CANNON.Body.DYNAMIC;
                             pBody.updateMassProperties();
                             
-                            // Impulse to make the collision more "explosive"
                             const forceDir = pBody.position.vsub(e.contact.bi.position);
                             forceDir.normalize();
                             pBody.applyImpulse(forceDir.scale(2), pBody.position);
@@ -402,11 +409,10 @@
                             
                             spawnImpact(pBody.position, 0xffffff, 8);
 
-                            // ADDED LOGIC: Trigger faster game end and camera focus on first impact
                             if (!impactOccurred) {
                                 impactOccurred = true;
                                 clearTimeout(resetTimer);
-                                resetTimer = setTimeout(checkPins, 2000); // Trigger results 2 seconds after first hit
+                                resetTimer = setTimeout(checkPins, 2000); 
                             }
                         }
                     });
@@ -435,7 +441,6 @@
                 return;
             }
             trailMesh.visible = true;
-            // Record full position including Y unconditionally while bowling
             trailHistory.push({ x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z });
             
             if (trailHistory.length > TRAIL_MAX_POINTS) trailHistory.shift();
@@ -446,7 +451,6 @@
                 const point = trailHistory[pointIndex] || { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z };
                 const taper = (i / TRAIL_MAX_POINTS); 
                 const currentWidth = baseWidth * taper;
-                // Calculate trail height dynamically based on ball's Y position
                 const trailY = point.y - BALL_RADIUS + 0.02;
                 posAttr.setXYZ(i * 2, point.x - currentWidth/2, trailY, point.z);
                 posAttr.setXYZ(i * 2 + 1, point.x + currentWidth/2, trailY, point.z);
@@ -507,8 +511,8 @@
             ballMesh.material.emissive.setHex(0x003366);
             
             if (deltaY > 20) {
-                let speedScale = (deltaY / Math.max(duration, 5)) * 38;
-                let forwardSpeed = Math.max(40, Math.min(speedScale, 95));
+                let speedScale = (deltaY / Math.max(duration, 5)) * 25;
+                let forwardSpeed = Math.max(25, Math.min(speedScale, 65));
                 randomHookForce = (Math.random() - 0.5) * 10; 
                 throwBall(forwardSpeed);
             } else {
@@ -519,36 +523,38 @@
         function throwBall(speed) {
             isBowling = true;
             document.getElementById('hint').style.opacity = '0';
-            ballBody.mass = 14; // Heavy ball for better pin physics
+            ballBody.mass = 14; 
             ballBody.type = CANNON.Body.DYNAMIC;
             ballBody.updateMassProperties();
             ballBody.velocity.set(0, 0, -speed);
             ballBody.angularVelocity.set(speed * 0.8, randomHookForce * 2, (Math.random() - 0.5) * 15);
-            
-            // ADDED LOGIC: Fallback timer in case it's a gutter ball and hits no pins
             resetTimer = setTimeout(checkPins, 4000); 
         }
 
         function checkPins() {
             let fallen = 0;
-            const SCORE_RADIUS = 0.22; // Must leave this radius to be counted if still standing
+            const SCORE_RADIUS = 0.22; 
 
             pins.forEach(p => {
-                // Calculate distance from initial starting circle
                 const dx = p.body.position.x - p.initialPos.x;
                 const dz = p.body.position.z - p.initialPos.z;
                 const distance = Math.sqrt(dx * dx + dz * dz);
-
                 const up = new CANNON.Vec3(0, 1, 0);
                 const pinUp = p.body.quaternion.vmult(up);
                 const angle = Math.acos(up.dot(pinUp));
-                
-                // A pin is scored if it leaves its initial circle, tips over (> 45 deg), or falls off the track
                 if (distance > SCORE_RADIUS || angle > 0.78 || p.body.position.y < -0.5) fallen++;
             });
+
             currentFallenPins = fallen;
             document.getElementById('score-text').innerText = `Pins: ${fallen}`;
             
+            // Show Strike Popup if 10 pins hit
+            if (fallen === 10) {
+                const strikePopup = document.getElementById('strike-popup');
+                strikePopup.classList.add('show');
+                setTimeout(() => strikePopup.classList.remove('show'), 1500);
+            }
+
             const msgBox = document.getElementById('msg-box');
             const title = document.getElementById('msg-title');
             const body = document.getElementById('msg-body');
@@ -608,8 +614,6 @@
             isBowling = false;
             randomHookForce = 0;
             currentFallenPins = 0;
-            
-            // ADDED LOGIC: Reset impact flags and timers
             impactOccurred = false;
             if (resetTimer) clearTimeout(resetTimer);
             resetTimer = null;
@@ -659,27 +663,20 @@
             updateLightTrail();
             updateImpacts();
             
-            // ADDED LOGIC: Dynamic Camera Focus
             if (isBowling) {
                 if (impactOccurred) {
-                    // Focus directly on the pins when hit
-                    const targetPos = new THREE.Vector3(0, 4, -14); // Closer to pin deck
-                    const lookTarget = new THREE.Vector3(0, 1, -24); // Look at pins
-                    
+                    const targetPos = new THREE.Vector3(0, 4, -14); 
+                    const lookTarget = new THREE.Vector3(0, 1, -24); 
                     camera.position.lerp(targetPos, 0.05); 
-                    
                     const currentLook = new THREE.Vector3();
                     camera.getWorldDirection(currentLook);
                     const desiredLook = lookTarget.clone().sub(camera.position).normalize();
-                    
-                    // Smooth lookAt interpolation
                     camera.lookAt(
                         camera.position.x + currentLook.x * 0.8 + desiredLook.x * 0.2,
                         camera.position.y + currentLook.y * 0.8 + desiredLook.y * 0.2,
                         camera.position.z + currentLook.z * 0.8 + desiredLook.z * 0.2
                     );
                 } else {
-                    // Normal ball tracking
                     const targetZ = Math.max(ballBody.position.z + 8, -12);
                     const targetX = Math.max(-3.0, Math.min(3.0, ballBody.position.x * 0.7));
                     camera.position.z += (targetZ - camera.position.z) * 0.08;
