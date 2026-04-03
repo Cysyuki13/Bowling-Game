@@ -104,42 +104,68 @@
         .btn:hover { background: #d35400; }
 
         #msg-box {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(15, 15, 25, 0.98);
-            padding: 40px;
-            border-radius: 24px;
-            text-align: center;
-            pointer-events: auto;
-            display: none;
-            width: 280px;
-            border: 2px solid #e67e22;
-            z-index: 100;
-            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+          position: absolute;
+          top: 20%; 
+          left: 50%;
+          transform: translateX(-50%); /* Remove the translateY(-50%) */
+          background: rgba(15, 15, 25, 0.8); /* Added more transparency */
+          padding: 20px; /* Reduced padding */
+          border-radius: 24px;
+          text-align: center;
+          pointer-events: auto;
+          display: none;
+          width: 280px;
+          border: 2px solid #e67e22;
+          z-index: 100;
+          box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
         }
 
         /* Strike Popup Styling */
-        #strike-popup {
-            position: absolute;
-            top: 40%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0);
-            font-size: 80px;
-            font-weight: 900;
-            color: #f1c40f;
-            text-shadow: 0 0 20px #e67e22, 0 0 40px #d35400;
-            z-index: 200;
-            pointer-events: none;
-            opacity: 0;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            font-style: italic;
-        }
-        #strike-popup.show {
-            transform: translate(-50%, -50%) scale(1.2);
-            opacity: 1;
-        }
+        /* Updated Strike Popup Styling */
+#strike-popup {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    font-size: 100px; /* Slightly larger for impact */
+    font-weight: 900;
+    color: #ffffff; /* White core for a "hotter" look */
+    /* Multi-layered shadow for a neon/fire effect */
+    text-shadow: 
+        0 0 10px #f1c40f, 
+        0 0 20px #f1c40f, 
+        0 0 40px #e67e22, 
+        0 0 70px #d35400,
+        0 0 100px #ff0000;
+    z-index: 200;
+    pointer-events: none;
+    opacity: 0;
+    font-style: italic;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    letter-spacing: 5px;
+    text-transform: uppercase;
+}
+
+/* Thumping animation when the popup shows */
+@keyframes strike-thump {
+    0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+    50% { transform: translate(-50%, -50%) scale(1.5); opacity: 1; }
+    70% { transform: translate(-50%, -50%) scale(1.1); }
+    100% { transform: translate(-50%, -50%) scale(1.2); }
+}
+
+/* Pulsing glow animation */
+@keyframes strike-glow {
+    from { text-shadow: 0 0 20px #f1c40f, 0 0 40px #e67e22; }
+    to { text-shadow: 0 0 40px #ffffff, 0 0 80px #ff0000, 0 0 120px #ff0000; }
+}
+
+#strike-popup.show {
+    opacity: 1;
+    animation: 
+        strike-thump 0.5s ease-out forwards, 
+        strike-glow 0.8s ease-in-out infinite alternate;
+}
     </style>
 </head>
 <body>
@@ -195,9 +221,11 @@
         const MAX_MATCHES = 5;
 
         // --- STATE ---
+        let pins = [];
+        let pinCircles = []; // Add this line
+
         let scene, camera, renderer, world, sunLight;
         let ballBody, ballMesh;
-        let pins = [];
         let isBowling = false;
         let isTouching = false;
         let touchStartPos = { x: 0, y: 0 };
@@ -212,6 +240,15 @@
         
         let impactOccurred = false;
         let resetTimer = null;
+        
+        // --- ADD THESE THREE LINES ---
+        let timeScale = 1.0;
+        let isCinematicMode = false;
+        let cinematicTargetPin = null;
+        let leftWallMesh, rightWallMesh;
+        let shakeIntensity = 0;
+        
+        // Add these with your other globals
 
         const groundMat = new CANNON.Material();
         const ballMat = new CANNON.Material();
@@ -276,7 +313,13 @@
             window.addEventListener('mousemove', (e) => { if(isTouching) onTouchMove({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => {} }); });
             window.addEventListener('mouseup', (e) => onTouchEnd({ changedTouches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => {} }));
 
+            resetGame();
+            
             animate();
+        }
+        
+        function triggerScreenShake(amount) {
+          shakeIntensity = amount;
         }
 
         function createStreetEnvironment() {
@@ -288,13 +331,15 @@
             scene.add(laneMesh);
 
             const wallGeo = new THREE.BoxGeometry(1.2, 18, 100);
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d });
-            const leftWall = new THREE.Mesh(wallGeo, wallMat);
-            leftWall.position.set(-4.8, 9, -35);
-            scene.add(leftWall);
-            const rightWall = new THREE.Mesh(wallGeo, wallMat);
-            rightWall.position.set(4.8, 9, -35);
-            scene.add(rightWall);
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, transparent: true, opacity: 1 });
+            
+            leftWallMesh = new THREE.Mesh(wallGeo, wallMat);
+            leftWallMesh.position.set(-4.8, 9, -35);
+            scene.add(leftWallMesh);
+            
+            rightWallMesh = new THREE.Mesh(wallGeo, wallMat.clone());
+            rightWallMesh.position.set(4.8, 9, -35);
+            scene.add(rightWallMesh);
 
             const groundShape = new CANNON.Box(new CANNON.Vec3(2.25, 0.1, 50));
             const groundBody = new CANNON.Body({ mass: 0, material: groundMat });
@@ -315,21 +360,30 @@
         }
 
         function createBall() {
-            ballMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(BALL_RADIUS, 32, 32),
-                new THREE.MeshPhongMaterial({ color: 0x00eeff, shininess: 250, emissive: 0x003366 })
-            );
-            ballMesh.castShadow = true; 
-            scene.add(ballMesh);
-
-            const ballShape = new CANNON.Sphere(BALL_RADIUS);
-            ballBody = new CANNON.Body({ mass: 0, shape: ballShape, material: ballMat });
-            ballBody.linearDamping = 0.05;
-            ballBody.angularDamping = 0.1;
-            ballBody.position.set(0, LANE_Y + BALL_RADIUS + 0.01, 6);
-            world.addBody(ballBody);
+          ballMesh = new THREE.Mesh(
+              new THREE.SphereGeometry(BALL_RADIUS, 32, 32),
+              new THREE.MeshPhongMaterial({ color: 0x00eeff, shininess: 250, emissive: 0x003366 })
+          );
+          ballMesh.castShadow = true; 
+          scene.add(ballMesh);
+      
+          const ballShape = new CANNON.Sphere(BALL_RADIUS);
+          // Start with mass 0 to keep it in place
+          ballBody = new CANNON.Body({ mass: 0, shape: ballShape, material: ballMat });
+          
+          ballBody.type = CANNON.Body.STATIC;
+          ballBody.mass = 0;
+          ballBody.updateMassProperties();
+          
+          // Explicitly set the position
+          const startPos = new CANNON.Vec3(0, LANE_Y + BALL_RADIUS + 0.05, 6);
+          ballBody.position.copy(startPos);
+          world.addBody(ballBody);
+          
+          // Sync mesh immediately
+          ballMesh.position.copy(ballBody.position);
         }
-
+        
         function createPinGeometry() {
             const points = [];
             points.push(new THREE.Vector2(0, -0.4));       
@@ -351,26 +405,50 @@
             const stripeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 16);
             
             const SCORE_RADIUS = 0.22;
-            const circleGeo = new THREE.RingGeometry(SCORE_RADIUS - 0.02, SCORE_RADIUS, 32);
-            const circleMat = new THREE.MeshBasicMaterial({ color: 0xf1c40f, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+            const circleGeo = new THREE.RingGeometry(SCORE_RADIUS - 0.05, SCORE_RADIUS, 32);
+            
+            const circleMat = new THREE.MeshBasicMaterial({ 
+                color: 0xe74c3c, // Initial Red color
+                side: THREE.DoubleSide, 
+                transparent: true, 
+                opacity: 0.5 
+            });
             
             const spacing = 0.65;
             const rows = 4;
             const startZ = -22;
-
+            
             for (let r = 0; r < rows; r++) {
                 for (let i = 0; i <= r; i++) {
                     const x = (i - r * 0.5) * spacing;
                     const z = startZ - (r * spacing);
                     
-                    const circle = new THREE.Mesh(circleGeo, circleMat);
+                    const circleMaterialInstance = circleMat.clone();
+                    const circle = new THREE.Mesh(circleGeo, circleMaterialInstance);
                     circle.rotation.x = -Math.PI / 2;
                     circle.position.set(x, LANE_Y + 0.01, z);
                     scene.add(circle);
+                    pinCircles.push(circle);
+                    
+                    const loader = new THREE.TextureLoader();
+                    const glowTexture = loader.load('https://threejs.org/examples/textures/sprites/glow.png');
+                    
+                    const spriteMaterial = new THREE.SpriteMaterial({ 
+                        map: glowTexture, 
+                        color: 0xe74c3c, 
+                        transparent: true, 
+                        opacity: 0.6, 
+                        blending: THREE.AdditiveBlending 
+                    });
+                    const sprite = new THREE.Sprite(spriteMaterial);
+                    sprite.position.copy(circle.position);
+                    sprite.scale.set(0.5, 0.5, 1); // Adjust size to fit circle
+                    scene.add(sprite);
 
                     const group = new THREE.Group();
                     const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
                     pMesh.castShadow = true;
+                    
                     group.add(pMesh);
 
                     const stripe = new THREE.Mesh(stripeGeo, stripeMat);
@@ -380,7 +458,7 @@
                     scene.add(group);
 
                     const pBody = new CANNON.Body({ 
-                        mass: 1.5,
+                        mass: 2.5,
                         material: pinMat 
                     });
                     
@@ -398,29 +476,41 @@
                     pBody.position.set(x, LANE_Y + (PIN_HEIGHT/2), z);
                     
                     pBody.addEventListener('collide', (e) => {
-                        if (pBody.type === CANNON.Body.KINEMATIC) {
-                            pBody.type = CANNON.Body.DYNAMIC;
-                            pBody.updateMassProperties();
-                            
-                            const forceDir = pBody.position.vsub(e.contact.bi.position);
-                            forceDir.normalize();
-                            pBody.applyImpulse(forceDir.scale(2), pBody.position);
-                            pBody.velocity.y += 1.2; 
-                            
-                            spawnImpact(pBody.position, 0xffffff, 8);
-
-                            if (!impactOccurred) {
-                                impactOccurred = true;
-                                clearTimeout(resetTimer);
-                                resetTimer = setTimeout(checkPins, 2000); 
-                            }
+                    if (pBody.type === CANNON.Body.KINEMATIC) {
+                        pBody.type = CANNON.Body.DYNAMIC;
+                        pBody.updateMassProperties();
+                        
+                        const forceDir = pBody.position.vsub(e.contact.bi.position);
+                        forceDir.normalize();
+                        pBody.applyImpulse(forceDir.scale(2), pBody.position);
+                        pBody.velocity.y += 1.2; 
+                
+                        spawnImpact(pBody.position, 0xffffff, 8);
+                
+                        // --- UPDATE THIS BLOCK ---
+                        if (!impactOccurred) {
+                            impactOccurred = true;
+                            isCinematicMode = true; 
+                            timeScale = 0.15; // Set to 15% speed for dramatic effect
+                            cinematicTargetPin = pBody; // Focus on the first pin hit
+                
+                            // Reset speed after 3 seconds of real-time
+                            setTimeout(() => {
+                                timeScale = 1.0;
+                                isCinematicMode = false;
+                            }, 3000);
+                
+                            clearTimeout(resetTimer);
+                            resetTimer = setTimeout(checkPins, 3500); 
                         }
-                    });
+                    }
+                });
 
                     world.addBody(pBody);
                     pins.push({ mesh: group, body: pBody, initialPos: { x: x, z: z } });
                 }
             }
+
         }
 
         function initLightTrail() {
@@ -458,13 +548,20 @@
             posAttr.needsUpdate = true;
         }
 
-        function spawnImpact(pos, color, count) {
+         function spawnImpact(pos, color, count, scale = 1.0) {
             for (let i = 0; i < count; i++) {
-                const part = new THREE.Mesh(new THREE.SphereGeometry(0.04, 4, 4), new THREE.MeshBasicMaterial({ color: color, transparent: true }));
+                // Use the scale parameter to make particles bigger for a strike
+                const part = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.04 * scale, 4, 4), 
+                    new THREE.MeshBasicMaterial({ color: color, transparent: true })
+                );
                 part.position.set(pos.x, pos.y, pos.z);
-                const vx = (Math.random() - 0.5) * 0.3;
-                const vy = Math.random() * 0.3;
-                const vz = (Math.random() - 0.5) * 0.3;
+                
+                // Increase velocity for a bigger explosion
+                const vx = (Math.random() - 0.5) * 0.3 * scale;
+                const vy = Math.random() * 0.3 * scale;
+                const vz = (Math.random() - 0.5) * 0.3 * scale;
+                
                 scene.add(part);
                 impactParticles.push({ mesh: part, vel: new THREE.Vector3(vx, vy, vz), life: 1.0 });
             }
@@ -513,7 +610,7 @@
             if (deltaY > 20) {
                 let speedScale = (deltaY / Math.max(duration, 5)) * 25;
                 let forwardSpeed = Math.max(25, Math.min(speedScale, 65));
-                randomHookForce = (Math.random() - 0.5) * 10; 
+                randomHookForce = (Math.random() - 0.5) * 5; 
                 throwBall(forwardSpeed);
             } else {
                 document.getElementById('hint').style.opacity = '1';
@@ -523,56 +620,83 @@
         function throwBall(speed) {
             isBowling = true;
             document.getElementById('hint').style.opacity = '0';
-            ballBody.mass = 14; 
+            ballBody.mass = 20; 
             ballBody.type = CANNON.Body.DYNAMIC;
             ballBody.updateMassProperties();
-            ballBody.velocity.set(0, 0, -speed);
+            ballBody.velocity.set(0, 0, -speed*0.9);
             ballBody.angularVelocity.set(speed * 0.8, randomHookForce * 2, (Math.random() - 0.5) * 15);
             resetTimer = setTimeout(checkPins, 4000); 
         }
 
-        function checkPins() {
-            let fallen = 0;
-            const SCORE_RADIUS = 0.22; 
+function checkPins() {
+    let fallen = 0;
+    const SCORE_RADIUS = 0.22; 
 
-            pins.forEach(p => {
-                const dx = p.body.position.x - p.initialPos.x;
-                const dz = p.body.position.z - p.initialPos.z;
-                const distance = Math.sqrt(dx * dx + dz * dz);
-                const up = new CANNON.Vec3(0, 1, 0);
-                const pinUp = p.body.quaternion.vmult(up);
-                const angle = Math.acos(up.dot(pinUp));
-                if (distance > SCORE_RADIUS || angle > 0.78 || p.body.position.y < -0.5) fallen++;
-            });
+    // 1. Calculate how many pins have fallen
+    pins.forEach((p, index) => {
+        const dx = p.body.position.x - p.initialPos.x;
+        const dz = p.body.position.z - p.initialPos.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        const up = new CANNON.Vec3(0, 1, 0);
+        const pinUp = p.body.quaternion.vmult(up);
+        const angle = Math.acos(up.dot(pinUp));
 
-            currentFallenPins = fallen;
-            document.getElementById('score-text').innerText = `Pins: ${fallen}`;
-            
-            // Show Strike Popup if 10 pins hit
-            if (fallen === 10) {
-                const strikePopup = document.getElementById('strike-popup');
-                strikePopup.classList.add('show');
-                setTimeout(() => strikePopup.classList.remove('show'), 1500);
-            }
-
-            const msgBox = document.getElementById('msg-box');
-            const title = document.getElementById('msg-title');
-            const body = document.getElementById('msg-body');
-            const btn = document.getElementById('action-btn');
-
-            msgBox.style.display = 'block';
-
-            if (matchHistory.length + 1 >= MAX_MATCHES) {
-                title.innerText = "FINAL SCORE";
-                let total = matchHistory.reduce((a, b) => a + b, 0) + fallen;
-                body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
-                btn.innerText = "RESTART GAME";
-            } else {
-                title.innerText = (fallen === 10) ? "STRIKE!" : "RESULT";
-                body.innerText = `${fallen} pins cleared.`;
-                btn.innerText = "NEXT FRAME";
-            }
+        // Logic for "Invalid" pin (Fallen or moved)
+            if (distance > SCORE_RADIUS || angle > 0.78 || p.body.position.y < -0.5) {
+            fallen++;
+            // Turn circle GREEN if the pin is invalid
+            if (pinCircles[index]) pinCircles[index].material.color.setHex(0x2ecc71);
+        } else {
+            // Keep circle RED if the pin is still valid
+            if (pinCircles[index]) pinCircles[index].material.color.setHex(0xe74c3c);
         }
+    });
+
+    currentFallenPins = fallen;
+    document.getElementById('score-text').innerText = `Pins: ${fallen}`;
+    
+    // 2. Handle Strike Special Effects
+    if (fallen === 10) {
+        // Physics Blast: Push all pins away from the center for impact
+        pins.forEach(p => {
+            const blastForce = 15;
+            const direction = p.body.position.clone().vsub(new CANNON.Vec3(0, 0, -22));
+            direction.normalize();
+            p.body.applyImpulse(direction.scale(blastForce), p.body.position);
+        });
+
+        // Trigger UI Popup
+        const strikePopup = document.getElementById('strike-popup');
+        strikePopup.classList.add('show');
+        setTimeout(() => strikePopup.classList.remove('show'), 2000);
+
+        // Massive Particle Blast (using the scale parameter)
+        spawnImpact(new CANNON.Vec3(0, 1, -22), 0xf1c40f, 60, 4.0);
+        
+        // Screen Shake
+        triggerScreenShake(0.5); 
+    }
+
+    // 3. Show Result Message Box
+    const msgBox = document.getElementById('msg-box');
+    const title = document.getElementById('msg-title');
+    const body = document.getElementById('msg-body');
+    const btn = document.getElementById('action-btn');
+
+    msgBox.style.display = 'block';
+
+    if (matchHistory.length + 1 >= MAX_MATCHES) {
+        title.innerText = "FINAL SCORE";
+        let total = matchHistory.reduce((a, b) => a + b, 0) + fallen;
+        body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
+        btn.innerText = "RESTART GAME";
+    } else {
+        title.innerText = (fallen === 10) ? "STRIKE!" : "RESULT";
+        body.innerText = `${fallen} pins cleared.`;
+        btn.innerText = "NEXT FRAME";
+    }
+}
 
         function handleMatchEnd() {
             if (matchHistory.length >= MAX_MATCHES) {
@@ -583,10 +707,25 @@
         }
 
         function recordAndReset() {
-            matchHistory.push(currentFallenPins);
+            let currentScore = currentFallenPins;
+            const lastIndex = matchHistory.length - 1;
+        
+            if (currentFallenPins === 10) {
+                // Count how many consecutive strikes before this round (including current)
+                let consecutiveStrikes = 1;
+                for (let i = lastIndex; i >= 0; i--) {
+                    if (matchHistory[i] === 10) consecutiveStrikes++;
+                    else break;
+                }
+                currentScore = 10 * consecutiveStrikes;
+            }
+        
+            matchHistory.push(currentScore);
             updateScoreTable();
             resetGame();
         }
+
+
 
         function fullReset() {
             matchHistory = [];
@@ -601,7 +740,20 @@
                 if (matchHistory[i] !== undefined) {
                     cell.innerText = matchHistory[i];
                     total += matchHistory[i];
-                    cell.style.color = (matchHistory[i] === 10) ? "#f1c40f" : "white";
+        
+                    // Check if this score is a multiple of 10 (a strike or doubled strike)
+                    if (matchHistory[i] > 0 && matchHistory[i] % 10 === 0) {
+                        const streakCount = matchHistory[i] / 10;
+                        if (streakCount > 1) {
+                            cell.style.color = "#e74c3c";  // red for streak strikes
+                            cell.innerText = `${matchHistory[i]} (${streakCount}x)`;
+                        } else {
+                            cell.style.color = "#f1c40f"; // gold for normal strike
+                            cell.innerText = `${matchHistory[i]}`;
+                        }
+                    } else {
+                        cell.style.color = "white";  // normal color for other scores
+                    }
                 } else {
                     cell.innerText = "-";
                     cell.style.color = "white";
@@ -610,84 +762,198 @@
             document.getElementById('total-score').innerText = total;
         }
 
+
+
         function resetGame() {
+            // 1. Reset Game State Flags
             isBowling = false;
             randomHookForce = 0;
             currentFallenPins = 0;
             impactOccurred = false;
+            isCinematicMode = false;
+            cinematicTargetPin = null;
+            timeScale = 1.0;
+
+            // 2. Reset Camera to Starting Position
+            camera.position.set(0, 4, 12);
+            camera.lookAt(0, 1, -5);
+
+            // 3. Clear Timers and UI
             if (resetTimer) clearTimeout(resetTimer);
             resetTimer = null;
 
             document.getElementById('score-text').innerText = `Pins: 0`;
             document.getElementById('msg-box').style.display = 'none';
             document.getElementById('hint').style.opacity = '1';
-            ballBody.mass = 0;
-            ballBody.type = CANNON.Body.STATIC;
-            ballBody.updateMassProperties();
-            ballBody.position.set(0, LANE_Y + BALL_RADIUS + 0.01, 6);
-            ballBody.velocity.set(0, 0, 0);
-            ballBody.quaternion.set(0, 0, 0, 1);
-            trailHistory = [];
 
+            // 4. Reset Ball Physics & Visuals
+            // We set to STATIC so it doesn't move while the user is positioning it
+            ballBody.type = CANNON.Body.STATIC;
+            ballBody.mass = 0;
+            ballBody.updateMassProperties();
+            
+            // Wipe all latent forces and velocities
+            ballBody.velocity.set(0, 0, 0);
+            ballBody.angularVelocity.set(0, 0, 0);
+            ballBody.force.set(0, 0, 0);
+            ballBody.torque.set(0, 0, 0);
+
+            // Set Starting Position (slightly above lane to prevent floor clipping)
+            ballBody.position.set(0, LANE_Y + BALL_RADIUS + 0.05, 5);
+            ballBody.quaternion.set(0, 0, 0, 1);
+
+            // Immediate Visual Sync
+            ballMesh.position.copy(ballBody.position);
+            ballMesh.quaternion.copy(ballBody.quaternion);
+
+            // 5. Reset FX
+            trailHistory = [];
+            if (trailMesh) trailMesh.visible = false;
+            
+            pinCircles.forEach(circle => {
+                circle.material.color.setHex(0xe74c3c);
+            });
+
+            // 6. Reset All Pins to Initial Formation
             pins.forEach((p, index) => {
-                const spacing = 0.65; const rows = 4; const startZ = -22;
+                const spacing = 0.65; 
+                const rows = 4; 
+                const startZ = -22;
                 let count = 0;
+
+                // Loop through the formation logic to find the original X/Z for this pin index
                 for (let r = 0; r < rows; r++) {
                     for (let i = 0; i <= r; i++) {
                         if (count === index) {
                             const x = (i - r * 0.5) * spacing;
                             const z = startZ - (r * spacing);
+                            
+                            // Reset Physics Body
                             p.body.type = CANNON.Body.KINEMATIC;
-                            p.body.position.set(x, LANE_Y + (PIN_HEIGHT/2), z);
-                            p.body.velocity.set(0, 0, 0); p.body.angularVelocity.set(0, 0, 0);
+                            p.body.position.set(x, LANE_Y + (PIN_HEIGHT / 2) + 0.05, z);
+                            p.body.velocity.set(0, 0, 0);
+                            p.body.angularVelocity.set(0, 0, 0);
                             p.body.quaternion.set(0, 0, 0, 1);
+                            
+                            // Immediate Mesh Sync
+                            p.mesh.position.copy(p.body.position);
+                            p.mesh.quaternion.copy(p.body.quaternion);
                         }
                         count++;
                     }
                 }
             });
+            
+            // 7. Re-enable Walls and Reset Circles
+            if (leftWallMesh) leftWallMesh.visible = true;
+            if (rightWallMesh) rightWallMesh.visible = true;
+        
+            pinCircles.forEach(circle => {
+                circle.material.color.setHex(0xe74c3c); // Reset all to red
+            });
         }
-
+        
         function animate() {
             requestAnimationFrame(animate);
-            world.step(1/60);
+            
+            // 1. Step the Physics World
+            // timeScale is 1.0 normally, 0.15 during cinematic slow-mo
+            world.step(1/60 * timeScale);
+            
+            // 2. Sync Three.js Meshes with Cannon.js Physics Bodies
+            if (ballMesh && ballBody) {
+                ballMesh.position.copy(ballBody.position);
+                ballMesh.quaternion.copy(ballBody.quaternion);
+                
+                pins.forEach(p => {
+                    p.mesh.position.copy(p.body.position);
+                    p.mesh.quaternion.copy(p.body.quaternion);
+                });
+            }
+            
+            // 7. Re-enable Walls
+            if (leftWallMesh) leftWallMesh.visible = true;
+            if (rightWallMesh) rightWallMesh.visible = true;
+            
+            // 3. Apply subtle hook/curve force while ball is in play
             if (isBowling && ballBody.position.z < 5) {
                 ballBody.applyForce(new CANNON.Vec3(randomHookForce * 2.0, 0, 0), ballBody.position);
             }
-            ballMesh.position.copy(ballBody.position);
-            ballMesh.quaternion.copy(ballBody.quaternion);
-            pins.forEach(p => {
-                p.mesh.position.copy(p.body.position);
-                p.mesh.quaternion.copy(p.body.quaternion);
-            });
-            updateLightTrail();
-            updateImpacts();
             
+            // 4. Camera State Machine
             if (isBowling) {
-                if (impactOccurred) {
+                if (isCinematicMode) {
+                  if (leftWallMesh) leftWallMesh.visible = false;
+                  if (rightWallMesh) rightWallMesh.visible = false;
+                  
+                  const pinCenterZ = -20; 
+                  
+                  // 1. POSITION: Same as before, following the ball
+                  const cameraOffset = new THREE.Vector3(3.5, 4.0, 4.0); 
+                  const targetPos = new THREE.Vector3(
+                      ballBody.position.x + cameraOffset.x,
+                      cameraOffset.y,
+                      ballBody.position.z + cameraOffset.z
+                  );
+                  camera.position.lerp(targetPos, 0.1);
+                
+                  // 2. MODIFIED LOOKAT: Stop tracking midpoint after z < -15
+                  // Once the ball passes -15, the "lookAt" stays locked on the pins (-20)
+                  const effectiveBallZ = Math.max(ballBody.position.z, -25); 
+                  
+                  const lookAtPoint = new THREE.Vector3(
+                      ballBody.position.x * 0.5, 
+                      0.8,                        
+                      (effectiveBallZ + pinCenterZ) * 0.5
+                  );
+                  
+                  camera.lookAt(lookAtPoint);
+                }
+                else if (impactOccurred) {
+                    // POST-IMPACT VIEW
                     const targetPos = new THREE.Vector3(0, 4, -14); 
-                    const lookTarget = new THREE.Vector3(0, 1, -24); 
-                    camera.position.lerp(targetPos, 0.05); 
-                    const currentLook = new THREE.Vector3();
-                    camera.getWorldDirection(currentLook);
-                    const desiredLook = lookTarget.clone().sub(camera.position).normalize();
-                    camera.lookAt(
-                        camera.position.x + currentLook.x * 0.8 + desiredLook.x * 0.2,
-                        camera.position.y + currentLook.y * 0.8 + desiredLook.y * 0.2,
-                        camera.position.z + currentLook.z * 0.8 + desiredLook.z * 0.2
-                    );
-                } else {
+                    camera.position.lerp(targetPos, 0.05);
+                    camera.lookAt(0, 1, -24);
+                } 
+                else {
+                    // BALL FOLLOW VIEW
+                    if (leftWallMesh) leftWallMesh.visible = true;
+                    if (rightWallMesh) rightWallMesh.visible = true;
+
                     const targetZ = Math.max(ballBody.position.z + 8, -12);
                     const targetX = Math.max(-3.0, Math.min(3.0, ballBody.position.x * 0.7));
                     camera.position.z += (targetZ - camera.position.z) * 0.08;
                     camera.position.x += (targetX - camera.position.x) * 0.08;
                     camera.lookAt(ballBody.position.x * 0.4, 1.2, ballBody.position.z - 6);
                 }
-            } else {
-                camera.position.lerp(new THREE.Vector3(0, 4, 12), 0.1);
-                camera.lookAt(0, 1, 0);
             }
             
+            if (shakeIntensity > 0) {
+              camera.position.x += (Math.random() - 0.5) * shakeIntensity;
+              camera.position.y += (Math.random() - 0.5) * shakeIntensity;
+              shakeIntensity *= 0.9; // Decay the shake
+           }
+           
+            // 5. Add pulsing effect on circles
+            const pulseSpeed = 2;
+            const pulseAmplitude = 0.15;
+            const time = performance.now() / 1000;
+        
+            pinCircles.forEach(circle => {
+                const scale = 1 + Math.sin(time * pulseSpeed) * pulseAmplitude;
+                circle.scale.set(scale, scale, scale);
+            });
+            
+            // 6. adding glowing effect
+            const glowSpeed = 3;
+            pinCircles.forEach(circle => {
+                const glow = 0.4 + (Math.sin(performance.now() * 0.005 * glowSpeed) + 1) / 2 * 0.6; // oscillates 0.4 - 1.0
+                circle.material.opacity = glow * 0.5 + 0.3; // vary opacity between 0.3 and ~0.8
+            });
+
+            // 7. Update FX & Render
+            updateLightTrail();
+            updateImpacts();
             renderer.render(scene, camera);
         }
 
