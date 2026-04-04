@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="Bowling_Icon.png">
     <title>Street Bowling 3D</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
@@ -26,6 +27,7 @@
             left: 0;
             width: 100%;
             height: 100%;
+            /* This allows clicks to pass through the empty space of the overlay */
             pointer-events: none;
             display: flex;
             flex-direction: column;
@@ -33,6 +35,14 @@
             color: white;
             padding: 15px;
             box-sizing: border-box;
+            z-index: 10;
+            /* Ensure UI is above the game canvas */
+        }
+
+        #action-cam-container {
+            pointer-events: auto !important;
+            z-index: 20;
+            /* Make it higher than the overlay background */
         }
 
         .top-ui {
@@ -209,12 +219,145 @@
                 strike-thump 0.5s ease-out forwards,
                 strike-glow 0.8s ease-in-out infinite alternate;
         }
+
+        /* Menu and Volume Styling */
+        .menu-container {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            pointer-events: auto;
+        }
+
+        .menu-icon-btn {
+            background: rgba(20, 20, 40, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 24px;
+            padding: 10px;
+            border-radius: 50%;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+        }
+
+        .volume-popup {
+            margin-top: 10px;
+            background: rgba(15, 15, 25, 0.95);
+            padding: 15px;
+            border-radius: 15px;
+            border: 1px solid #e67e22;
+            display: none;
+            /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 150px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .volume-popup label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #f1c40f;
+            letter-spacing: 1px;
+        }
+
+        #volume-slider {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #e67e22;
+        }
+
+        #vol-percent {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        #screen-dimmer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.85);
+            /* Adjust 0.85 for darkness level */
+            z-index: 199;
+            /* Sit behind the Text but above the Game */
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        #screen-dimmer.dimmed {
+            opacity: 1;
+        }
+
+        /* Add this class for the "Enlarged" state */
+        #action-cam-container.enlarged {
+            /* !important is required to override the inline style="..." width/height */
+            width: 90vw !important;
+            height: 50vh !important;
+            bottom: 50% !important;
+            right: 50% !important;
+            transform: translate(50%, 50%);
+            z-index: 500;
+        }
+
+        #watch-replay-btn {
+            pointer-events: auto;
+            display: none;
+            /* Kept hidden until a round ends */
+            position: absolute;
+            bottom: 30px;
+            /* Distance from bottom */
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 30px;
+            font-size: 18px;
+            background: rgba(255, 215, 0, 0.9);
+            color: #000;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            /* High z-index to stay above the action cam */
+            transition: all 0.3s ease;
+        }
+
+        #watch-replay-btn:hover {
+            background: #fff;
+            transform: translateX(-50%) scale(1.1);
+        }
     </style>
 </head>
 
 <body>
 
     <div id="ui-overlay">
+        <div id="action-cam-container" onclick="toggleActionCamSize(event)"
+            style="cursor: pointer; position: absolute; bottom: 20px; right: 20px; width: 250px; height: 150px; border: 3px solid #e74c3c; border-radius: 10px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(231, 76, 60, 0.5); background: #000; z-index: 9999; pointer-events: auto !important;">
+            <div
+                style="position:absolute; top:5px; left:5px; color:#e74c3c; font-weight:bold; font-size:10px; z-index:10; pointer-events: none;">
+                ACTION CAM (TAP TO ZOOM)
+            </div>
+            <canvas id="action-canvas" style="pointer-events: none;"></canvas>
+        </div>
+
+        <div class="menu-container" onmousedown="event.stopPropagation()">
+            <button id="menu-btn" class="menu-icon-btn" onclick="toggleMenu()">⚙️</button>
+            <div id="volume-menu" class="volume-popup">
+                <label>VOLUME</label>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5"
+                    oninput="updateVolume(this.value)">
+                <div id="vol-percent">50%</div>
+            </div>
+        </div>
+
         <div class="top-ui">
             <div class="score-board">
                 <div id="score-text" style="font-size: 20px; font-weight: bold; color: #f39c12; margin-bottom: 8px;">
@@ -244,17 +387,26 @@
             </div>
         </div>
 
-        <div id="strike-popup">STRIKE!</div>
-
         <div class="instructions" id="hint">
             Drag to Position &bull; Flick UP to Launch
         </div>
 
+        <div id="strike-popup">STRIKE!</div>
+
         <div id="msg-box">
-            <h1 id="msg-title" style="margin-top: 0; color: #f1c40f;">STRIKE!</h1>
+            <h1 id="msg-title">STRIKE!</h1>
             <p id="msg-body">Explosive hit!</p>
             <button id="action-btn" class="btn" onclick="handleMatchEnd()">NEXT FRAME</button>
         </div>
+
+        <button id="watch-replay-btn" class="btn" onclick="startReplay()"
+            style="display: none; position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10000; pointer-events: auto;">
+            WATCH REPLAY
+        </button>
+
+        <div id="screen-dimmer"></div>
+
+
     </div>
 
     <script>
@@ -293,10 +445,29 @@
         let isCinematicMode = false;
         let cinematicTargetPin = null;
         let leftWallMesh, rightWallMesh;
-        let shakeIntensity = 0;
 
         let audioListener, audioLoader;
         let ballPathSound, pinKnockSound;
+
+        let isMenuOpen = false;
+
+        let actionCamera, actionRenderer, actionCanvas;
+        let isActionCamActive = false;
+
+        let gameSounds = {};
+
+        let actionTargetPin = null;
+        let lastTargetSwitchTime = 0;
+        const SWITCH_COOLDOWN = 1000; // 1 second CD before it can pick a new pin
+
+        const DECK_CENTER_Z = -22;
+
+        let isReplaying = false;
+        let replayData = []; // This stores the "movie" of your throw
+        let replayFrameIndex = 0;
+
+        let cameraLookAtTarget = new THREE.Vector3(0, 1, 0);
+
         // let listener, audioLoader, rollingSound;
 
         // Add these with your other globals
@@ -308,7 +479,7 @@
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x010105);
-            scene.fog = new THREE.Fog(0x010105, 30, 100);
+            scene.fog = new THREE.FogExp2(0x010105, 0.03);
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 4, 12);
@@ -320,18 +491,40 @@
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.body.appendChild(renderer.domElement);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+            scene.add(hemiLight);
 
-            sunLight = new THREE.DirectionalLight(0xffffff, 0.7);
-            sunLight.position.set(10, 25, 15);
+            sunLight = new THREE.DirectionalLight(0xffffff, 3);
+            // 1. Move the light further "down" the lane so it's more central
+            sunLight.position.set(15, 35, -20);
+            sunLight.intensity = 2.5;
             sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 1024;
-            sunLight.shadow.mapSize.height = 1024;
+
+            // 2. High Resolution
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+
+            // 3. Expand the "Shadow Box" (Frustum)
+            // We make the 'bottom' and 'top' larger to cover the start (Z=6) to the end (Z=-30)
+            sunLight.shadow.camera.left = -20;
+            sunLight.shadow.camera.right = 20;
+            sunLight.shadow.camera.top = 40;    // Covers the area behind the light
+            sunLight.shadow.camera.bottom = -40; // Covers the area in front of the light
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 100;
+
+            // 4. Improve contact and quality
+            sunLight.shadow.bias = -0.0005;
+
             scene.add(sunLight);
 
-            const streetLamp1 = new THREE.PointLight(0xffaa44, 5, 40);
-            streetLamp1.position.set(5, 8, -20);
+            const streetLamp1 = new THREE.PointLight(0xffaa44, 1.5, 50);
+            streetLamp1.position.set(10, 10, -15);
             scene.add(streetLamp1);
+
+            gameSounds['ball_rolling'] = ballPathSound;
+            gameSounds['pin_knock'] = pinKnockSound;
 
             const streetLamp2 = new THREE.PointLight(0x00ffff, 4, 40);
             streetLamp2.position.set(-5, 8, -30);
@@ -358,13 +551,25 @@
                 pinKnockSound.setVolume(0.7);
             });
 
+            audioLoader.load('ui_sound.mp3', function (buffer) {
+                const uiSound = new THREE.Audio(audioListener);
+                uiSound.setBuffer(buffer);
+                uiSound.setVolume(0.5);
+                gameSounds['ui_click'] = uiSound;
+            });
+
             world = new CANNON.World();
-            world.gravity.set(0, -18, 0);
+            world.gravity.set(0, -23, 0);
 
             const ballGroundContact = new CANNON.ContactMaterial(ballMat, groundMat, { friction: 0.2, restitution: 0.1 });
             const ballPinContact = new CANNON.ContactMaterial(ballMat, pinMat, { friction: 0.4, restitution: 0.3 });
             const pinPinContact = new CANNON.ContactMaterial(pinMat, pinMat, { friction: 0.5, restitution: 0.2 });
             const pinGroundContact = new CANNON.ContactMaterial(pinMat, groundMat, { friction: 0.6, restitution: 0.1 });
+
+            actionCanvas = document.getElementById('action-canvas');
+            actionCamera = new THREE.PerspectiveCamera(45, 250 / 150, 0.1, 100);
+            actionRenderer = new THREE.WebGLRenderer({ canvas: actionCanvas, antialias: true });
+            actionRenderer.setSize(250, 150);
 
             world.addContactMaterial(ballGroundContact);
             world.addContactMaterial(ballPinContact);
@@ -385,13 +590,170 @@
             window.addEventListener('mousemove', (e) => { if (isTouching) onTouchMove({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }); });
             window.addEventListener('mouseup', (e) => onTouchEnd({ changedTouches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }));
 
+            const testContainer = document.getElementById('action-cam-container');
+            if (testContainer) {
+                console.log("SUCCESS: Action Cam Container found in DOM.");
+                testContainer.style.border = "5px solid yellow"; // Temporary visible check
+            } else {
+                console.error("ERROR: Action Cam Container NOT found in DOM!");
+            }
+
             resetGame();
 
             animate();
         }
 
-        function triggerScreenShake(amount) {
-            shakeIntensity = amount;
+        function toggleActionCamSize(event) {
+            if (event) event.stopPropagation();
+            playGameSound('ui_click');
+
+            const container = document.getElementById('action-cam-container');
+
+            // Toggle class
+            container.classList.toggle('enlarged');
+
+            // Force a UI refresh for the renderer
+            setTimeout(() => {
+                if (actionRenderer && actionCamera) {
+                    const w = container.clientWidth;
+                    const h = container.clientHeight;
+                    actionRenderer.setSize(w, h);
+                    actionCamera.aspect = w / h;
+                    actionCamera.updateProjectionMatrix();
+                    console.log("Resized Action Cam to: " + w + "x" + h);
+                }
+            }, 50);
+        }
+
+        function startReplay() {
+            if (replayData.length === 0) return;
+            playGameSound('ui_click');
+            isReplaying = true;
+            replayFrameIndex = 0;
+            document.getElementById('msg-box').style.display = 'none';
+        }
+
+        function stopReplay() {
+            isReplaying = false;
+            // Bring the result box back once the replay finishes
+            document.getElementById('msg-box').style.display = 'block';
+            document.getElementById('watch-replay-btn').style.display = 'block';
+            console.log("Replay Finished.");
+        }
+
+        function toggleMenu() {
+            playGameSound('ui_click');
+            const menu = document.getElementById('volume-menu');
+            isMenuOpen = (menu.style.display === 'none' || menu.style.display === '');
+            menu.style.display = isMenuOpen ? 'flex' : 'none';
+        }
+
+        function updateVolume(value) {
+            const percent = Math.round(value * 100);
+            document.getElementById('vol-percent').innerText = percent + "%";
+
+            // Update the Three.js Master Volume
+            if (audioListener) {
+                audioListener.setMasterVolume(value * 2);
+            }
+        }
+
+        function triggerDimmer(active) {
+            const dimmer = document.getElementById('screen-dimmer');
+            if (active) {
+                dimmer.classList.add('dimmed');
+            } else {
+                dimmer.classList.remove('dimmed');
+            }
+        }
+
+        function updateActionCam() {
+            if (!isBowling) {
+                document.getElementById('action-cam-container').style.display = 'none';
+                actionTargetPin = null;
+                return;
+            }
+
+            document.getElementById('action-cam-container').style.display = 'block';
+            const currentTime = performance.now();
+
+            // 1. PRE-IMPACT: Follow the ball
+            if (!impactOccurred) {
+                const ballPos = ballMesh.position;
+                actionCamera.position.lerp(new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3), 0.1);
+                actionCamera.lookAt(ballPos.x, 0.4, ballPos.z - 2);
+            }
+            // 2. POST-IMPACT: Follow the pins
+            else {
+                let bestPin = null;
+                let highestPriority = -1;
+
+                pins.forEach(p => {
+                    const v = p.body.velocity.length();
+                    const isOnLane = p.body.position.y > -1.0;
+
+                    // Only look at pins moving faster than a slow roll (v > 1.5)
+                    if (isOnLane && v > 1.0) {
+                        // Calculate distance from the center point (0, 0, -22)
+                        const distFromCenter = Math.sqrt(
+                            Math.pow(p.body.position.x, 2) +
+                            Math.pow(p.body.position.z - DECK_CENTER_Z, 2)
+                        );
+
+                        // PRIORITY FORMULA: Velocity / (Distance + 1)
+                        // Pins at the center (dist 0) keep full velocity.
+                        // Pins far away have their velocity effectively reduced.
+                        const priority = v / (distFromCenter + 1);
+
+                        if (priority > highestPriority) {
+                            highestPriority = priority;
+                            bestPin = p;
+                        }
+                    }
+                });
+
+                // Check if current target fell into void
+                const currentTargetInVoid = actionTargetPin && actionTargetPin.body.position.y < -1.0;
+
+                // Switch if: no target, target fell, or cooldown passed and we have a new best priority
+                if (!actionTargetPin || currentTargetInVoid || (currentTime - lastTargetSwitchTime > SWITCH_COOLDOWN)) {
+                    if (bestPin && bestPin !== actionTargetPin) {
+                        actionTargetPin = bestPin;
+                        lastTargetSwitchTime = currentTime;
+                    }
+                }
+
+                if (actionTargetPin) {
+                    const targetCamPos = new THREE.Vector3(
+                        actionTargetPin.mesh.position.x + 1.8,
+                        1.3,
+                        actionTargetPin.mesh.position.z + 2.5
+                    );
+                    actionCamera.position.lerp(targetCamPos, 0.04);
+                    actionCamera.lookAt(actionTargetPin.mesh.position);
+                }
+            }
+
+            actionRenderer.render(scene, actionCamera);
+        }
+
+        function resetAllGameSounds() {
+            // 1. Stop the looping rolling sound
+            if (ballPathSound && ballPathSound.isPlaying) {
+                ballPathSound.stop();
+            }
+
+            // 2. Stop the pin hit sound (if it's currently playing from a late hit)
+            if (pinKnockSound && pinKnockSound.isPlaying) {
+                pinKnockSound.stop();
+            }
+
+            // 3. Optional: Reset the master volume to the slider value 
+            // (In case any fade-outs occurred)
+            const vol = document.getElementById('volume-slider').value;
+            if (audioListener) {
+                audioListener.setMasterVolume(vol * 2);
+            }
         }
 
         function createStreetEnvironment() {
@@ -405,12 +767,14 @@
             const wallGeo = new THREE.BoxGeometry(1.2, 18, 100);
             const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, transparent: true, opacity: 1 });
 
+            const wallDist = 3.6; // Wall Distance from center 3.6 default (2.8 NO Gutter), slightly wider for better visuals
+
             leftWallMesh = new THREE.Mesh(wallGeo, wallMat);
-            leftWallMesh.position.set(-4.8, 9, -35);
+            leftWallMesh.position.set(-wallDist, 9, -35); // was -4.8
             scene.add(leftWallMesh);
 
             rightWallMesh = new THREE.Mesh(wallGeo, wallMat.clone());
-            rightWallMesh.position.set(4.8, 9, -35);
+            rightWallMesh.position.set(wallDist, 9, -35); // was 4.8
             scene.add(rightWallMesh);
 
             const groundShape = new CANNON.Box(new CANNON.Vec3(2.25, 0.1, 50));
@@ -420,14 +784,15 @@
             world.addBody(groundBody);
 
             const physicsWallShape = new CANNON.Box(new CANNON.Vec3(0.6, 9, 50));
+
             const leftWallBody = new CANNON.Body({ mass: 0, material: groundMat });
             leftWallBody.addShape(physicsWallShape);
-            leftWallBody.position.set(-4.8, 9, -35);
+            leftWallBody.position.set(-wallDist, 9, -35); // was -4.8
             world.addBody(leftWallBody);
 
             const rightWallBody = new CANNON.Body({ mass: 0, material: groundMat });
             rightWallBody.addShape(physicsWallShape);
-            rightWallBody.position.set(4.8, 9, -35);
+            rightWallBody.position.set(wallDist, 9, -35);
             world.addBody(rightWallBody);
         }
 
@@ -445,7 +810,10 @@
 
             ballBody.type = CANNON.Body.STATIC;
             ballBody.mass = 0;
+
             ballBody.updateMassProperties();
+            ballBody.linearDamping = 0.1;
+            ballBody.angularDamping = 0.1;
 
             // Explicitly set the position
             const startPos = new CANNON.Vec3(0, LANE_Y + BALL_RADIUS + 0.05, 6);
@@ -495,6 +863,7 @@
                     const x = (i - r * 0.5) * spacing;
                     const z = startZ - (r * spacing);
 
+                    // Ring on the floor
                     const circleMaterialInstance = circleMat.clone();
                     const circle = new THREE.Mesh(circleGeo, circleMaterialInstance);
                     circle.rotation.x = -Math.PI / 2;
@@ -502,25 +871,12 @@
                     scene.add(circle);
                     pinCircles.push(circle);
 
-                    const loader = new THREE.TextureLoader();
-                    const glowTexture = loader.load('https://threejs.org/examples/textures/sprites/glow.png');
+                    // --- GLOW SPRITE CODE REMOVED FROM HERE ---
 
-                    const spriteMaterial = new THREE.SpriteMaterial({
-                        map: glowTexture,
-                        color: 0xe74c3c,
-                        transparent: true,
-                        opacity: 0.6,
-                        blending: THREE.AdditiveBlending
-                    });
-                    const sprite = new THREE.Sprite(spriteMaterial);
-                    sprite.position.copy(circle.position);
-                    sprite.scale.set(0.5, 0.5, 1); // Adjust size to fit circle
-                    scene.add(sprite);
-
+                    // Visual Pin Group
                     const group = new THREE.Group();
                     const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
                     pMesh.castShadow = true;
-
                     group.add(pMesh);
 
                     const stripe = new THREE.Mesh(stripeGeo, stripeMat);
@@ -529,6 +885,7 @@
 
                     scene.add(group);
 
+                    // Physics Body
                     const pBody = new CANNON.Body({
                         mass: 2.5,
                         material: pinMat
@@ -552,7 +909,10 @@
                             pBody.type = CANNON.Body.DYNAMIC;
                             pBody.updateMassProperties();
 
-                            playGameSound('collision');
+                            if (pinKnockSound && pinKnockSound.buffer) {
+                                if (pinKnockSound.isPlaying) pinKnockSound.stop();
+                                pinKnockSound.play();
+                            }
 
                             const forceDir = pBody.position.vsub(e.contact.bi.position);
                             forceDir.normalize();
@@ -561,14 +921,12 @@
 
                             spawnImpact(pBody.position, 0xffffff, 8);
 
-                            // --- UPDATE THIS BLOCK ---
                             if (!impactOccurred) {
                                 impactOccurred = true;
                                 isCinematicMode = true;
-                                timeScale = 0.15; // Set to 15% speed for dramatic effect
-                                cinematicTargetPin = pBody; // Focus on the first pin hit
+                                timeScale = 0.15;
+                                cinematicTargetPin = pBody;
 
-                                // Reset speed after 3 seconds of real-time
                                 setTimeout(() => {
                                     timeScale = 1.0;
                                     isCinematicMode = false;
@@ -584,7 +942,6 @@
                     pins.push({ mesh: group, body: pBody, initialPos: { x: x, z: z } });
                 }
             }
-
         }
 
         function initLightTrail() {
@@ -632,9 +989,9 @@
                 part.position.set(pos.x, pos.y, pos.z);
 
                 // Increase velocity for a bigger explosion
-                const vx = (Math.random() - 0.5) * 0.3 * scale;
+                const vx = (Math.random() - 0.5) * 0.1 * scale;
                 const vy = Math.random() * 0.3 * scale;
-                const vz = (Math.random() - 0.5) * 0.3 * scale;
+                const vz = (Math.random() - 0.5) * 0.1 * scale;
 
                 scene.add(part);
                 impactParticles.push({ mesh: part, vel: new THREE.Vector3(vx, vy, vz), life: 1.0 });
@@ -694,7 +1051,7 @@
         function throwBall(speed) {
             isBowling = true;
             document.getElementById('hint').style.opacity = '0';
-            ballBody.mass = 20;
+            ballBody.mass = 500; // mass_b
             ballBody.type = CANNON.Body.DYNAMIC;
             ballBody.updateMassProperties();
             ballBody.velocity.set(0, 0, -speed * 0.9);
@@ -733,6 +1090,19 @@
             currentFallenPins = fallen;
             document.getElementById('score-text').innerText = `Pins: ${fallen}`;
 
+            let scoreToRecord = fallen;
+            const lastIndex = matchHistory.length - 1;
+            if (fallen === 10) {
+                let consecutiveStrikes = 1;
+                for (let i = lastIndex; i >= 0; i--) {
+                    if (matchHistory[i] >= 10) consecutiveStrikes++;
+                    else break;
+                }
+                scoreToRecord = 10 * consecutiveStrikes;
+            }
+            matchHistory.push(scoreToRecord);
+            updateScoreTable();
+
             // 2. Handle Strike Special Effects
             if (fallen === 10) {
                 // Physics Blast: Push all pins away from the center for impact
@@ -745,27 +1115,34 @@
 
                 // Trigger UI Popup
                 const strikePopup = document.getElementById('strike-popup');
-                strikePopup.classList.add('show');
-                setTimeout(() => strikePopup.classList.remove('show'), 2000);
+                const dimmer = document.getElementById('screen-dimmer');
 
+                strikePopup.classList.add('show');
+                setTimeout(() => {
+                    strikePopup.classList.remove('show');
+                    dimmer.style.display = 'none';
+                }, 2000);
+
+
+                triggerDimmer(true);
                 playGameSound('strike');
 
                 // Massive Particle Blast (using the scale parameter)
                 spawnImpact(new CANNON.Vec3(0, 1, -22), 0xf1c40f, 60, 4.0);
 
-                // Screen Shake
-                triggerScreenShake(0.5);
             }
 
             // 3. Show Result Message Box
             const msgBox = document.getElementById('msg-box');
+            const replayBtn = document.getElementById('watch-replay-btn'); // New reference
             const title = document.getElementById('msg-title');
             const body = document.getElementById('msg-body');
             const btn = document.getElementById('action-btn');
 
             msgBox.style.display = 'block';
+            replayBtn.style.display = 'block'; // Show the bottom button
 
-            if (matchHistory.length + 1 >= MAX_MATCHES) {
+            if (matchHistory.length >= MAX_MATCHES) {
                 title.innerText = "FINAL SCORE";
                 let total = matchHistory.reduce((a, b) => a + b, 0) + fallen;
                 body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
@@ -775,6 +1152,7 @@
                 body.innerText = `${fallen} pins cleared.`;
                 btn.innerText = "NEXT FRAME";
             }
+
         }
 
         function handleMatchEnd() {
@@ -786,21 +1164,6 @@
         }
 
         function recordAndReset() {
-            let currentScore = currentFallenPins;
-            const lastIndex = matchHistory.length - 1;
-
-            if (currentFallenPins === 10) {
-                // Count how many consecutive strikes before this round (including current)
-                let consecutiveStrikes = 1;
-                for (let i = lastIndex; i >= 0; i--) {
-                    if (matchHistory[i] === 10) consecutiveStrikes++;
-                    else break;
-                }
-                currentScore = 10 * consecutiveStrikes;
-            }
-
-            matchHistory.push(currentScore);
-            updateScoreTable();
             resetGame();
         }
 
@@ -853,6 +1216,13 @@
             cinematicTargetPin = null;
             timeScale = 1.0;
 
+            replayData = [];
+            isReplaying = false;
+
+            actionTargetPin = null;
+            lastTargetSwitchTime = 0;
+            impactOccurred = false;
+
             // 2. Reset Camera to Starting Position
             camera.position.set(0, 4, 12);
             camera.lookAt(0, 1, -5);
@@ -861,7 +1231,10 @@
             if (resetTimer) clearTimeout(resetTimer);
             resetTimer = null;
 
+            triggerDimmer(false); // REMOVE DIMMER
+
             document.getElementById('score-text').innerText = `Pins: 0`;
+            document.getElementById('strike-popup').classList.remove('show');
             document.getElementById('msg-box').style.display = 'none';
             document.getElementById('hint').style.opacity = '1';
 
@@ -884,6 +1257,8 @@
             // Immediate Visual Sync
             ballMesh.position.copy(ballBody.position);
             ballMesh.quaternion.copy(ballBody.quaternion);
+
+            document.getElementById('watch-replay-btn').style.display = 'none';
 
             // 5. Reset FX
             trailHistory = [];
@@ -909,6 +1284,9 @@
 
                             // Reset Physics Body
                             p.body.type = CANNON.Body.KINEMATIC;
+                            p.body.mass = 2.5;
+                            p.body.updateMassProperties();
+
                             p.body.position.set(x, LANE_Y + (PIN_HEIGHT / 2) + 0.05, z);
                             p.body.velocity.set(0, 0, 0);
                             p.body.angularVelocity.set(0, 0, 0);
@@ -924,6 +1302,7 @@
             });
 
             playGameSound('stop_rolling');
+            resetAllGameSounds();
 
             // 7. Re-enable Walls and Reset Circles
             if (leftWallMesh) leftWallMesh.visible = true;
@@ -932,6 +1311,9 @@
             pinCircles.forEach(circle => {
                 circle.material.color.setHex(0xe74c3c); // Reset all to red
             });
+
+            document.getElementById('action-cam-container').style.display = 'none';
+            isActionCamActive = false;
         }
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -963,107 +1345,133 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // 1. Step the Physics World
-            // timeScale is 1.0 normally, 0.15 during cinematic slow-mo
-            world.step(1 / 60 * timeScale);
+            // 1. Physics Step - Only run physics if NOT replaying
+            if (!isReplaying) {
+                world.step(1 / 60 * (typeof timeScale !== 'undefined' ? timeScale : 1));
+            }
 
-            // 2. Sync Three.js Meshes with Cannon.js Physics Bodies
+            // 2. Sync Meshes & Recording Logic
             if (ballMesh && ballBody) {
-                ballMesh.position.copy(ballBody.position);
-                ballMesh.quaternion.copy(ballBody.quaternion);
+                if (!isReplaying) {
+                    // --- NORMAL MODE: Copy physics to meshes ---
+                    ballMesh.position.copy(ballBody.position);
+                    ballMesh.quaternion.copy(ballBody.quaternion);
 
-                pins.forEach(p => {
-                    p.mesh.position.copy(p.body.position);
-                    p.mesh.quaternion.copy(p.body.quaternion);
-                });
+                    pins.forEach(p => {
+                        if (p.body.position.y < -5.0 && p.body.type !== CANNON.Body.STATIC) {
+                            p.body.velocity.set(0, 0, 0);
+                            p.body.angularVelocity.set(0, 0, 0);
+                            p.body.type = CANNON.Body.STATIC;
+                        }
+                        p.mesh.position.copy(p.body.position);
+                        p.mesh.quaternion.copy(p.body.quaternion);
+                    });
+
+                    // --- RECORDING: Save the frame for Replay ---
+                    if (isBowling && replayData.length < 600) {
+                        replayData.push({
+                            ball: { pos: ballBody.position.clone(), quat: ballBody.quaternion.clone() },
+                            pins: pins.map(p => ({
+                                pos: p.body.position.clone(),
+                                quat: p.body.quaternion.clone()
+                            }))
+                        });
+                    }
+
+                    // --- KEEP YOUR EXISTING AUDIO LOGIC HERE ---
+                    if (isBowling && ballPathSound && ballPathSound.buffer) {
+                        const x = ballBody.position.x;
+                        const y = ballBody.position.y;
+                        const z = ballBody.position.z;
+                        const isOnLane = Math.abs(x) < 2.4;
+                        const isTouchingFloor = y < 0.8 && y > 0.1;
+                        const isBeforeBackDrop = z > -75;
+
+                        if (isOnLane && isTouchingFloor && isBeforeBackDrop) {
+                            if (!ballPathSound.isPlaying) {
+                                if (ballPathSound.context.state === 'suspended') ballPathSound.context.resume();
+                                ballPathSound.play();
+                            }
+                        } else if (ballPathSound.isPlaying) {
+                            ballPathSound.pause();
+                        }
+                    }
+                } else {
+                    // --- REPLAY MODE: Play back recorded positions ---
+                    if (replayFrameIndex < replayData.length) {
+                        const frame = replayData[replayFrameIndex];
+                        ballMesh.position.copy(frame.ball.pos);
+                        ballMesh.quaternion.copy(frame.ball.quat);
+                        pins.forEach((p, i) => {
+                            p.mesh.position.copy(frame.pins[i].pos);
+                            p.mesh.quaternion.copy(frame.pins[i].quat);
+                        });
+                        replayFrameIndex++;
+                    } else {
+                        stopReplay(); // Ends replay and shows result box
+                    }
+                }
             }
 
-            // 7. Re-enable Walls
-            //if (leftWallMesh) leftWallMesh.visible = true;
-            //if (rightWallMesh) rightWallMesh.visible = true;
-
-            // 3. Apply subtle hook/curve force while ball is in play
-            if (isBowling && ballBody.position.z < 5) {
-                ballBody.applyForce(new CANNON.Vec3(randomHookForce * 2.0, 0, 0), ballBody.position);
-            }
-
-            // 4. Camera State Machine
             if (isBowling) {
+                const isPortrait = window.innerHeight > window.innerWidth;
+                const pinAreaZ = -22; // The center of the pins
+
+                let desiredPosition = new THREE.Vector3();
+                let desiredLookAt = new THREE.Vector3();
+
                 if (isCinematicMode) {
-                    if (leftWallMesh) leftWallMesh.visible = false;
-                    if (rightWallMesh) rightWallMesh.visible = false;
-
-                    const pinCenterZ = -20;
-
-                    // 1. POSITION: Same as before, following the ball
-                    const cameraOffset = new THREE.Vector3(3.5, 4.0, 4.0);
-                    const targetPos = new THREE.Vector3(
-                        ballBody.position.x + cameraOffset.x,
-                        cameraOffset.y,
-                        ballBody.position.z + cameraOffset.z
-                    );
-                    camera.position.lerp(targetPos, 0.1);
-
-                    // 2. MODIFIED LOOKAT: Stop tracking midpoint after z < -15
-                    // Once the ball passes -15, the "lookAt" stays locked on the pins (-20)
-                    const effectiveBallZ = Math.max(ballBody.position.z, -25);
-                    const lookAtPoint = new THREE.Vector3(
-                        ballBody.position.x * 0.5,
-                        0.8,
-                        (effectiveBallZ + pinCenterZ) * 0.5
-                    );
-
-                    camera.lookAt(lookAtPoint);
+                    // STATE: Cinematic Impact View
+                    desiredPosition.set(0, isPortrait ? 5.5 : 3.5, pinAreaZ + (isPortrait ? 9 : 6));
+                    desiredLookAt.set(0, 0.5, pinAreaZ);
                 }
                 else if (impactOccurred) {
-                    // POST-IMPACT VIEW
-                    if (leftWallMesh) leftWallMesh.visible = true;
-                    if (rightWallMesh) rightWallMesh.visible = true;
-
-                    const targetPos = new THREE.Vector3(0, 4, -14);
-                    camera.position.lerp(targetPos, 0.05);
-                    camera.lookAt(0, 1, -24);
+                    // STATE: Post-Impact result view
+                    desiredPosition.set(0, 4, -14);
+                    desiredLookAt.set(0, 1, -24);
                 }
                 else {
-                    // BALL FOLLOW VIEW
-                    if (leftWallMesh) leftWallMesh.visible = true;
-                    if (rightWallMesh) rightWallMesh.visible = true;
-
+                    // STATE: Following the ball
                     const targetZ = Math.max(ballBody.position.z + 8, -12);
-                    const targetX = Math.max(-3.0, Math.min(3.0, ballBody.position.x * 0.7));
-                    camera.position.z += (targetZ - camera.position.z) * 0.08;
-                    camera.position.x += (targetX - camera.position.x) * 0.08;
-                    camera.lookAt(ballBody.position.x * 0.4, 1.2, ballBody.position.z - 6);
+                    const targetX = Math.max(-3, Math.min(3, ballBody.position.x * 0.7));
+
+                    desiredPosition.set(targetX, 4, targetZ);
+                    // Look slightly ahead of the ball
+                    desiredLookAt.set(ballBody.position.x * 0.4, 1.2, ballBody.position.z - 6);
                 }
+
+                // Apply Smooth Transitions
+                // 0.05 is the "smoothness" - lower is slower/smoother, higher is snappier
+                camera.position.lerp(desiredPosition, 0.05);
+                cameraLookAtTarget.lerp(desiredLookAt, 0.05);
+                camera.lookAt(cameraLookAtTarget);
             }
 
-            if (shakeIntensity > 0) {
-                camera.position.x += (Math.random() - 0.5) * shakeIntensity;
-                camera.position.y += (Math.random() - 0.5) * shakeIntensity;
-                shakeIntensity *= 0.9; // Decay the shake
-            }
-
-            // 5. Add pulsing effect on circles
-            const pulseSpeed = 2;
-            const pulseAmplitude = 0.15;
+            // Keep the pulsing circles and visual updates
             const time = performance.now() / 1000;
-
             pinCircles.forEach(circle => {
-                const scale = 1 + Math.sin(time * pulseSpeed) * pulseAmplitude;
-                circle.scale.set(scale, scale, scale);
+                circle.scale.setScalar(1 + Math.sin(time * 2) * 0.15);
+                circle.material.opacity = (0.4 + (Math.sin(time * 3) + 1) / 2 * 0.6) * 0.5 + 0.3;
             });
 
-            // 6. adding glowing effect
-            const glowSpeed = 3;
-            pinCircles.forEach(circle => {
-                const glow = 0.4 + (Math.sin(performance.now() * 0.005 * glowSpeed) + 1) / 2 * 0.6; // oscillates 0.4 - 1.0
-                circle.material.opacity = glow * 0.5 + 0.3; // vary opacity between 0.3 and ~0.8
-            });
-
-            // 7. Update FX & Render
+            if (typeof updateActionCam === 'function') updateActionCam();
             updateLightTrail();
             updateImpacts();
             renderer.render(scene, camera);
+        }
+
+        function playGameSound(id) {
+            const sound = gameSounds[id];
+            if (sound && !sound.isPlaying) {
+                sound.play();
+            }
+        }
+
+        function pauseGameSound(id) {
+            const sound = gameSounds[id];
+            if (sound && sound.isPlaying) {
+                sound.pause();
+            }
         }
 
         function onWindowResize() {
