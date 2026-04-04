@@ -1,38 +1,1649 @@
-/* --- Mobile Specific Adjustments --- */
-@media (max-width: 600px) {
-    .score-board {
-        padding: 8px;
-        border-radius: 8px;
-    }
+<!DOCTYPE html>
+<html lang="en">
 
-    #score-text {
-        font-size: 16px !important;
-        margin-bottom: 4px !important;
-    }
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="Bowling_Icon.png">
+    <title>Street Bowling 3D</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #05050a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
 
-    .history-table {
-        min-width: 180px; /* Shrunk from 240px */
-        font-size: 10px;  /* Shrunk from 12px */
-    }
+        canvas {
+            display: block;
+            touch-action: none;
+        }
 
-    .history-table th,
-    .history-table td {
-        padding: 4px 2px;
-        width: 25px; /* Narrowed columns */
-    }
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* This allows clicks to pass through the empty space of the overlay */
+            pointer-events: none;
+            display: flex;
+            background: transparent;
+            flex-direction: column;
+            justify-content: space-between;
+            color: white;
+            padding: 15px;
+            box-sizing: border-box;
+            z-index: 1000;
+            /* Ensure UI is above the game canvas */
+        }
 
-    .menu-container {
-        top: 10px !important;
-        right: 10px !important;
-    }
+        #action-cam-container {
+            pointer-events: auto !important;
+            z-index: 100;
+            /* Make it higher than the overlay background */
+        }
 
-    .menu-icon-btn {
-        font-size: 18px !important; /* Smaller gear icon */
-        padding: 8px !important;
-    }
+        .top-ui {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+            padding-right: 60px;
+        }
 
-    .volume-popup {
-        width: 120px; /* Narrower volume menu */
-        padding: 10px;
-    }
-}
+        .score-board {
+            background: rgba(20, 20, 40, 0.85);
+            padding: 12px;
+            border-radius: 12px;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            max-width: fit-content;
+        }
+
+        .history-table {
+            border-collapse: collapse;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 12px;
+            text-align: center;
+            min-width: 240px;
+        }
+
+        .history-table th,
+        .history-table td {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 6px 4px;
+            width: 35px;
+        }
+
+        .history-table th {
+            background: rgba(230, 126, 34, 0.3);
+            color: #f39c12;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+
+        .total-col {
+            background: rgba(46, 204, 113, 0.2);
+            font-weight: bold;
+            color: #2ecc71;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            background: rgba(231, 76, 60, 0.2);
+            padding: 10px 20px;
+            border-radius: 20px;
+            pointer-events: none;
+            border: 1px solid #e74c3c;
+            width: 70%;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s ease;
+        }
+
+        .btn {
+            background: #e67e22;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            pointer-events: auto;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn:hover {
+            background: #d35400;
+        }
+
+        #msg-box {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            /* Remove the translateY(-50%) */
+            background: rgba(15, 15, 25, 0.8);
+            /* Added more transparency */
+            padding: 20px;
+            /* Reduced padding */
+            border-radius: 24px;
+            text-align: center;
+            pointer-events: auto;
+            display: none;
+            width: 280px;
+            border: 2px solid #e67e22;
+            z-index: 1100;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Strike Popup Styling */
+        /* Updated Strike Popup Styling */
+        #strike-popup {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            font-size: clamp(40px, 15vw, 150px);
+            /* Slightly larger for impact */
+            font-weight: 900;
+            color: #ffffff;
+            /* White core for a "hotter" look */
+            /* Multi-layered shadow for a neon/fire effect */
+            text-shadow:
+                0 0 10px #f1c40f,
+                0 0 20px #f1c40f,
+                0 0 40px #e67e22,
+                0 0 70px #d35400,
+                0 0 100px #ff0000;
+            z-index: 5001;
+            pointer-events: none;
+            opacity: 0;
+            font-style: italic;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            letter-spacing: 5px;
+            text-transform: uppercase;
+        }
+
+        /* Thumping animation when the popup shows */
+        @keyframes strike-thump {
+            0% {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+
+            50% {
+                transform: translate(-50%, -50%) scale(1.5);
+                opacity: 1;
+            }
+
+            70% {
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1.2);
+            }
+        }
+
+        /* Pulsing glow animation */
+        @keyframes strike-glow {
+            from {
+                text-shadow: 0 0 20px #f1c40f, 0 0 40px #e67e22;
+            }
+
+            to {
+                text-shadow: 0 0 40px #ffffff, 0 0 80px #ff0000, 0 0 120px #ff0000;
+            }
+        }
+
+        #strike-popup.show {
+            opacity: 1;
+            animation:
+                strike-thump 0.5s ease-out forwards,
+                strike-glow 0.8s ease-in-out infinite alternate;
+        }
+
+        /* Menu and Volume Styling */
+        .menu-container {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            pointer-events: auto;
+        }
+
+        .menu-icon-btn {
+            background: rgba(20, 20, 40, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 24px;
+            padding: 10px;
+            border-radius: 50%;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+        }
+
+        .volume-popup {
+            margin-top: 10px;
+            background: rgba(15, 15, 25, 0.95);
+            padding: 15px;
+            border-radius: 15px;
+            border: 1px solid #e67e22;
+            display: none;
+            /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 150px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .volume-popup label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #f1c40f;
+            letter-spacing: 1px;
+        }
+
+        #volume-slider {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #e67e22;
+        }
+
+        #vol-percent {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        #screen-dimmer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.85);
+            /* Adjust 0.85 for darkness level */
+            z-index: 5000;
+            /* Sit behind the Text but above the Game */
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        #screen-dimmer.dimmed {
+            opacity: 1;
+        }
+
+        /* Add this class for the "Enlarged" state */
+        #action-cam-container.enlarged {
+            /* !important is required to override the inline style="..." width/height */
+            width: 90vw !important;
+            height: 50vh !important;
+            bottom: 50% !important;
+            right: 50% !important;
+            transform: translate(50%, 50%);
+            z-index: 100;
+        }
+
+        #watch-replay-btn {
+            pointer-events: auto;
+            display: none;
+            /* Kept hidden until a round ends */
+            position: absolute;
+            bottom: 30px;
+            /* Distance from bottom */
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 30px;
+            font-size: 18px;
+            background: rgba(255, 215, 0, 0.9);
+            color: #000;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            /* High z-index to stay above the action cam */
+            transition: all 0.3s ease;
+        }
+
+        #watch-replay-btn:hover {
+            background: #fff;
+            transform: translateX(-50%) scale(1.1);
+        }
+
+        @media (max-width: 600px) {
+            .score-board {
+                padding: 8px;
+                border-radius: 8px;
+            }
+
+            #score-text {
+                font-size: 16px !important;
+                margin-bottom: 4px !important;
+            }
+
+            .history-table {
+                min-width: 180px;
+                /* Shrunk from 240px */
+                font-size: 10px;
+                /* Shrunk from 12px */
+            }
+
+            .history-table th,
+            .history-table td {
+                padding: 4px 2px;
+                width: 25px;
+                /* Narrowed columns */
+            }
+
+            .menu-container {
+                top: 10px !important;
+                right: 10px !important;
+            }
+
+            .menu-icon-btn {
+                font-size: 18px !important;
+                /* Smaller gear icon */
+                padding: 8px !important;
+            }
+
+            .volume-popup {
+                width: 120px;
+                /* Narrower volume menu */
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="ui-overlay">
+        <div id="action-cam-container" onclick="toggleActionCamSize(event)"
+            style="cursor: pointer; position: absolute; bottom: 20px; right: 20px; width: 250px; height: 150px; border: 3px solid #e74c3c; border-radius: 10px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(231, 76, 60, 0.5); background: #000; pointer-events: auto !important;">
+            <div
+                style="position:absolute; top:5px; left:5px; color:#e74c3c; font-weight:bold; font-size:10px; z-index:10; pointer-events: none;">
+                ACTION CAM (TAP TO ZOOM)
+            </div>
+            <canvas id="action-canvas" style="pointer-events: none;"></canvas>
+        </div>
+
+        <div class="menu-container" onmousedown="event.stopPropagation()">
+            <button id="menu-btn" class="menu-icon-btn" onclick="toggleMenu()">⚙️</button>
+            <div id="volume-menu" class="volume-popup">
+                <label>VOLUME</label>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5"
+                    oninput="updateVolume(this.value)">
+                <div id="vol-percent">50%</div>
+            </div>
+        </div>
+
+        <div class="top-ui">
+            <div class="score-board">
+                <div id="score-text" style="font-size: 20px; font-weight: bold; color: #f39c12; margin-bottom: 8px;">
+                    Pins: 0</div>
+                <table class="history-table" id="history-table">
+                    <thead>
+                        <tr>
+                            <th>M1</th>
+                            <th>M2</th>
+                            <th>M3</th>
+                            <th>M4</th>
+                            <th>M5</th>
+                            <th class="total-col">TOT</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td id="m0">-</td>
+                            <td id="m1">-</td>
+                            <td id="m2">-</td>
+                            <td id="m3">-</td>
+                            <td id="m4">-</td>
+                            <td id="total-score" class="total-col">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="instructions" id="hint">
+            Drag to Position &bull; Flick UP to Launch
+        </div>
+
+        <div id="strike-popup">STRIKE!</div>
+
+        <div id="msg-box">
+            <h1 id="msg-title">STRIKE!</h1>
+            <p id="msg-body">Explosive hit!</p>
+            <button id="action-btn" class="btn" onclick="handleMatchEnd()">NEXT FRAME</button>
+        </div>
+
+        <button id="watch-replay-btn" class="btn" onclick="startReplay()"
+            style="display: none; position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); pointer-events: auto;">
+            WATCH REPLAY
+        </button>
+
+        <div id="screen-dimmer"></div>
+
+
+    </div>
+
+    <script>
+        // --- CONSTANTS ---
+        const LANE_Y = 0.1;
+        const BALL_RADIUS = 0.35;
+        const PIN_HEIGHT = 0.8;
+        const TRAIL_MAX_POINTS = 60;
+        const MAX_MATCHES = 5;
+
+        // --- STATE ---
+        let pins = [];
+        let pinCircles = []; // Add this line
+        let pinSoundPool = []; // For multiple pin hits
+        const POOL_SIZE = 10;
+
+        let scene, camera, renderer, world, sunLight;
+        let ballBody, ballMesh;
+        let isBowling = false;
+        let isTouching = false;
+        let touchStartPos = { x: 0, y: 0 };
+        let touchStartTime = 0;
+        let impactParticles = [];
+        let trailHistory = [];
+        let trailMesh;
+        let randomHookForce = 0;
+
+        let matchHistory = [];
+        let currentFallenPins = 0;
+
+        let impactOccurred = false;
+        let resetTimer = null;
+
+        // --- ADD THESE THREE LINES ---
+        let timeScale = 1.0;
+        let isCinematicMode = false;
+        let cinematicTargetPin = null;
+        let leftWallMesh, rightWallMesh;
+
+        let audioListener, audioLoader;
+        let ballPathSound, pinKnockSound;
+
+        let isMenuOpen = false;
+
+        let actionCamera, actionRenderer, actionCanvas;
+        let isActionCamActive = false;
+
+        let gameSounds = {};
+
+        let actionTargetPin = null;
+        let lastTargetSwitchTime = 0;
+        const SWITCH_COOLDOWN = 1000; // 1 second CD before it can pick a new pin
+
+        const DECK_CENTER_Z = -22;
+
+        let isReplaying = false;
+        let replayData = []; // This stores the "movie" of your throw
+        let replayFrameIndex = 0;
+
+        let cameraLookAtTarget = new THREE.Vector3(0, 1, 0);
+
+        let touchPathLine;
+        let outerGlowLine; // ADD THIS LINE HERE
+        let touchPathPoints = [];
+
+        // let listener, audioLoader, rollingSound;
+
+        // Add these with your other globals
+
+        const groundMat = new CANNON.Material();
+        const ballMat = new CANNON.Material();
+        const pinMat = new CANNON.Material();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x010105);
+            scene.fog = new THREE.FogExp2(0x010105, 0.03);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 4, 12);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+            scene.add(hemiLight);
+
+            sunLight = new THREE.DirectionalLight(0xffffff, 3);
+            // 1. Move the light further "down" the lane so it's more central
+            sunLight.position.set(15, 35, -20);
+            sunLight.intensity = 2.5;
+            sunLight.castShadow = true;
+
+            // 2. High Resolution
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+
+            // 3. Expand the "Shadow Box" (Frustum)
+            // We make the 'bottom' and 'top' larger to cover the start (Z=6) to the end (Z=-30)
+            sunLight.shadow.camera.left = -20;
+            sunLight.shadow.camera.right = 20;
+            sunLight.shadow.camera.top = 40;    // Covers the area behind the light
+            sunLight.shadow.camera.bottom = -40; // Covers the area in front of the light
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 100;
+
+            // 4. Improve contact and quality
+            sunLight.shadow.bias = -0.0005;
+
+            scene.add(sunLight);
+
+            // Inside init() function:
+            const pathMaterial = new THREE.LineBasicMaterial({
+                color: 0x00ffff,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending
+            });
+            touchPathLine = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
+            touchPathLine2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
+            touchPathLine3 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
+
+            // Offset them slightly to create width
+            touchPathLine2.position.x += 0.02;
+            touchPathLine3.position.x -= 0.02;
+
+            scene.add(touchPathLine, touchPathLine2, touchPathLine3);
+
+            // Initialize the global outerGlowLine variable
+            const outerGlowMaterial = new THREE.LineBasicMaterial({
+                color: 0x0088ff,
+                transparent: true,
+                opacity: 0.3,
+                blending: THREE.AdditiveBlending
+            });
+            outerGlowLine = new THREE.Line(new THREE.BufferGeometry(), outerGlowMaterial);
+            outerGlowLine.scale.set(1.02, 1, 1.02); // Slightly wider for glow effect
+            scene.add(outerGlowLine);
+
+            const streetLamp1 = new THREE.PointLight(0xffaa44, 1.5, 50);
+            streetLamp1.position.set(10, 10, -15);
+            scene.add(streetLamp1);
+
+            gameSounds['ball_rolling'] = ballPathSound;
+            gameSounds['pin_knock'] = pinKnockSound;
+
+            const streetLamp2 = new THREE.PointLight(0x00ffff, 4, 40);
+            streetLamp2.position.set(-5, 8, -30);
+            scene.add(streetLamp2);
+
+            // Add this inside function init()
+            audioListener = new THREE.AudioListener();
+            camera.add(audioListener);
+
+            audioLoader = new THREE.AudioLoader();
+
+            // Load Ball Path Sound (Looping)
+            ballPathSound = new THREE.Audio(audioListener);
+            audioLoader.load('bowling-ball-path.mp3', function (buffer) {
+                ballPathSound.setBuffer(buffer);
+                ballPathSound.setLoop(true);
+                ballPathSound.setVolume(0.5);
+            });
+
+            // Load Pin Knock Sound
+            pinKnockSound = new THREE.Audio(audioListener);
+            audioLoader.load('single-bowling-pin-knock.mp3', function (buffer) {
+                pinKnockSound.setBuffer(buffer);
+                pinKnockSound.setVolume(0.7);
+            });
+
+            audioLoader.load('ui_sound.mp3', function (buffer) {
+                const uiSound = new THREE.Audio(audioListener);
+                uiSound.setBuffer(buffer);
+                uiSound.setVolume(0.5);
+                gameSounds['ui_click'] = uiSound;
+            });
+
+            world = new CANNON.World();
+            world.gravity.set(0, -23, 0);
+
+            const ballGroundContact = new CANNON.ContactMaterial(ballMat, groundMat, { friction: 0.2, restitution: 0.1 });
+            const ballPinContact = new CANNON.ContactMaterial(ballMat, pinMat, { friction: 0.4, restitution: 0.3 });
+            const pinPinContact = new CANNON.ContactMaterial(pinMat, pinMat, { friction: 0.5, restitution: 0.2 });
+            const pinGroundContact = new CANNON.ContactMaterial(pinMat, groundMat, { friction: 0.6, restitution: 0.1 });
+
+            actionCanvas = document.getElementById('action-canvas');
+            actionCamera = new THREE.PerspectiveCamera(45, 250 / 150, 0.1, 100);
+            actionRenderer = new THREE.WebGLRenderer({ canvas: actionCanvas, antialias: true });
+            actionRenderer.setSize(250, 150);
+
+            world.addContactMaterial(ballGroundContact);
+            world.addContactMaterial(ballPinContact);
+            world.addContactMaterial(pinPinContact);
+            world.addContactMaterial(pinGroundContact);
+
+            createStreetEnvironment();
+            createBall();
+            createPins();
+            initLightTrail();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('touchstart', onTouchStart, { passive: false });
+            window.addEventListener('touchmove', onTouchMove, { passive: false });
+            window.addEventListener('touchend', onTouchEnd, { passive: false });
+
+            window.addEventListener('mousedown', (e) => onTouchStart({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }));
+            window.addEventListener('mousemove', (e) => { if (isTouching) onTouchMove({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }); });
+            window.addEventListener('mouseup', (e) => onTouchEnd({ changedTouches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }));
+
+            const testContainer = document.getElementById('action-cam-container');
+            if (testContainer) {
+                console.log("SUCCESS: Action Cam Container found in DOM.");
+                testContainer.style.border = "5px solid yellow"; // Temporary visible check
+            } else {
+                console.error("ERROR: Action Cam Container NOT found in DOM!");
+            }
+
+            resetGame();
+
+            animate();
+        }
+
+        function toggleActionCamSize(event) {
+            if (event) event.stopPropagation();
+            playGameSound('ui_click');
+
+            const container = document.getElementById('action-cam-container');
+
+            // Toggle class
+            container.classList.toggle('enlarged');
+
+            // Force a UI refresh for the renderer
+            setTimeout(() => {
+                if (actionRenderer && actionCamera) {
+                    const w = container.clientWidth;
+                    const h = container.clientHeight;
+                    actionRenderer.setSize(w, h);
+                    actionCamera.aspect = w / h;
+                    actionCamera.updateProjectionMatrix();
+                    console.log("Resized Action Cam to: " + w + "x" + h);
+                }
+            }, 50);
+        }
+
+        function startReplay() {
+            if (replayData.length === 0) return;
+            playGameSound('ui_click');
+            isReplaying = true;
+            replayFrameIndex = 0;
+            document.getElementById('msg-box').style.display = 'none';
+        }
+
+        function stopReplay() {
+            isReplaying = false;
+            // Bring the result box back once the replay finishes
+            document.getElementById('msg-box').style.display = 'block';
+            document.getElementById('watch-replay-btn').style.display = 'block';
+            console.log("Replay Finished.");
+        }
+
+        function toggleMenu() {
+            playGameSound('ui_click');
+            const menu = document.getElementById('volume-menu');
+            isMenuOpen = (menu.style.display === 'none' || menu.style.display === '');
+            menu.style.display = isMenuOpen ? 'flex' : 'none';
+        }
+
+        function updateVolume(value) {
+            const percent = Math.round(value * 100);
+            document.getElementById('vol-percent').innerText = percent + "%";
+
+            // Update the Three.js Master Volume
+            if (audioListener) {
+                audioListener.setMasterVolume(value * 2);
+            }
+        }
+
+        function triggerDimmer(show) {
+            const dimmer = document.getElementById('screen-dimmer');
+            if (!dimmer) return;
+
+            if (show) {
+                dimmer.classList.add('dimmed');
+                debugDimmer("Triggering ON");
+            } else {
+                dimmer.classList.remove('dimmed');
+                debugDimmer("Triggering OFF (Reset)");
+            }
+        }
+
+        function updateActionCam() {
+            if (!isBowling) {
+                document.getElementById('action-cam-container').style.display = 'none';
+                actionTargetPin = null;
+                return;
+            }
+
+            document.getElementById('action-cam-container').style.display = 'block';
+            const currentTime = performance.now();
+
+            // 1. PRE-IMPACT: Follow the ball
+            if (!impactOccurred) {
+                const ballPos = ballMesh.position;
+                actionCamera.position.lerp(new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3), 0.1);
+                actionCamera.lookAt(ballPos.x, 0.4, ballPos.z - 2);
+            }
+            // 2. POST-IMPACT: Follow the pins
+            else {
+                let bestPin = null;
+                let highestPriority = -1;
+
+                pins.forEach(p => {
+                    const v = p.body.velocity.length();
+                    const isOnLane = p.body.position.y > -1.0;
+
+                    // Only look at pins moving faster than a slow roll (v > 1.5)
+                    if (isOnLane && v > 1.0) {
+                        // Calculate distance from the center point (0, 0, -22)
+                        const distFromCenter = Math.sqrt(
+                            Math.pow(p.body.position.x, 2) +
+                            Math.pow(p.body.position.z - DECK_CENTER_Z, 2)
+                        );
+
+                        // PRIORITY FORMULA: Velocity / (Distance + 1)
+                        // Pins at the center (dist 0) keep full velocity.
+                        // Pins far away have their velocity effectively reduced.
+                        const priority = v / (distFromCenter + 1);
+
+                        if (priority > highestPriority) {
+                            highestPriority = priority;
+                            bestPin = p;
+                        }
+                    }
+                });
+
+                // Check if current target fell into void
+                const currentTargetInVoid = actionTargetPin && actionTargetPin.body.position.y < -1.0;
+
+                // Switch if: no target, target fell, or cooldown passed and we have a new best priority
+                if (!actionTargetPin || currentTargetInVoid || (currentTime - lastTargetSwitchTime > SWITCH_COOLDOWN)) {
+                    if (bestPin && bestPin !== actionTargetPin) {
+                        actionTargetPin = bestPin;
+                        lastTargetSwitchTime = currentTime;
+                    }
+                }
+
+                if (actionTargetPin) {
+                    const targetCamPos = new THREE.Vector3(
+                        actionTargetPin.mesh.position.x + 1.8,
+                        1.3,
+                        actionTargetPin.mesh.position.z + 2.5
+                    );
+                    actionCamera.position.lerp(targetCamPos, 0.04);
+                    actionCamera.lookAt(actionTargetPin.mesh.position);
+                }
+            }
+
+            actionRenderer.render(scene, actionCamera);
+        }
+
+        function resetAllGameSounds() {
+            // 1. Stop the looping rolling sound
+            if (ballPathSound && ballPathSound.isPlaying) {
+                ballPathSound.stop();
+            }
+
+            // 2. Stop the pin hit sound (if it's currently playing from a late hit)
+            if (pinKnockSound && pinKnockSound.isPlaying) {
+                pinKnockSound.stop();
+            }
+
+            // 3. Optional: Reset the master volume to the slider value 
+            // (In case any fade-outs occurred)
+            const vol = document.getElementById('volume-slider').value;
+            if (audioListener) {
+                audioListener.setMasterVolume(vol * 2);
+            }
+        }
+
+        function createStreetEnvironment() {
+            const laneGeo = new THREE.BoxGeometry(4.5, 0.2, 100);
+            const laneMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.95, metalness: 0.05 });
+            const laneMesh = new THREE.Mesh(laneGeo, laneMat);
+            laneMesh.position.set(0, 0, -35);
+            laneMesh.receiveShadow = true;
+            scene.add(laneMesh);
+
+            const wallGeo = new THREE.BoxGeometry(1.2, 18, 100);
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, transparent: true, opacity: 1 });
+
+            const wallDist = 3.6; // Wall Distance from center 3.6 default (2.8 NO Gutter), slightly wider for better visuals
+
+            leftWallMesh = new THREE.Mesh(wallGeo, wallMat);
+            leftWallMesh.position.set(-wallDist, 9, -35); // was -4.8
+            scene.add(leftWallMesh);
+
+            rightWallMesh = new THREE.Mesh(wallGeo, wallMat.clone());
+            rightWallMesh.position.set(wallDist, 9, -35); // was 4.8
+            scene.add(rightWallMesh);
+
+            const groundShape = new CANNON.Box(new CANNON.Vec3(2.25, 0.1, 50));
+            const groundBody = new CANNON.Body({ mass: 0, material: groundMat });
+            groundBody.addShape(groundShape);
+            groundBody.position.set(0, 0, -35);
+            world.addBody(groundBody);
+
+            const physicsWallShape = new CANNON.Box(new CANNON.Vec3(0.6, 9, 50));
+
+            const leftWallBody = new CANNON.Body({ mass: 0, material: groundMat });
+            leftWallBody.addShape(physicsWallShape);
+            leftWallBody.position.set(-wallDist, 9, -35); // was -4.8
+            world.addBody(leftWallBody);
+
+            const rightWallBody = new CANNON.Body({ mass: 0, material: groundMat });
+            rightWallBody.addShape(physicsWallShape);
+            rightWallBody.position.set(wallDist, 9, -35);
+            world.addBody(rightWallBody);
+        }
+
+        function createBall() {
+            ballMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(BALL_RADIUS, 32, 32),
+                new THREE.MeshPhongMaterial({ color: 0x00eeff, shininess: 250, emissive: 0x003366 })
+            );
+            ballMesh.castShadow = true;
+            scene.add(ballMesh);
+
+            const ballShape = new CANNON.Sphere(BALL_RADIUS);
+            // Start with mass 0 to keep it in place
+            ballBody = new CANNON.Body({ mass: 0, shape: ballShape, material: ballMat });
+
+            ballBody.type = CANNON.Body.STATIC;
+            ballBody.mass = 0;
+
+            ballBody.updateMassProperties();
+            ballBody.linearDamping = 0.1;
+            ballBody.angularDamping = 0.1;
+
+            // Explicitly set the position
+            const startPos = new CANNON.Vec3(0, LANE_Y + BALL_RADIUS + 0.05, 6);
+            ballBody.position.copy(startPos);
+            world.addBody(ballBody);
+
+            // Sync mesh immediately
+            ballMesh.position.copy(ballBody.position);
+        }
+
+        function createPinGeometry() {
+            const points = [];
+            points.push(new THREE.Vector2(0, -0.4));
+            points.push(new THREE.Vector2(0.12, -0.4));
+            points.push(new THREE.Vector2(0.16, -0.25));
+            points.push(new THREE.Vector2(0.15, -0.15));
+            points.push(new THREE.Vector2(0.08, 0.08));
+            points.push(new THREE.Vector2(0.06, 0.22));
+            points.push(new THREE.Vector2(0.09, 0.32));
+            points.push(new THREE.Vector2(0.07, 0.38));
+            points.push(new THREE.Vector2(0, 0.4));
+            return new THREE.LatheGeometry(points, 24);
+        }
+
+        function createPins() {
+            const pinGeo = createPinGeometry();
+            const pinMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 200 });
+            const stripeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const stripeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 16);
+
+            const SCORE_RADIUS = 0.22;
+            const circleGeo = new THREE.RingGeometry(SCORE_RADIUS - 0.05, SCORE_RADIUS, 32);
+
+            const circleMat = new THREE.MeshBasicMaterial({
+                color: 0xe74c3c, // Initial Red color
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.5
+            });
+
+            const spacing = 0.65;
+            const rows = 4;
+            const startZ = -22;
+
+            for (let r = 0; r < rows; r++) {
+                for (let i = 0; i <= r; i++) {
+                    const x = (i - r * 0.5) * spacing;
+                    const z = startZ - (r * spacing);
+
+                    // Ring on the floor
+                    const circleMaterialInstance = circleMat.clone();
+                    const circle = new THREE.Mesh(circleGeo, circleMaterialInstance);
+                    circle.rotation.x = -Math.PI / 2;
+                    circle.position.set(x, LANE_Y + 0.01, z);
+                    scene.add(circle);
+                    pinCircles.push(circle);
+
+                    // --- GLOW SPRITE CODE REMOVED FROM HERE ---
+
+                    // Visual Pin Group
+                    const group = new THREE.Group();
+                    const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
+                    pMesh.castShadow = true;
+                    group.add(pMesh);
+
+                    const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+                    stripe.position.set(0, 0.16, 0);
+                    group.add(stripe);
+
+                    scene.add(group);
+
+                    // Physics Body
+                    const pBody = new CANNON.Body({
+                        mass: 2.5,
+                        material: pinMat
+                    });
+
+                    const qCyl = new CANNON.Quaternion();
+                    qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+
+                    pBody.addShape(new CANNON.Cylinder(0.12, 0.12, 0.1, 12), new CANNON.Vec3(0, -0.35, 0), qCyl);
+                    pBody.addShape(new CANNON.Sphere(0.16), new CANNON.Vec3(0, -0.18, 0));
+                    pBody.addShape(new CANNON.Cylinder(0.08, 0.13, 0.3, 12), new CANNON.Vec3(0, 0.05, 0), qCyl);
+                    pBody.addShape(new CANNON.Sphere(0.09), new CANNON.Vec3(0, 0.31, 0));
+
+                    pBody.linearDamping = 0.2;
+                    pBody.angularDamping = 0.3;
+                    pBody.type = CANNON.Body.KINEMATIC;
+                    pBody.position.set(x, LANE_Y + (PIN_HEIGHT / 2), z);
+
+                    pBody.addEventListener('collide', (e) => {
+                        if (pBody.type === CANNON.Body.KINEMATIC) {
+                            pBody.type = CANNON.Body.DYNAMIC;
+                            pBody.updateMassProperties();
+
+                            if (pinKnockSound && pinKnockSound.buffer) {
+                                if (pinKnockSound.isPlaying) pinKnockSound.stop();
+                                pinKnockSound.play();
+                            }
+
+                            const forceDir = pBody.position.vsub(e.contact.bi.position);
+                            forceDir.normalize();
+                            pBody.applyImpulse(forceDir.scale(2), pBody.position);
+                            pBody.velocity.y += 1.2;
+
+                            spawnImpact(pBody.position, 0xffffff, 8);
+
+                            if (!impactOccurred) {
+                                impactOccurred = true;
+                                isCinematicMode = true;
+                                timeScale = 0.15;
+                                cinematicTargetPin = pBody;
+
+                                setTimeout(() => {
+                                    timeScale = 1.0;
+                                    isCinematicMode = false;
+                                }, 3000);
+
+                                clearTimeout(resetTimer);
+                                resetTimer = setTimeout(checkPins, 3500);
+                            }
+                        }
+                    });
+
+                    world.addBody(pBody);
+                    pins.push({ mesh: group, body: pBody, initialPos: { x: x, z: z } });
+                }
+            }
+        }
+
+        function initLightTrail() {
+            const geometry = new THREE.PlaneGeometry(1, 1, 1, TRAIL_MAX_POINTS - 1);
+            const material = new THREE.MeshBasicMaterial({
+                color: 0x00ccff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
+            });
+            trailMesh = new THREE.Mesh(geometry, material);
+            trailMesh.frustumCulled = false;
+            trailMesh.visible = false;
+            scene.add(trailMesh);
+        }
+
+        function updateLightTrail() {
+            if (!isBowling) {
+                trailMesh.visible = false;
+                trailHistory = [];
+                return;
+            }
+            trailMesh.visible = true;
+            trailHistory.push({ x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z });
+
+            if (trailHistory.length > TRAIL_MAX_POINTS) trailHistory.shift();
+            const posAttr = trailMesh.geometry.attributes.position;
+            const baseWidth = 0.12;
+            for (let i = 0; i < TRAIL_MAX_POINTS; i++) {
+                const pointIndex = Math.min(i, trailHistory.length - 1);
+                const point = trailHistory[pointIndex] || { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z };
+                const taper = (i / TRAIL_MAX_POINTS);
+                const currentWidth = baseWidth * taper;
+                const trailY = point.y - BALL_RADIUS + 0.02;
+                posAttr.setXYZ(i * 2, point.x - currentWidth / 2, trailY, point.z);
+                posAttr.setXYZ(i * 2 + 1, point.x + currentWidth / 2, trailY, point.z);
+            }
+            posAttr.needsUpdate = true;
+        }
+
+        function spawnImpact(pos, color, count, scale = 1.0) {
+            for (let i = 0; i < count; i++) {
+                // Use the scale parameter to make particles bigger for a strike
+                const part = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.04 * scale, 4, 4),
+                    new THREE.MeshBasicMaterial({ color: color, transparent: true })
+                );
+                part.position.set(pos.x, pos.y, pos.z);
+
+                // Increase velocity for a bigger explosion
+                const vx = (Math.random() - 0.5) * 0.1 * scale;
+                const vy = Math.random() * 0.3 * scale;
+                const vz = (Math.random() - 0.5) * 0.1 * scale;
+
+                scene.add(part);
+                impactParticles.push({ mesh: part, vel: new THREE.Vector3(vx, vy, vz), life: 1.0 });
+            }
+        }
+
+        function updateImpacts() {
+            for (let i = impactParticles.length - 1; i >= 0; i--) {
+                const p = impactParticles[i];
+                p.mesh.position.add(p.vel);
+                p.vel.y -= 0.01; p.life -= 0.03;
+                p.mesh.scale.setScalar(p.life);
+                p.mesh.material.opacity = p.life;
+                if (p.life <= 0) { scene.remove(p.mesh); impactParticles.splice(i, 1); }
+            }
+        }
+
+        function onTouchStart(e) {
+            if (isBowling) return;
+            e.preventDefault();
+            isTouching = true;
+
+            touchPathPoints = [];
+            touchPathLine.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+
+            document.getElementById('hint').style.opacity = '0';
+            const t = (e.touches && e.touches[0]) || e;
+            touchStartPos.x = t.clientX;
+            touchStartPos.y = t.clientY;
+
+            lastTouchX = t.clientX;
+
+            touchStartTime = Date.now();
+            ballMesh.material.emissive.setHex(0x00ffff);
+        }
+
+        function onTouchMove(e) {
+            if (isBowling || !isTouching) return;
+            const t = (e.touches && e.touches[0]) || e;
+
+            // --- Existing Ball Movement Logic ---
+            const deltaX_Movement = (t.clientX - lastTouchX) * 0.015;
+            ballBody.position.x = Math.max(-1.5, Math.min(1.5, ballBody.position.x + deltaX_Movement));
+            lastTouchX = t.clientX;
+            // ------------------------------------
+
+            // Convert Screen Touch to 3D World Position for the "Ink"
+            let vector = new THREE.Vector3(
+                (t.clientX / window.innerWidth) * 2 - 1,
+                -(t.clientY / window.innerHeight) * 2 + 1,
+                0.5
+            );
+            vector.unproject(camera);
+            let dir = vector.sub(camera.position).normalize();
+            let distance = -(camera.position.y - 0.15) / dir.y;
+            let pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+            const MAX_PATH_POINTS = 100;
+
+            touchPathLine.geometry.setFromPoints(touchPathPoints);
+            touchPathLine2.geometry.setFromPoints(touchPathPoints);
+            touchPathLine3.geometry.setFromPoints(touchPathPoints);
+
+            // Add the new point to our path array
+            touchPathPoints.push(pos);
+
+            // Keep the trail from getting too long
+            if (touchPathPoints.length > MAX_PATH_POINTS) {
+                touchPathPoints.shift();
+            }
+
+            // Update the geometry to show the line
+            touchPathLine.geometry.setFromPoints(touchPathPoints);
+            if (outerGlowLine) outerGlowLine.geometry.setFromPoints(touchPathPoints);
+        }
+
+        function onTouchEnd(e) {
+            if (isBowling || !isTouching) return;
+            e.preventDefault();
+            isTouching = false;
+
+            const t = (e.changedTouches && e.changedTouches[0]) || e;
+
+            // Calculate horizontal (X) and vertical (Y) distances
+            const deltaX = t.clientX - touchStartPos.x;
+            const deltaY = touchStartPos.y - t.clientY;
+            const duration = Date.now() - touchStartTime;
+
+            ballMesh.material.emissive.setHex(0x003366);
+
+            // Minimum flick distance to trigger a throw
+            if (deltaY > 20) {
+                // Calculate forward speed (clamped between 25 and 65)
+                let speedScale = (deltaY / Math.max(duration, 5)) * 25;
+                let forwardSpeed = Math.max(25, Math.min(speedScale, 65));
+
+                // Calculate horizontal aim (sideways speed)
+                // Sensitivity (0.05) can be adjusted to make aiming wider or narrower
+                let sideSpeed = deltaX * 0.05;
+
+                randomHookForce = (Math.random() - 0.5) * 5;
+
+                // Pass both speeds to the throw function
+                throwBall(forwardSpeed, sideSpeed);
+            } else {
+                document.getElementById('hint').style.opacity = '1';
+            }
+
+            touchPathPoints = [];
+            touchPathLine.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+        }
+
+        function throwBall(speed, sideSpeed = 0) {
+            isBowling = true;
+            document.getElementById('hint').style.opacity = '0';
+
+            ballBody.mass = 500;
+            ballBody.type = CANNON.Body.DYNAMIC;
+            ballBody.updateMassProperties();
+
+            // Apply the velocity: [X = Side Aim, Y = 0, Z = Forward Power]
+            ballBody.velocity.set(sideSpeed, 0, -speed * 0.9);
+
+            // Keep your rotation/hook logic
+            ballBody.angularVelocity.set(speed * 0.8, randomHookForce * 2, (Math.random() - 0.5) * 15);
+
+            resetTimer = setTimeout(checkPins, 4000);
+            playGameSound('rolling');
+        }
+
+        function checkPins() {
+            let fallen = 0;
+            const SCORE_RADIUS = 0.22;
+
+            // 1. Calculate how many pins have fallen
+            pins.forEach((p, index) => {
+                const dx = p.body.position.x - p.initialPos.x;
+                const dz = p.body.position.z - p.initialPos.z;
+                const distance = Math.sqrt(dx * dx + dz * dz);
+
+                const up = new CANNON.Vec3(0, 1, 0);
+                const pinUp = p.body.quaternion.vmult(up);
+                const angle = Math.acos(up.dot(pinUp));
+
+                // Logic for "Invalid" pin (Fallen or moved)
+                if (distance > SCORE_RADIUS || angle > 0.78 || p.body.position.y < -0.5) {
+                    fallen++;
+                    // Turn circle GREEN if the pin is invalid
+                    if (pinCircles[index]) pinCircles[index].material.color.setHex(0x2ecc71);
+                } else {
+                    // Keep circle RED if the pin is still valid
+                    if (pinCircles[index]) pinCircles[index].material.color.setHex(0xe74c3c);
+                }
+            });
+
+            playGameSound('stop_rolling');
+
+            currentFallenPins = fallen;
+            document.getElementById('score-text').innerText = `Pins: ${fallen}`;
+
+            let scoreToRecord = fallen;
+            const lastIndex = matchHistory.length - 1;
+            if (fallen === 10) {
+                let consecutiveStrikes = 1;
+                for (let i = lastIndex; i >= 0; i--) {
+                    if (matchHistory[i] >= 10) consecutiveStrikes++;
+                    else break;
+                }
+                scoreToRecord = 10 * consecutiveStrikes;
+            }
+            matchHistory.push(scoreToRecord);
+            updateScoreTable();
+
+            // 2. Handle Strike Special Effects
+            if (fallen === 10) {
+                // Physics Blast: Push all pins away from the center for impact
+                pins.forEach(p => {
+                    const blastForce = 15;
+                    const direction = p.body.position.clone().vsub(new CANNON.Vec3(0, 0, -22));
+                    direction.normalize();
+                    p.body.applyImpulse(direction.scale(blastForce), p.body.position);
+                });
+
+                // Trigger UI Popup
+                const strikePopup = document.getElementById('strike-popup');
+                const dimmer = document.getElementById('screen-dimmer');
+
+                strikePopup.classList.add('show');
+                setTimeout(() => {
+                    strikePopup.classList.remove('show');
+                    triggerDimmer(false);
+                }, 2000);
+
+
+                triggerDimmer(true);
+                playGameSound('strike');
+
+                // Massive Particle Blast (using the scale parameter)
+                spawnImpact(new CANNON.Vec3(0, 1, -22), 0xf1c40f, 60, 4.0);
+
+            }
+
+            // 3. Show Result Message Box
+            const msgBox = document.getElementById('msg-box');
+            const replayBtn = document.getElementById('watch-replay-btn'); // New reference
+            const title = document.getElementById('msg-title');
+            const body = document.getElementById('msg-body');
+            const btn = document.getElementById('action-btn');
+
+            msgBox.style.display = 'block';
+            replayBtn.style.display = 'block'; // Show the bottom button
+
+            if (matchHistory.length >= MAX_MATCHES) {
+                title.innerText = "FINAL SCORE";
+                let total = matchHistory.reduce((a, b) => a + b, 0) + fallen;
+                body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
+                btn.innerText = "RESTART GAME";
+            } else {
+                title.innerText = (fallen === 10) ? "STRIKE!" : "RESULT";
+                body.innerText = `${fallen} pins cleared.`;
+                btn.innerText = "NEXT FRAME";
+            }
+
+        }
+
+        function debugDimmer(action) {
+            const dimmer = document.getElementById('screen-dimmer');
+            if (!dimmer) {
+                console.error("DEBUG: Dimmer element NOT found in DOM!");
+                return;
+            }
+
+            const isVisible = dimmer.classList.contains('dimmed');
+            const opacity = window.getComputedStyle(dimmer).opacity;
+
+            console.log(`%c [DIMMER DEBUG] Action: ${action} | Active: ${isVisible} | Opacity: ${opacity}`,
+                "color: #00ff00; font-weight: bold; background: #222;");
+        }
+
+        function handleMatchEnd() {
+            if (matchHistory.length >= MAX_MATCHES) {
+                fullReset();
+            } else {
+                recordAndReset();
+            }
+        }
+
+        function recordAndReset() {
+            resetGame();
+        }
+
+
+
+        function fullReset() {
+            matchHistory = [];
+            updateScoreTable();
+            resetGame();
+        }
+
+        function updateScoreTable() {
+            let total = 0;
+            for (let i = 0; i < MAX_MATCHES; i++) {
+                const cell = document.getElementById(`m${i}`);
+                if (matchHistory[i] !== undefined) {
+                    cell.innerText = matchHistory[i];
+                    total += matchHistory[i];
+
+                    // Check if this score is a multiple of 10 (a strike or doubled strike)
+                    if (matchHistory[i] > 0 && matchHistory[i] % 10 === 0) {
+                        const streakCount = matchHistory[i] / 10;
+                        if (streakCount > 1) {
+                            cell.style.color = "#e74c3c";  // red for streak strikes
+                            cell.innerText = `${matchHistory[i]} (${streakCount}x)`;
+                        } else {
+                            cell.style.color = "#f1c40f"; // gold for normal strike
+                            cell.innerText = `${matchHistory[i]}`;
+                        }
+                    } else {
+                        cell.style.color = "white";  // normal color for other scores
+                    }
+                } else {
+                    cell.innerText = "-";
+                    cell.style.color = "white";
+                }
+            }
+            document.getElementById('total-score').innerText = total;
+        }
+
+
+
+        function resetGame() {
+            // 1. Reset Game State Flags
+            isBowling = false;
+            randomHookForce = 0;
+            currentFallenPins = 0;
+            impactOccurred = false;
+            isCinematicMode = false;
+            cinematicTargetPin = null;
+            timeScale = 1.0;
+
+            replayData = [];
+            isReplaying = false;
+
+            actionTargetPin = null;
+            lastTargetSwitchTime = 0;
+            impactOccurred = false;
+
+            // 2. Reset Camera to Starting Position
+            camera.position.set(0, 4, 12);
+            camera.lookAt(0, 1, -5);
+
+            // 3. Clear Timers and UI
+            if (resetTimer) clearTimeout(resetTimer);
+            resetTimer = null;
+
+            console.log("DEBUG: Resetting Game State...");
+            triggerDimmer(false); // Force off
+
+            // Ensure the Strike Popup is also cleared
+            const strikePopup = document.getElementById('strike-popup');
+            if (strikePopup) strikePopup.classList.remove('show');
+
+            document.getElementById('score-text').innerText = `Pins: 0`;
+            document.getElementById('msg-box').style.display = 'none';
+            document.getElementById('hint').style.opacity = '1';
+
+            // 4. Reset Ball Physics & Visuals
+            // We set to STATIC so it doesn't move while the user is positioning it
+            ballBody.type = CANNON.Body.STATIC;
+            ballBody.mass = 0;
+            ballBody.updateMassProperties();
+
+            // Wipe all latent forces and velocities
+            ballBody.velocity.set(0, 0, 0);
+            ballBody.angularVelocity.set(0, 0, 0);
+            ballBody.force.set(0, 0, 0);
+            ballBody.torque.set(0, 0, 0);
+
+            // Set Starting Position (slightly above lane to prevent floor clipping)
+            ballBody.position.set(0, LANE_Y + BALL_RADIUS + 0.05, 5);
+            ballBody.quaternion.set(0, 0, 0, 1);
+
+            // Immediate Visual Sync
+            ballMesh.position.copy(ballBody.position);
+            ballMesh.quaternion.copy(ballBody.quaternion);
+
+            document.getElementById('watch-replay-btn').style.display = 'none';
+
+            // 5. Reset FX
+            trailHistory = [];
+            if (trailMesh) trailMesh.visible = false;
+
+            pinCircles.forEach(circle => {
+                circle.material.color.setHex(0xe74c3c);
+            });
+
+            // 6. Reset All Pins to Initial Formation
+            pins.forEach((p, index) => {
+                const spacing = 0.65;
+                const rows = 4;
+                const startZ = -22;
+                let count = 0;
+
+                // Loop through the formation logic to find the original X/Z for this pin index
+                for (let r = 0; r < rows; r++) {
+                    for (let i = 0; i <= r; i++) {
+                        if (count === index) {
+                            const x = (i - r * 0.5) * spacing;
+                            const z = startZ - (r * spacing);
+
+                            // Reset Physics Body
+                            p.body.type = CANNON.Body.KINEMATIC;
+                            p.body.mass = 2.5;
+                            p.body.updateMassProperties();
+
+                            p.body.position.set(x, LANE_Y + (PIN_HEIGHT / 2) + 0.05, z);
+                            p.body.velocity.set(0, 0, 0);
+                            p.body.angularVelocity.set(0, 0, 0);
+                            p.body.quaternion.set(0, 0, 0, 1);
+
+                            // Immediate Mesh Sync
+                            p.mesh.position.copy(p.body.position);
+                            p.mesh.quaternion.copy(p.body.quaternion);
+                        }
+                        count++;
+                    }
+                }
+            });
+
+            playGameSound('stop_rolling');
+            resetAllGameSounds();
+
+            // 7. Re-enable Walls and Reset Circles
+            if (leftWallMesh) leftWallMesh.visible = true;
+            if (rightWallMesh) rightWallMesh.visible = true;
+
+            pinCircles.forEach(circle => {
+                circle.material.color.setHex(0xe74c3c); // Reset all to red
+            });
+
+            document.getElementById('action-cam-container').style.display = 'none';
+            isActionCamActive = false;
+        }
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playGameSound(type) {
+            // Ensure AudioContext is active (browsers block auto-play)
+            if (THREE.AudioContext.getContext().state === 'suspended') {
+                THREE.AudioContext.getContext().resume();
+            }
+
+            if (type === 'collision' && pinKnockSound && pinKnockSound.buffer) {
+                if (pinKnockSound.isPlaying) pinKnockSound.stop();
+                pinKnockSound.play();
+            }
+
+            if (type === 'rolling') {
+                if (ballPathSound && ballPathSound.buffer && !ballPathSound.isPlaying) {
+                    ballPathSound.play();
+                }
+            }
+
+            if (type === 'stop_rolling') {
+                if (ballPathSound && ballPathSound.isPlaying) {
+                    ballPathSound.stop();
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 1. Physics Step - Only run physics if NOT replaying
+            if (!isReplaying) {
+                world.step(1 / 60 * (typeof timeScale !== 'undefined' ? timeScale : 1));
+            }
+
+            // 2. Sync Meshes & Recording Logic
+            if (ballMesh && ballBody) {
+                if (!isReplaying) {
+                    // --- NORMAL MODE: Copy physics to meshes ---
+                    ballMesh.position.copy(ballBody.position);
+                    ballMesh.quaternion.copy(ballBody.quaternion);
+
+                    pins.forEach(p => {
+                        if (p.body.position.y < -5.0 && p.body.type !== CANNON.Body.STATIC) {
+                            p.body.velocity.set(0, 0, 0);
+                            p.body.angularVelocity.set(0, 0, 0);
+                            p.body.type = CANNON.Body.STATIC;
+                        }
+                        p.mesh.position.copy(p.body.position);
+                        p.mesh.quaternion.copy(p.body.quaternion);
+                    });
+
+                    // --- RECORDING: Save the frame for Replay ---
+                    if (isBowling && replayData.length < 600) {
+                        replayData.push({
+                            ball: { pos: ballBody.position.clone(), quat: ballBody.quaternion.clone() },
+                            pins: pins.map(p => ({
+                                pos: p.body.position.clone(),
+                                quat: p.body.quaternion.clone()
+                            }))
+                        });
+                    }
+
+                    // --- KEEP YOUR EXISTING AUDIO LOGIC HERE ---
+                    if (isBowling && ballPathSound && ballPathSound.buffer) {
+                        const x = ballBody.position.x;
+                        const y = ballBody.position.y;
+                        const z = ballBody.position.z;
+                        const isOnLane = Math.abs(x) < 2.4;
+                        const isTouchingFloor = y < 0.8 && y > 0.1;
+                        const isBeforeBackDrop = z > -75;
+
+                        if (isOnLane && isTouchingFloor && isBeforeBackDrop) {
+                            if (!ballPathSound.isPlaying) {
+                                if (ballPathSound.context.state === 'suspended') ballPathSound.context.resume();
+                                ballPathSound.play();
+                            }
+                        } else if (ballPathSound.isPlaying) {
+                            ballPathSound.pause();
+                        }
+                    }
+                } else {
+                    // --- REPLAY MODE: Play back recorded positions ---
+                    if (replayFrameIndex < replayData.length) {
+                        const frame = replayData[replayFrameIndex];
+                        ballMesh.position.copy(frame.ball.pos);
+                        ballMesh.quaternion.copy(frame.ball.quat);
+                        pins.forEach((p, i) => {
+                            p.mesh.position.copy(frame.pins[i].pos);
+                            p.mesh.quaternion.copy(frame.pins[i].quat);
+                        });
+                        replayFrameIndex++;
+                    } else {
+                        stopReplay(); // Ends replay and shows result box
+                    }
+                }
+            }
+
+            if (isBowling) {
+                const isPortrait = window.innerHeight > window.innerWidth;
+                const pinAreaZ = -22; // The center of the pins
+
+                let desiredPosition = new THREE.Vector3();
+                let desiredLookAt = new THREE.Vector3();
+
+                if (isCinematicMode) {
+                    // STATE: Cinematic Impact View
+                    desiredPosition.set(0, isPortrait ? 5.5 : 3.5, pinAreaZ + (isPortrait ? 9 : 6));
+                    desiredLookAt.set(0, 0.5, pinAreaZ);
+                }
+                else if (impactOccurred) {
+                    // STATE: Post-Impact result view
+                    desiredPosition.set(0, 4, -14);
+                    desiredLookAt.set(0, 1, -24);
+                }
+                else {
+                    // STATE: Following the ball
+                    const targetZ = Math.max(ballBody.position.z + 8, -12);
+                    const targetX = Math.max(-3, Math.min(3, ballBody.position.x * 0.7));
+
+                    desiredPosition.set(targetX, 4, targetZ);
+                    // Look slightly ahead of the ball
+                    desiredLookAt.set(ballBody.position.x * 0.4, 1.2, ballBody.position.z - 6);
+                }
+
+                // Apply Smooth Transitions
+                // 0.05 is the "smoothness" - lower is slower/smoother, higher is snappier
+                camera.position.lerp(desiredPosition, 0.05);
+                cameraLookAtTarget.lerp(desiredLookAt, 0.05);
+                camera.lookAt(cameraLookAtTarget);
+            }
+
+            // Keep the pulsing circles and visual updates
+            const time = performance.now() / 1000;
+            pinCircles.forEach(circle => {
+                circle.scale.setScalar(1 + Math.sin(time * 2) * 0.15);
+                circle.material.opacity = (0.4 + (Math.sin(time * 3) + 1) / 2 * 0.6) * 0.5 + 0.3;
+            });
+
+            if (typeof updateActionCam === 'function') updateActionCam();
+            updateLightTrail();
+            updateImpacts();
+            renderer.render(scene, camera);
+        }
+
+        function playGameSound(id) {
+            const sound = gameSounds[id];
+            if (sound && !sound.isPlaying) {
+                sound.play();
+            }
+        }
+
+        function pauseGameSound(id) {
+            const sound = gameSounds[id];
+            if (sound && sound.isPlaying) {
+                sound.pause();
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+
+</html>
