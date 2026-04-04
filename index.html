@@ -1377,6 +1377,17 @@
             replayData = [];
             isReplaying = false;
 
+            touchPathPoints = [];
+            const clearPoint = [new THREE.Vector3(0, 0, 0)];
+            // 3. Force the BufferGeometry to reset and update
+            [touchPathLine, touchPathLine2, touchPathLine3, outerGlowLine].forEach(line => {
+                if (line && line.geometry) {
+                    line.geometry.setFromPoints(clearPoint);
+                    // Important: Tell the GPU the attributes have changed
+                    line.geometry.attributes.position.needsUpdate = true;
+                }
+            });
+
             actionTargetPin = null;
             lastTargetSwitchTime = 0;
             impactOccurred = false;
