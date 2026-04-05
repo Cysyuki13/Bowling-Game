@@ -8,6 +8,7 @@
     <title>Street Bowling 3D</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -340,6 +341,67 @@
             }
         }
 
+        #score-table {
+            pointer-events: auto;
+            border-collapse: separate;
+            border-spacing: 4px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            text-align: center;
+            width: 280px;
+        }
+
+        #score-table th {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 6px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 4px;
+        }
+
+        #score-table td {
+            padding: 8px 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            min-width: 25px;
+            font-weight: bold;
+        }
+
+        #p1-row td:first-child {
+            color: #1e90ff;
+            text-shadow: 0 0 8px rgba(30, 144, 255, 0.5);
+            font-size: 12px;
+        }
+
+        #p2-row td:first-child {
+            color: #ff4757;
+            text-shadow: 0 0 8px rgba(255, 71, 87, 0.5);
+            font-size: 12px;
+        }
+
+        #p1-total,
+        #p2-total {
+            background: rgba(255, 255, 255, 0.15);
+            color: #f1c40f;
+        }
+
+        @media screen and (max-width: 600px) {
+            #score-table {
+                width: 220px;
+                font-size: 11px;
+            }
+
+            #score-table th,
+            #score-table td {
+                padding: 4px 2px;
+            }
+        }
+
         @keyframes strike-thump {
             0% {
                 transform: translate(-50%, -50%) scale(0);
@@ -366,6 +428,126 @@
                 text-shadow: 0 0 20px #fff, 0 0 40px #e67e22;
             }
         }
+
+        #matchmaking-modal-blocker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 4999;
+            pointer-events: auto;
+            display: none;
+        }
+
+        #matchmaking-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 15, 25, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            border: 2px solid #e67e22;
+            text-align: center;
+            pointer-events: auto;
+            display: none;
+            z-index: 5000;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+            width: 280px;
+            max-width: 90vw;
+        }
+
+        #matchmaking-panel h2 {
+            color: #f39c12;
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+
+        #matchmaking-panel p {
+            color: #ccc;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+
+        .matchmaking-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        #find-match-btn,
+        #solo-play-btn,
+        #cancel-search-btn {
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        #find-match-btn {
+            background: #e67e22;
+            color: white;
+        }
+
+        #find-match-btn:hover:not(:disabled) {
+            background: #d35400;
+            transform: scale(1.05);
+        }
+
+        #find-match-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        #solo-play-btn {
+            background: rgba(100, 100, 150, 0.5);
+            color: white;
+            border: 1px solid #8888ff;
+        }
+
+        #solo-play-btn:hover {
+            background: rgba(100, 100, 150, 0.7);
+        }
+
+        #cancel-search-btn {
+            background: rgba(200, 100, 100, 0.5);
+            color: white;
+            border: 1px solid #ff8888;
+        }
+
+        #cancel-search-btn:hover {
+            background: rgba(200, 100, 100, 0.7);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(230, 126, 34, 0.3);
+            border-radius: 50%;
+            border-top-color: #e67e22;
+            animation: spin 1s linear infinite;
+            margin: 10px 0;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        #matchmaking-status {
+            min-height: 20px;
+            color: #f39c12;
+            font-weight: bold;
+        }
     </style>
 </head>
 
@@ -386,18 +568,13 @@
             <button class="menu-icon-btn" onclick="toggleSettingsMenu()">⚙️</button>
             <div id="settings-menu" class="settings-popup">
                 <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e67e22;">SETTINGS</h3>
-
                 <label>VOLUME</label>
                 <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5"
                     oninput="updateVolume(this.value)">
                 <div id="vol-percent">50%</div>
-
                 <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
-
                 <label>GAME MODE</label>
-                <button id="mode-toggle-btn" class="settings-btn" onclick="toggleGameMode()">
-                    10 PINS
-                </button>
+                <button id="mode-toggle-btn" class="settings-btn" onclick="toggleGameMode()">10 PINS</button>
             </div>
         </div>
 
@@ -406,50 +583,76 @@
                 <div id="score-text" style="font-size: 20px; font-weight: bold; color: #f39c12; margin-bottom: 8px;">
                     Pins: 0
                 </div>
-                <table class="history-table" id="history-table">
+                <table id="score-table">
                     <thead>
                         <tr>
-                            <th>M1</th>
-                            <th>M2</th>
-                            <th>M3</th>
-                            <th>M4</th>
-                            <th>M5</th>
-                            <th class="total-col">TOT</th>
+                            <th>Player</th>
+                            <th>1</th>
+                            <th>2</th>
+                            <th>3</th>
+                            <th>4</th>
+                            <th>5</th>
+                            <th>Total</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td id="m0">-</td>
-                            <td id="m1">-</td>
-                            <td id="m2">-</td>
-                            <td id="m3">-</td>
-                            <td id="m4">-</td>
-                            <td id="total-score" class="total-col">0</td>
+                    <tbody id="score-body">
+                        <tr id="p1-row">
+                            <td>P1 (Blue)</td>
+                            <td id="p1-m0">-</td>
+                            <td id="p1-m1">-</td>
+                            <td id="p1-m2">-</td>
+                            <td id="p1-m3">-</td>
+                            <td id="p1-m4">-</td>
+                            <td id="p1-total" class="total">0</td>
+                        </tr>
+                        <tr id="p2-row" style="display: none;">
+                            <td>P2 (Red)</td>
+                            <td id="p2-m0">-</td>
+                            <td id="p2-m1">-</td>
+                            <td id="p2-m2">-</td>
+                            <td id="p2-m3">-</td>
+                            <td id="p2-m4">-</td>
+                            <td id="p2-total" class="total">0</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <div class="instructions" id="hint">
-            Drag to Position &bull; Flick UP to Launch
-        </div>
-
+        <div class="instructions" id="hint">Drag to Position &bull; Flick UP to Launch</div>
         <div id="strike-popup">STRIKE!</div>
-
         <div id="msg-box" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
             <h1 id="msg-title">STRIKE!</h1>
             <p id="msg-body">Explosive hit!</p>
             <button id="action-btn" class="btn" onclick="handleMatchEnd()">NEXT FRAME</button>
         </div>
-
+        <div id="mode-switch-modal" style="display:none; position:absolute; top:35%; left:50%; transform:translate(-50%, -50%); width:320px; padding:24px; background:rgba(15,15,25,0.97); border:2px solid #e67e22; border-radius:20px; z-index:5100; box-shadow:0 0 40px rgba(0,0,0,0.75); text-align:center;">
+            <h2 id="mode-switch-title" style="margin:0 0 12px; color:#f1c40f; font-size:20px;">Mode Change Request</h2>
+            <p id="mode-switch-body" style="margin:0 0 18px; color:#ddd; font-size:14px; line-height:1.5;"></p>
+            <div id="mode-switch-actions" style="display:flex; justify-content:space-between; gap:10px;">
+                <button id="mode-switch-accept" class="btn" style="flex:1;">ACCEPT</button>
+                <button id="mode-switch-decline" class="btn" style="flex:1; background:#888;">DECLINE</button>
+            </div>
+        </div>
         <button id="watch-replay-btn" class="btn" onclick="startReplay()"
             style="display: none; position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); pointer-events: auto;">
             WATCH REPLAY
         </button>
 
-        <div id="screen-dimmer"></div>
+        <div id="matchmaking-panel">
+            <h2>BOWLING MULTIPLAYER</h2>
+            <p>Play with other players online</p>
+            <div id="matchmaking-status"></div>
+            <div class="matchmaking-buttons">
+                <button id="find-match-btn" onclick="startMatchmaking()">FIND MATCH</button>
+                <button id="solo-play-btn" onclick="startSinglePlayer()">SINGLE PLAYER</button>
+            </div>
+            <button id="cancel-search-btn" onclick="cancelMatchmaking()" style="display: none; margin-top: 10px;">CANCEL
+                SEARCH</button>
+        </div>
 
+        <div id="screen-dimmer"></div>
+        <div id="matchmaking-modal-blocker"></div>
     </div>
 
     <script>
@@ -478,7 +681,7 @@
         let lastTouchX = 0;
         let impactParticles = [];
         let trailHistory = [];
-        let trailMesh;
+        // trailMesh moved to global declarations above
         let randomHookForce = 0;
 
         let matchHistory = [];
@@ -506,11 +709,21 @@
         let replayData = [];
         let replayFrameIndex = 0;
 
+        let modeSwitchRequestPending = false;
+        let modeSwitchRequestMode = null;
+        let modeSwitchRequester = null;
+
         let cameraLookAtTarget = new THREE.Vector3(0, 1, 0);
 
-        let touchPathLine, touchPathLine2, touchPathLine3;
-        let outerGlowLine;
+        // Player 1 & 2 Touchpaths (different colors)
+        let touchPathLine_P1, touchPathLine2_P1, touchPathLine3_P1;
+        let outerGlowLine_P1;
+        let touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2;
+        let outerGlowLine_P2;
         let touchPathPoints = [];
+
+        // Player 1 & 2 Trail meshes (different colors)
+        let trailMesh_P1, trailMesh_P2;
 
         const groundMat = new CANNON.Material();
         const ballMat = new CANNON.Material();
@@ -527,6 +740,681 @@
         let currentPinVolume = 0.7;
         let lastPinHitTime = 0;
 
+        // --- MULTIPLAYER VARIABLES ---
+        let isHost = true;  // Default to true for single-player (acts as host/p1)
+        let myPlayerId = 1;
+        let myPlayerOffset = 0;
+        let isMultiplayerActive = false;
+        let conn = null;
+        let peer = null;
+        let opponentBallMesh;
+
+        let playAgainRequested = false;
+        let playAgainOpponentRequested = false;
+        let playAgainCountdownTimer = null;
+        let playAgainCountdownRemaining = 5;
+
+        let isDragging = false;
+        let mouse = new THREE.Vector2();
+        let raycaster = new THREE.Raycaster();
+
+        let scores = {
+            p1: [],
+            p2: []
+        };
+
+        const LOBBY_ID = "street-bowling-shared-lobby-v1";
+
+        // --- MATCHMAKING STATE ---
+        let isSearchingForMatch = false;
+        let matchmakingTimeout = null;
+
+        // --- MULTIPLAYER FUNCTIONS ---
+
+        function findRandomMatch() {
+            console.log("DEBUG: searching for match...");
+
+            // Make sure peer exists before trying to connect
+            if (!peer) {
+                console.error("ERROR: Peer not initialized");
+                updateMatchmakingStatus('Error: Peer not ready');
+                return;
+            }
+
+            // Attempt to connect to the lobby
+            const connAttempt = peer.connect(LOBBY_ID, {
+                reliable: true,
+                serialization: 'json'
+            });
+
+            const timeout = setTimeout(() => {
+                console.log("DEBUG: No host found. I am now the Host.");
+                updateMatchmakingStatus('Creating room...');
+
+                // Close the failed connection attempt
+                if (connAttempt && connAttempt.close) {
+                    try { connAttempt.close(); } catch (e) { }
+                }
+
+                setTimeout(setupAsHost, 1000);
+            }, 2500);
+
+            matchmakingTimeout = timeout;
+
+            // Handle successful connection
+            if (connAttempt) {
+                connAttempt.on('open', () => {
+                    clearTimeout(timeout);
+                    matchmakingTimeout = null;
+                    console.log("DEBUG: Found a Host! Joining as Guest.");
+                    updateMatchmakingStatus('found');
+                    conn = connAttempt;
+                    isHost = false;
+                    myPlayerOffset = 15;
+
+                    // Delete old lanes that were created at offset 0 during init()
+                    if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
+                    if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
+                    if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
+                    if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
+                    if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
+                    if (groundBody) world.remove(groundBody);
+                    if (leftWallBody) world.remove(leftWallBody);
+                    if (rightWallBody) world.remove(rightWallBody);
+
+                    // Create new lanes at the correct offset for Player 2
+                    createStreetEnvironment(myPlayerOffset);
+                    createPins(myPlayerOffset);
+
+                    // Update camera to look from Player 2's lane
+                    camera.position.set(myPlayerOffset, 4, 12);
+                    camera.lookAt(myPlayerOffset, 1, 0);
+
+                    // Update ball position to Player 2's lane
+                    if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+                    if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+
+                    setupDataListeners();
+                    activateMultiplayerMode(false);
+                    hideMatchmakingPanel();
+                    isSearchingForMatch = false;
+                    resetGame();
+                });
+
+                // Handle connection errors (expected: peer-unavailable when no host exists)
+                connAttempt.on('error', (err) => {
+                    // "peer-unavailable" is expected when no host exists yet - this is normal matchmaking
+                    if (err.type === 'peer-unavailable') {
+                        console.log("DEBUG: No host available at lobby, will become host...");
+                    } else {
+                        console.error("DEBUG: Connection attempt error:", err.type);
+                    }
+                    clearTimeout(timeout);
+                    updateMatchmakingStatus('No players found, creating room...');
+                    setTimeout(setupAsHost, 1000);
+                });
+
+                // Handle connection closed
+                connAttempt.on('close', () => {
+                    console.log("DEBUG: Connection by peer ended, becoming host");
+                    clearTimeout(timeout);
+                    if (!isHost) {
+                        setupAsHost();
+                    }
+                });
+            }
+        }
+
+        function setupAsHost() {
+            if (peer) {
+                try {
+                    peer.destroy();
+                } catch (e) {
+                    console.log("DEBUG: Error destroying peer:", e);
+                }
+            }
+
+            peer = new Peer(LOBBY_ID, {
+                config: {
+                    'iceServers': [
+                        { url: 'stun:stun.l.google.com:19302' },
+                        { url: 'stun:stun1.l.google.com:19302' }
+                    ]
+                }
+            });
+
+            peer.on('open', (id) => {
+                isHost = true;
+                console.log("DEBUG: Lobby created with ID:", id);
+                updateMatchmakingStatus('Waiting for Player 2...');
+
+                peer.on('connection', (incomingConn) => {
+                    if (conn) {
+                        console.log("DEBUG: Already have a player. Rejecting extra join.");
+                        incomingConn.close();
+                        return;
+                    }
+                    conn = incomingConn;
+                    console.log("DEBUG: Player 2 connected!");
+                    updateMatchmakingStatus('found');
+                    hideMatchmakingPanel();
+                    isSearchingForMatch = false;
+                    setupDataListeners();
+                    activateMultiplayerMode(true);
+                    resetGame();
+                });
+            });
+
+            peer.on('error', (err) => {
+                // Log errors but suppress certain expected errors
+                if (err.type === 'unavailable-id') {
+                    console.log("DEBUG: Lobby ID taken, retrying matchmaking...");
+                    setTimeout(() => {
+                        if (isSearchingForMatch) {
+                            findRandomMatch();
+                        }
+                    }, 800);
+                } else if (err.type === 'peer-unavailable') {
+                    console.log("DEBUG: Peer unavailable (expected)");
+                } else if (err.type === 'disconnected') {
+                    console.log("DEBUG: Peer disconnected (expected)");
+                } else {
+                    console.error("DEBUG: Host peer error:", err.type);
+                    updateMatchmakingStatus('Error: ' + err.type);
+                }
+            });
+        }
+
+        function initNetworking() {
+            peer = new Peer();
+
+            peer.on('open', (id) => {
+                console.log("Your Peer ID: joinGame(\"" + id + "\")");
+            });
+
+            peer.on('error', (err) => {
+                // Suppress expected matchmaking errors
+                if (err.type === 'peer-unavailable' || err.type === 'unavailable-id') {
+                    console.log("DEBUG: PeerJS info:", err.type);
+                } else {
+                    console.error("PeerJS Error:", err.type, err);
+                }
+            });
+
+            peer.on('connection', (incomingConn) => {
+                conn = incomingConn;
+                conn.on('open', () => {
+                    console.log("DEBUG: Connection established with Guest!");
+                    activateMultiplayerMode(true);
+                    setupDataListeners();
+                    resetGame();
+                });
+            });
+        }
+
+        function setupDataListeners() {
+            if (!conn) {
+                console.warn("DEBUG: setupDataListeners called but 'conn' is undefined.");
+                return;
+            }
+
+            console.log("DEBUG: Data listeners attached to connection.");
+
+            conn.on('open', () => {
+                console.log("DEBUG: P2P Connection fully open!");
+                activateMultiplayerMode(isHost);
+            });
+
+            conn.on('data', (data) => {
+                if (data.type === 'remoteBall' || data.type === 'ballUpdate') {
+                    updateOpponentBall(data);
+                } else if (data.type === 'modeSwitchRequest') {
+                    handleModeSwitchRequest(data);
+                } else if (data.type === 'modeSwitchResponse') {
+                    handleModeSwitchResponse(data);
+                }
+
+                if (data.type === 'scoreUpdate') {
+                    const targetId = data.senderId; // Use the ID sent by the other player
+                    scores[targetId] = data.history;
+                    updateScoreTable(targetId);
+                    updateMultiplayerMatchState();
+                } else if (data.type === 'playAgainRequest') {
+                    receivePlayAgainRequest(data);
+                }
+            });
+
+            conn.on('close', () => {
+                console.log("DEBUG: Opponent disconnected.");
+                isMultiplayerActive = false;
+
+                if (opponentBallMesh) opponentBallMesh.visible = false;
+
+                const msgTitle = document.getElementById('msg-title');
+                if (msgTitle) {
+                    msgTitle.innerText = "PLAYER LEFT";
+                    document.getElementById('msg-box').style.display = 'block';
+                    document.getElementById('msg-body').innerText = "Opponent disconnected. Refresh to find a new match.";
+                    document.getElementById('action-btn').innerHTML = "REFRESH";
+                    document.getElementById('action-btn').onclick = () => location.reload();
+                }
+            });
+        }
+
+        function showMatchmakingPanel() {
+            const panel = document.getElementById('matchmaking-panel');
+            const blocker = document.getElementById('matchmaking-modal-blocker');
+            if (panel) panel.style.display = 'block';
+            if (blocker) blocker.style.display = 'block';
+        }
+
+        function hideMatchmakingPanel() {
+            const panel = document.getElementById('matchmaking-panel');
+            const blocker = document.getElementById('matchmaking-modal-blocker');
+            if (panel) panel.style.display = 'none';
+            if (blocker) blocker.style.display = 'none';
+        }
+
+        function updateMatchmakingStatus(message) {
+            const status = document.getElementById('matchmaking-status');
+            if (status) {
+                if (message === 'searching') {
+                    status.innerHTML = '<div class="loading-spinner"></div><p>Searching for players...</p>';
+                } else if (message === 'found') {
+                    status.innerHTML = '<p style="color: #2ecc71;">✓ Match found! Connecting...</p>';
+                } else if (message === 'timeout') {
+                    status.innerHTML = '<p style="color: #f39c12;">No players found. Starting as Host...</p>';
+                } else {
+                    status.innerHTML = `<p>${message}</p>`;
+                }
+            }
+        }
+
+        function startMatchmaking() {
+            console.log("DEBUG: Starting matchmaking...");
+            isSearchingForMatch = true;
+            document.getElementById('find-match-btn').disabled = true;
+            document.getElementById('solo-play-btn').disabled = true;
+            document.getElementById('cancel-search-btn').style.display = 'block';
+            updateMatchmakingStatus('searching');
+
+            // Initialize peer connection for matchmaking if needed
+            if (!peer) {
+                peer = new Peer({
+                    config: {
+                        'iceServers': [
+                            { url: 'stun:stun.l.google.com:19302' },
+                            { url: 'stun:stun1.l.google.com:19302' }
+                        ]
+                    }
+                });
+
+                let peerReady = false;
+
+                peer.on('open', (id) => {
+                    console.log("DEBUG: Peer ready with ID:", id);
+                    peerReady = true;
+                    if (isSearchingForMatch) {
+                        // Now that peer is ready, try to find a match
+                        findRandomMatch();
+                    }
+                });
+
+                peer.on('error', (err) => {
+                    // Suppress peer-unavailable errors - they're expected during matchmaking
+                    if (err.type === 'peer-unavailable') {
+                        console.log("DEBUG: Peer unavailable (expected during matchmaking)");
+                    } else if (err.type === 'unavailable-id') {
+                        console.log("DEBUG: ID unavailable, will retry matchmaking");
+                    } else {
+                        console.error("PeerJS Error:", err.type, err);
+                        if (isSearchingForMatch) {
+                            updateMatchmakingStatus('Connection error: ' + err.type);
+                        }
+                    }
+                });
+
+                // If peer doesn't open in 3 seconds, try anyway
+                setTimeout(() => {
+                    if (isSearchingForMatch && !peerReady) {
+                        console.log("DEBUG: Peer not ready, attempting connection anyway");
+                        findRandomMatch();
+                    }
+                }, 3000);
+            } else {
+                // Peer already exists, try to find match
+                findRandomMatch();
+            }
+        }
+
+        function cancelMatchmaking() {
+            console.log("DEBUG: Cancelling matchmaking...");
+            isSearchingForMatch = false;
+            if (matchmakingTimeout) {
+                clearTimeout(matchmakingTimeout);
+                matchmakingTimeout = null;
+            }
+            if (peer) {
+                peer.destroy();
+                peer = null;
+            }
+            document.getElementById('find-match-btn').disabled = false;
+            document.getElementById('solo-play-btn').disabled = false;
+            document.getElementById('cancel-search-btn').style.display = 'none';
+            updateMatchmakingStatus('');
+        }
+
+        function startSinglePlayer() {
+            console.log("DEBUG: Starting single player...");
+            hideMatchmakingPanel();
+            resetGame();
+        }
+
+        function recordRoundScore(scoreValue) {
+            // Force the ID based on the connection role
+            // If I am the host, I am p1. If I am the guest, I am p2.
+            const myId = isHost ? "p1" : "p2";
+
+            if (!scores[myId]) scores[myId] = [];
+            scores[myId].push(scoreValue);
+
+            // Update local UI
+            updateScoreTable(myId);
+
+            // Sync to the other player
+            if (isMultiplayerActive && conn && conn.open) {
+                conn.send({
+                    type: 'scoreUpdate',
+                    senderId: myId, // Explicitly tell the other person WHO I AM
+                    history: scores[myId]
+                });
+            }
+
+            updateMultiplayerMatchState();
+        }
+
+        function getLocalPlayerId() {
+            return isHost ? 'p1' : 'p2';
+        }
+
+        function getOpponentPlayerId() {
+            return isHost ? 'p2' : 'p1';
+        }
+
+        function isPlayerComplete(playerId) {
+            return Array.isArray(scores[playerId]) && scores[playerId].length >= MAX_MATCHES;
+        }
+
+        function getPlayerTotal(playerId) {
+            return (scores[playerId] || []).reduce((sum, value) => sum + (typeof value === 'number' ? value : 0), 0);
+        }
+
+        function updateMultiplayerMatchState() {
+            if (!isMultiplayerActive) return;
+
+            const localDone = isPlayerComplete(getLocalPlayerId());
+            const opponentDone = isPlayerComplete(getOpponentPlayerId());
+
+            if (localDone && opponentDone) {
+                showMultiplayerFinalResult();
+            } else if (localDone) {
+                showMultiplayerWaitMessage(true);
+            } else if (opponentDone) {
+                showMultiplayerWaitMessage(false);
+            }
+        }
+
+        function resetPlayAgainState() {
+            playAgainRequested = false;
+            playAgainOpponentRequested = false;
+            playAgainCountdownRemaining = 5;
+            if (playAgainCountdownTimer) {
+                clearInterval(playAgainCountdownTimer);
+                playAgainCountdownTimer = null;
+            }
+        }
+
+        function getLocalPlayerId() {
+            return isHost ? 'p1' : 'p2';
+        }
+
+        function getOpponentPlayerId() {
+            return isHost ? 'p2' : 'p1';
+        }
+
+        function sendPlayAgainRequest() {
+            if (!isMultiplayerActive || !conn || !conn.open) {
+                fullReset();
+                return;
+            }
+            if (playAgainRequested) return;
+            playAgainRequested = true;
+            conn.send({ type: 'playAgainRequest', from: getLocalPlayerId() });
+            startPlayAgainCountdown('Play again confirmed. Restarting in', 'Waiting for opponent...');
+
+            if (playAgainOpponentRequested) {
+                beginPlayAgain();
+            }
+        }
+
+        function receivePlayAgainRequest(data) {
+            playAgainOpponentRequested = true;
+            if (playAgainRequested) {
+                beginPlayAgain();
+                return;
+            }
+            showPlayAgainCountdownMessage();
+        }
+
+        function showPlayAgainCountdownMessage() {
+            const msgBox = document.getElementById('msg-box');
+            const replayBtn = document.getElementById('watch-replay-btn');
+            const title = document.getElementById('msg-title');
+            const body = document.getElementById('msg-body');
+            const btn = document.getElementById('action-btn');
+
+            msgBox.style.display = 'block';
+            replayBtn.style.display = 'none';
+            triggerDimmer(false);
+
+            btn.style.display = 'inline-block';
+            btn.disabled = false;
+            btn.innerText = 'CONTINUE';
+            btn.onclick = sendPlayAgainRequest;
+
+            title.innerText = 'OPPONENT READY';
+            startPlayAgainCountdown('Auto restart in', 'Waiting for you to confirm:');
+            body.innerText = `Opponent wants a rematch. ${playAgainCountdownRemaining} seconds until auto restart.`;
+        }
+
+        function startPlayAgainCountdown(successText, waitingText) {
+            const msgBox = document.getElementById('msg-box');
+            const body = document.getElementById('msg-body');
+            const btn = document.getElementById('action-btn');
+
+            if (playAgainCountdownTimer) {
+                clearInterval(playAgainCountdownTimer);
+            }
+            playAgainCountdownRemaining = 5;
+            playAgainCountdownTimer = setInterval(() => {
+                playAgainCountdownRemaining -= 1;
+                if (playAgainCountdownRemaining <= 0) {
+                    clearInterval(playAgainCountdownTimer);
+                    playAgainCountdownTimer = null;
+                    if (!playAgainRequested) {
+                        if (!playAgainOpponentRequested) {
+                            sendPlayAgainRequest();
+                        }
+                    }
+                    beginPlayAgain();
+                } else {
+                    if (body) {
+                        body.innerText = `${waitingText} ${playAgainCountdownRemaining} seconds.`;
+                    }
+                    if (btn && btn.innerText === 'CONTINUE') {
+                        btn.innerText = `CONTINUE (${playAgainCountdownRemaining})`;
+                    }
+                }
+            }, 1000);
+
+            if (body) {
+                body.innerText = `${waitingText} ${playAgainCountdownRemaining} seconds.`;
+            }
+            if (btn && btn.innerText === 'CONTINUE') {
+                btn.innerText = `CONTINUE (${playAgainCountdownRemaining})`;
+            }
+        }
+
+        function beginPlayAgain() {
+            resetPlayAgainState();
+            const msgBox = document.getElementById('msg-box');
+            if (msgBox) msgBox.style.display = 'none';
+            fullReset();
+        }
+
+        function showMultiplayerWaitMessage(localFinished) {
+            const msgBox = document.getElementById('msg-box');
+            const replayBtn = document.getElementById('watch-replay-btn');
+            const title = document.getElementById('msg-title');
+            const body = document.getElementById('msg-body');
+            const btn = document.getElementById('action-btn');
+
+            msgBox.style.display = 'block';
+            replayBtn.style.display = 'none';
+            triggerDimmer(false);
+
+            if (localFinished) {
+                title.innerText = 'MATCH COMPLETE';
+                body.innerText = 'You have finished 5 matches. Waiting for your opponent to finish their 5 matches...';
+                btn.style.display = 'none';
+            } else {
+                title.innerText = 'OPPONENT COMPLETE';
+                body.innerText = 'Your opponent has finished 5 matches. Continue your remaining frames to complete the match.';
+                btn.style.display = 'inline-block';
+                btn.disabled = false;
+                btn.innerText = 'CONTINUE';
+                btn.onclick = () => { msgBox.style.display = 'none'; };
+            }
+        }
+
+        function showMultiplayerFinalResult() {
+            const msgBox = document.getElementById('msg-box');
+            const replayBtn = document.getElementById('watch-replay-btn');
+            const title = document.getElementById('msg-title');
+            const body = document.getElementById('msg-body');
+            const btn = document.getElementById('action-btn');
+
+            const p1Total = getPlayerTotal('p1');
+            const p2Total = getPlayerTotal('p2');
+            let winnerText;
+            if (p1Total === p2Total) {
+                winnerText = 'DRAW';
+            } else if (p1Total > p2Total) {
+                winnerText = 'PLAYER 1 WINS!';
+            } else {
+                winnerText = 'PLAYER 2 WINS!';
+            }
+
+            title.innerText = 'FINAL RESULT';
+            body.innerHTML = `
+                <div style="font-size:18px; font-weight:bold; margin-bottom:12px; color:#f1c40f;">${winnerText}</div>
+                <div style="display:flex; justify-content:space-between; gap:12px; margin-top:10px;">
+                    <div style="flex:1; background:rgba(255,255,255,0.08); padding:12px; border-radius:12px; text-align:center;">
+                        <div style="font-size:14px; font-weight:bold; margin-bottom:8px;">PLAYER 1</div>
+                        <div>${(scores.p1 || []).map(v => v === undefined ? '-' : v).join(' | ')}</div>
+                        <div style="margin-top:10px; font-size:20px; font-weight:bold; color:#1e90ff;">${p1Total}</div>
+                    </div>
+                    <div style="flex:1; background:rgba(255,255,255,0.08); padding:12px; border-radius:12px; text-align:center;">
+                        <div style="font-size:14px; font-weight:bold; margin-bottom:8px;">PLAYER 2</div>
+                        <div>${(scores.p2 || []).map(v => v === undefined ? '-' : v).join(' | ')}</div>
+                        <div style="margin-top:10px; font-size:20px; font-weight:bold; color:#ff4757;">${p2Total}</div>
+                    </div>
+                </div>`;
+
+            btn.innerText = 'PLAY AGAIN';
+            btn.style.display = 'inline-block';
+            btn.disabled = false;
+            btn.onclick = sendPlayAgainRequest;
+            replayBtn.style.display = 'none';
+            msgBox.style.display = 'block';
+
+            const strikePopup = document.getElementById('strike-popup');
+            if (strikePopup) {
+                strikePopup.innerText = winnerText;
+                strikePopup.classList.add('show');
+                setTimeout(() => strikePopup.classList.remove('show'), 3000);
+            }
+        }
+
+        function joinGame(targetHostId) {
+            isHost = false;  // I am joining as a guest (Player 2)
+            peer = new Peer();
+            peer.on('open', (myId) => {
+                conn = peer.connect(targetHostId);
+                conn.on('open', () => {
+                    console.log("DEBUG: Connected to Host!");
+                    myPlayerOffset = 15;
+
+                    // Delete old lanes that were created at offset 0 during init()
+                    if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
+                    if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
+                    if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
+                    if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
+                    if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
+                    if (groundBody) world.remove(groundBody);
+                    if (leftWallBody) world.remove(leftWallBody);
+                    if (rightWallBody) world.remove(rightWallBody);
+
+                    // Create new lanes at the correct offset for Player 2
+                    createStreetEnvironment(myPlayerOffset);
+                    createPins(myPlayerOffset);
+
+                    // Update camera to look from Player 2's lane
+                    camera.position.set(myPlayerOffset, 4, 12);
+                    camera.lookAt(myPlayerOffset, 1, 0);
+
+                    // Update ball position to Player 2's lane
+                    if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+                    if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+
+                    activateMultiplayerMode(false);
+                    setupDataListeners();
+                    resetGame();
+                });
+            });
+        }
+
+        function updateOpponentBall(data) {
+            if (!opponentBallMesh) return;
+            if (!opponentBallMesh.visible) opponentBallMesh.visible = true;
+            opponentBallMesh.position.set(data.pos.x, data.pos.y, data.pos.z);
+            opponentBallMesh.quaternion.set(data.quat.x, data.quat.y, data.quat.z, data.quat.w);
+        }
+
+        function activateMultiplayerMode(isHostRole) {
+            isMultiplayerActive = true;
+            const p2Row = document.getElementById('p2-row');
+            if (p2Row) p2Row.style.display = 'table-row';
+
+            const remoteOffset = isHostRole ? 15 : 0;
+
+            console.log("DEBUG: Building remote lane at offset " + remoteOffset);
+            createStreetEnvironment(remoteOffset);
+            createPins(remoteOffset);
+
+            if (opponentBallMesh) opponentBallMesh.visible = true;
+
+            if (isHostRole) {
+                ballMesh.material.color.setHex(0x1e90ff);
+                opponentBallMesh.material.color.setHex(0xff0000);
+            } else {
+                ballMesh.material.color.setHex(0xff0000);
+                opponentBallMesh.material.color.setHex(0x1e90ff);
+            }
+        }
+
+        // --- GAME FUNCTIONS ---
+
         function init() {
             // 1. Scene Setup
             scene = new THREE.Scene();
@@ -534,7 +1422,8 @@
             scene.fog = new THREE.FogExp2(0x010105, 0.03);
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 4, 12);
+            const startX = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
+            camera.position.set(startX, 4, 12);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -549,7 +1438,7 @@
             scene.add(hemiLight);
 
             sunLight = new THREE.DirectionalLight(0xffffff, 3);
-            sunLight.position.set(15, 35, -40);
+            sunLight.position.set(startX + 15, 35, -40);
             sunLight.intensity = 2.5;
             sunLight.castShadow = true;
             sunLight.shadow.mapSize.width = 2048;
@@ -563,47 +1452,61 @@
             sunLight.shadow.bias = -0.0005;
             scene.add(sunLight);
 
-            // 3. UI Lines
-            const pathMaterial = new THREE.LineBasicMaterial({
+            // 3. UI Lines - PLAYER 1 (BLUE)
+            const pathMaterial_P1 = new THREE.LineBasicMaterial({
                 color: 0x00ffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending
             });
-            touchPathLine = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
-            touchPathLine2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
-            touchPathLine3 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
-            touchPathLine2.position.x += 0.02;
-            touchPathLine3.position.x -= 0.02;
-            scene.add(touchPathLine, touchPathLine2, touchPathLine3);
+            touchPathLine_P1 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P1);
+            touchPathLine2_P1 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P1);
+            touchPathLine3_P1 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P1);
+            scene.add(touchPathLine_P1, touchPathLine2_P1, touchPathLine3_P1);
 
-            const outerGlowMaterial = new THREE.LineBasicMaterial({
+            const outerGlowMaterial_P1 = new THREE.LineBasicMaterial({
                 color: 0x0088ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending
             });
-            outerGlowLine = new THREE.Line(new THREE.BufferGeometry(), outerGlowMaterial);
-            outerGlowLine.scale.set(1.02, 1, 1.02);
-            scene.add(outerGlowLine);
+            outerGlowLine_P1 = new THREE.Line(new THREE.BufferGeometry(), outerGlowMaterial_P1);
+            outerGlowLine_P1.scale.set(1.02, 1, 1.02);
+            scene.add(outerGlowLine_P1);
+
+            // 3b. UI Lines - PLAYER 2 (RED)
+            const pathMaterial_P2 = new THREE.LineBasicMaterial({
+                color: 0xff0000, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending
+            });
+            touchPathLine_P2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P2);
+            touchPathLine2_P2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P2);
+            touchPathLine3_P2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P2);
+            scene.add(touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2);
+
+            const outerGlowMaterial_P2 = new THREE.LineBasicMaterial({
+                color: 0xff3333, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending
+            });
+            outerGlowLine_P2 = new THREE.Line(new THREE.BufferGeometry(), outerGlowMaterial_P2);
+            outerGlowLine_P2.scale.set(1.02, 1, 1.02);
+            scene.add(outerGlowLine_P2);
 
             // 4. Street Lamps
             const streetLamp1 = new THREE.PointLight(0xffaa44, 1.5, 50);
-            streetLamp1.position.set(10, 10, -15);
+            streetLamp1.position.set(startX + 10, 10, -15);
             scene.add(streetLamp1);
 
             const streetLamp2 = new THREE.PointLight(0x00ffff, 4, 40);
-            streetLamp2.position.set(-5, 8, -30);
+            streetLamp2.position.set(startX - 5, 8, -30);
             scene.add(streetLamp2);
 
-            // 5. AUDIO SETUP (Fixing the ReferenceError)
+            // 5. AUDIO SETUP
             audioListener = new THREE.AudioListener();
             camera.add(audioListener);
             audioLoader = new THREE.AudioLoader();
 
-            // Ensure gameSounds object exists globally if you use it in resetGame
             if (typeof gameSounds === 'undefined') window.gameSounds = {};
+            sounds = gameSounds;
 
             ballPathSound = new THREE.Audio(audioListener);
             audioLoader.load('bowling-ball-path.mp3', function (buffer) {
                 ballPathSound.setBuffer(buffer);
                 ballPathSound.setLoop(true);
                 ballPathSound.setVolume(0.5);
-                gameSounds['ball_roll'] = ballPathSound; // Storing in gameSounds for consistency
+                gameSounds['ball_roll'] = ballPathSound;
             });
 
             pinKnockSound = new THREE.Audio(audioListener);
@@ -620,11 +1523,10 @@
                 gameSounds['ui_click'] = uiSound;
             });
 
-            // 6. PHYSICS SETUP (Bouncy Walls)
+            // 6. PHYSICS SETUP
             world = new CANNON.World();
             world.gravity.set(0, -23, 0);
 
-            // Export materials to global scope so other functions can use them
             window.ballMat = new CANNON.Material("ballMat");
             window.groundMat = new CANNON.Material("groundMat");
             window.pinMat = new CANNON.Material("pinMat");
@@ -638,10 +1540,9 @@
             const pinPinContact = new CANNON.ContactMaterial(pinMat, pinMat, { friction: 0.5, restitution: 0.2 });
             const pinGroundContact = new CANNON.ContactMaterial(pinMat, groundMat, { friction: 0.6, restitution: 0.1 });
 
-            // Bouncy wall contact
             const ballWallContact = new CANNON.ContactMaterial(ballMat, wallMat, {
                 friction: 0.1,
-                restitution: 0.8, // High bounciness
+                restitution: 0.8,
                 contactEquationStiffness: 1e8,
                 contactEquationRelaxation: 3
             });
@@ -659,12 +1560,22 @@
             actionRenderer.setSize(250, 150);
 
             // 8. Object Initialization
-            createStreetEnvironment();
+            createStreetEnvironment(myPlayerOffset);
             createBall();
-            createPins();
+            createPins(myPlayerOffset);
             initLightTrail();
 
-            // 9. Event Listeners
+            // 9. Setup Opponent Ball
+            const radius = typeof BALL_RADIUS !== 'undefined' ? BALL_RADIUS : 0.35;
+            const ghostGeo = new THREE.SphereGeometry(radius, 32, 32);
+            const ghostMat = new THREE.MeshStandardMaterial({
+                color: 0xff0000, transparent: true, opacity: 0.6
+            });
+            opponentBallMesh = new THREE.Mesh(ghostGeo, ghostMat);
+            opponentBallMesh.visible = false;
+            scene.add(opponentBallMesh);
+
+            // 10. Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('touchstart', onTouchStart, { passive: false });
             window.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -674,8 +1585,27 @@
             window.addEventListener('mousemove', (e) => { if (isTouching) onTouchMove({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }); });
             window.addEventListener('mouseup', (e) => onTouchEnd({ changedTouches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }));
 
-            // 10. Start
-            resetGame();
+            const modeAcceptBtn = document.getElementById('mode-switch-accept');
+            const modeDeclineBtn = document.getElementById('mode-switch-decline');
+            if (modeAcceptBtn) {
+                modeAcceptBtn.addEventListener('click', () => {
+                    if (!conn || !conn.open) return;
+                    conn.send({ type: 'modeSwitchResponse', accepted: true, mode: modeSwitchRequestMode, from: isHost ? 'p1' : 'p2' });
+                    doToggleGameMode(modeSwitchRequestMode);
+                    hideModeSwitchModal();
+                });
+            }
+            if (modeDeclineBtn) {
+                modeDeclineBtn.addEventListener('click', () => {
+                    if (!conn || !conn.open) return;
+                    conn.send({ type: 'modeSwitchResponse', accepted: false, mode: modeSwitchRequestMode, from: isHost ? 'p1' : 'p2' });
+                    hideModeSwitchModal();
+                });
+            }
+
+            if (typeof initNetworking === 'function') initNetworking();
+
+            showMatchmakingPanel();
             animate();
         }
 
@@ -697,25 +1627,88 @@
         }
 
         function toggleSettingsMenu() {
+            // Prevent settings menu when matchmaking panel is shown
+            const panel = document.getElementById('matchmaking-panel');
+            if (panel && panel.style.display === 'block') return;
             playGameSound('ui_click');
             const menu = document.getElementById('settings-menu');
             menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
         }
 
         function toggleGameMode() {
-            if (targetPinCount === 10) {
-                targetPinCount = 100;
-                document.getElementById('mode-toggle-btn').innerText = "100 PINS";
+            if (isMultiplayerActive && conn && conn.open) {
+                requestModeSwitch();
+                return;
+            }
+            doToggleGameMode();
+        }
+
+        function doToggleGameMode(newMode) {
+            if (typeof newMode === 'undefined') {
+                targetPinCount = (targetPinCount === 10) ? 100 : 10;
             } else {
-                targetPinCount = 10;
-                document.getElementById('mode-toggle-btn').innerText = "10 PINS";
+                targetPinCount = newMode;
             }
 
+            document.getElementById('mode-toggle-btn').innerText = (targetPinCount === 10) ? '10 PINS' : '100 PINS';
             updateLaneWidth();
             matchHistory = [];
-            updateScoreTable();
+            scores = { p1: [], p2: [] };
+            updateScoreTable('p1');
+            updateScoreTable('p2');
             resetGame();
             playGameSound('ui_click');
+        }
+
+        function requestModeSwitch() {
+            if (!conn || !conn.open || modeSwitchRequestPending) return;
+            const requestedMode = (targetPinCount === 10) ? 100 : 10;
+            modeSwitchRequestPending = true;
+            modeSwitchRequestMode = requestedMode;
+            modeSwitchRequester = isHost ? 'p1' : 'p2';
+            showModeSwitchModal(`You requested to switch to ${requestedMode} pins. Waiting for opponent...`, false);
+            conn.send({ type: 'modeSwitchRequest', mode: requestedMode, from: modeSwitchRequester });
+        }
+
+        function handleModeSwitchRequest(data) {
+            if (modeSwitchRequestPending) {
+                conn.send({ type: 'modeSwitchResponse', accepted: false, mode: data.mode, from: isHost ? 'p1' : 'p2' });
+                return;
+            }
+            modeSwitchRequestMode = data.mode;
+            modeSwitchRequester = data.from || (isHost ? 'p2' : 'p1');
+            showModeSwitchModal(`Your opponent requests switching to ${data.mode} pins. Accept?`, true);
+        }
+
+        function handleModeSwitchResponse(data) {
+            if (!modeSwitchRequestPending) return;
+            modeSwitchRequestPending = false;
+            hideModeSwitchModal();
+            if (data.accepted && data.mode === modeSwitchRequestMode) {
+                doToggleGameMode(data.mode);
+            }
+        }
+
+        function showModeSwitchModal(message, showButtons) {
+            const modal = document.getElementById('mode-switch-modal');
+            const accept = document.getElementById('mode-switch-accept');
+            const decline = document.getElementById('mode-switch-decline');
+            document.getElementById('mode-switch-body').innerText = message;
+            modal.style.display = 'block';
+            if (showButtons) {
+                accept.style.display = 'inline-block';
+                decline.style.display = 'inline-block';
+            } else {
+                accept.style.display = 'none';
+                decline.style.display = 'none';
+            }
+            document.getElementById('screen-dimmer').classList.add('dimmed');
+        }
+
+        function hideModeSwitchModal() {
+            const modal = document.getElementById('mode-switch-modal');
+            modal.style.display = 'none';
+            document.getElementById('screen-dimmer').classList.remove('dimmed');
         }
 
         function updateVolume(value) {
@@ -728,52 +1721,44 @@
 
         function updateLaneWidth() {
             const is100 = (targetPinCount === 100);
-
-            // 1. Explicitly define the positions for each mode
-            // 10 pins: lane is 4.5 wide, wall should be at 3.6
-            // 100 pins: lane is 7.6 wide, wall should be at 4.4
             const laneWidth = is100 ? 7.6 : 4.5;
             const wallX = is100 ? 4.4 : 3.6;
+            const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
 
-            // 2. Scale the visual lane
-            if (laneMesh) {
-                laneMesh.scale.x = laneWidth / 4.5;
+            if (scene) {
+                scene.traverse(obj => {
+                    if (!obj.userData) return;
+                    if (obj.userData.envType === 'lane') {
+                        obj.scale.x = laneWidth / 4.5;
+                    } else if (obj.userData.envType === 'gutter') {
+                        if (is100) {
+                            obj.visible = false;
+                        } else {
+                            obj.visible = true;
+                            obj.position.x = obj.userData.offset + (obj.userData.side === 'left' ? -2.5 : 2.5);
+                        }
+                    } else if (obj.userData.envType === 'wall') {
+                        obj.position.x = obj.userData.offset + (obj.userData.side === 'left' ? -wallX : wallX);
+                    }
+                });
             }
 
-            // 3. Update the Physics floor width
-            if (groundBody) {
-                const shape = groundBody.shapes[0];
-                shape.halfExtents.x = laneWidth / 2;
-                shape.updateConvexPolyhedronRepresentation();
-                groundBody.updateBoundingRadius();
+            if (world) {
+                world.bodies.forEach(body => {
+                    if (!body.userData) return;
+                    if (body.userData.envType === 'ground') {
+                        const shape = body.shapes[0];
+                        if (shape) {
+                            shape.halfExtents.x = laneWidth / 2;
+                            shape.updateConvexPolyhedronRepresentation();
+                        }
+                        body.updateBoundingRadius();
+                        body.position.x = body.userData.offset;
+                    } else if (body.userData.envType === 'wall') {
+                        body.position.x = body.userData.offset + (body.userData.side === 'left' ? -wallX : wallX);
+                    }
+                });
             }
-
-            // 4. FIX: Handle Gutters
-            if (leftGutter && rightGutter) {
-                if (is100) {
-                    leftGutter.visible = false;
-                    rightGutter.visible = false;
-                } else {
-                    leftGutter.visible = true;
-                    rightGutter.visible = true;
-                    // Reset to exact original gutter positions
-                    leftGutter.position.x = -2.5;
-                    rightGutter.position.x = 2.5;
-                }
-            }
-
-            // 5. FIX: Move Walls AND Wall Joints (Vertical Pillars)
-            // We use an array to make sure everything moves together
-            const leftSide = [leftWallMesh, leftWallBody, leftWallJoint];
-            const rightSide = [rightWallMesh, rightWallBody, rightWallJoint];
-
-            leftSide.forEach(obj => {
-                if (obj) obj.position.x = -wallX;
-            });
-
-            rightSide.forEach(obj => {
-                if (obj) obj.position.x = wallX;
-            });
         }
 
         function triggerDimmer(show) {
@@ -783,7 +1768,7 @@
             else dimmer.classList.remove('dimmed');
         }
 
-        function createStreetEnvironment() {
+        function createStreetEnvironment(offset = 0) {
             const canvas = document.createElement('canvas');
             canvas.width = 512;
             canvas.height = 1024;
@@ -820,8 +1805,9 @@
             });
 
             laneMesh = new THREE.Mesh(laneGeo, laneMat);
-            laneMesh.position.set(0, 0, -35);
+            laneMesh.position.set(offset, 0, -35);
             laneMesh.receiveShadow = true;
+            laneMesh.userData = { envType: 'lane', offset };
             scene.add(laneMesh);
 
             // --- GUTTER CREATION ---
@@ -829,59 +1815,60 @@
             const gutterMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
 
             leftGutter = new THREE.Mesh(gutterGeo, gutterMat);
-            leftGutter.position.set(-2.5, -0.05, -35);
+            leftGutter.position.set(offset - 2.5, -0.05, -35);
+            leftGutter.userData = { envType: 'gutter', side: 'left', offset };
             scene.add(leftGutter);
 
             rightGutter = new THREE.Mesh(gutterGeo, gutterMat.clone());
-            rightGutter.position.set(2.5, -0.05, -35);
+            rightGutter.position.set(offset + 2.5, -0.05, -35);
+            rightGutter.userData = { envType: 'gutter', side: 'right', offset };
             scene.add(rightGutter);
 
             // --- VISUAL WALLS ---
             const wallGeo = new THREE.BoxGeometry(1.2, 18, 100);
             const wallVisualMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d });
 
-            const wallDist = 3.6;
+            const is100 = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
+            const wallDist = is100 ? 4.4 : 3.6;
 
             leftWallMesh = new THREE.Mesh(wallGeo, wallVisualMat);
-            leftWallMesh.position.set(-wallDist, 9, -35);
+            leftWallMesh.position.set(offset - wallDist, 9, -35);
+            leftWallMesh.userData = { envType: 'wall', side: 'left', offset };
             scene.add(leftWallMesh);
 
             rightWallMesh = new THREE.Mesh(wallGeo, wallVisualMat.clone());
-            rightWallMesh.position.set(wallDist, 9, -35);
+            rightWallMesh.position.set(offset + wallDist, 9, -35);
+            rightWallMesh.userData = { envType: 'wall', side: 'right', offset };
             scene.add(rightWallMesh);
 
             // --- PHYSICS BODIES ---
-
-            // 1. Ground (Still uses groundMat - not bouncy)
             const groundShape = new CANNON.Box(new CANNON.Vec3(2.25, 0.1, 50));
             groundBody = new CANNON.Body({ mass: 0, material: groundMat });
             groundBody.addShape(groundShape);
-            groundBody.position.set(0, 0, -35);
+            groundBody.position.set(offset, 0, -35);
+            groundBody.userData = { envType: 'ground', offset };
             world.addBody(groundBody);
 
-            // 2. Bouncy Walls (Updated to use wallMat)
             const physicsWallShape = new CANNON.Box(new CANNON.Vec3(0.6, 9, 50));
 
-            // Left Wall
             leftWallBody = new CANNON.Body({
                 mass: 0,
                 material: typeof wallMat !== 'undefined' ? wallMat : groundMat
             });
             leftWallBody.addShape(physicsWallShape);
-            leftWallBody.position.set(-wallDist, 9, -35);
+            leftWallBody.position.set(offset - wallDist, 9, -35);
+            leftWallBody.userData = { envType: 'wall', side: 'left', offset };
             world.addBody(leftWallBody);
 
-            // Right Wall
             rightWallBody = new CANNON.Body({
                 mass: 0,
                 material: typeof wallMat !== 'undefined' ? wallMat : groundMat
             });
             rightWallBody.addShape(physicsWallShape);
-            rightWallBody.position.set(wallDist, 9, -35);
+            rightWallBody.position.set(offset + wallDist, 9, -35);
+            rightWallBody.userData = { envType: 'wall', side: 'right', offset };
             world.addBody(rightWallBody);
         }
-
-
 
         function createBall() {
             ballMesh = new THREE.Mesh(
@@ -900,7 +1887,7 @@
             ballBody.linearDamping = 0.1;
             ballBody.angularDamping = 0.1;
 
-            const startPos = new CANNON.Vec3(0, LANE_Y + BALL_RADIUS + 0.05, 6);
+            const startPos = new CANNON.Vec3(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
             ballBody.position.copy(startPos);
             world.addBody(ballBody);
             ballMesh.position.copy(ballBody.position);
@@ -920,7 +1907,7 @@
             return new THREE.LatheGeometry(points, 24);
         }
 
-        function createPins() {
+        function createPins(offset = 0) {
             const pinGeo = createPinGeometry();
             const pinMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 200 });
             const stripeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
@@ -929,47 +1916,42 @@
             const SCORE_RADIUS = 0.22;
             const circleGeo = new THREE.RingGeometry(SCORE_RADIUS - 0.05, SCORE_RADIUS, 32);
             const circleMat = new THREE.MeshLambertMaterial({
-                color: 0xffffff,      // Pure white base
-                emissive: 0x00ffff,   // Neon Cyan glow (contrast well with green)
+                color: 0xffffff,
+                emissive: 0x00ffff,
                 emissiveIntensity: 0.5,
                 transparent: true,
                 opacity: 0.6
             });
 
             const spawnSinglePin = (x, z) => {
+                const worldX = x + offset;
+
                 const circle = new THREE.Mesh(circleGeo, circleMat.clone());
                 circle.rotation.x = -Math.PI / 2;
-                circle.position.set(x, LANE_Y + 0.01, z);
+                circle.position.set(worldX, LANE_Y + 0.01, z);
                 scene.add(circle);
                 pinCircles.push(circle);
 
                 const group = new THREE.Group();
 
-                // 1. MAIN PIN MESH
                 const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
                 pMesh.castShadow = true;
                 group.add(pMesh);
 
-                // 2. OUTLINE EFFECT MESH
-                // We create a slightly larger version of the pin geometry 
-                // and render only the back side in black.
                 const outlineMaterial = new THREE.MeshBasicMaterial({
                     color: 0x000000,
                     side: THREE.BackSide
                 });
                 const outlineMesh = new THREE.Mesh(pinGeo, outlineMaterial);
-                // Adjust this scale (1.07) to make the outline thicker or thinner
                 outlineMesh.scale.setScalar(1.07);
                 group.add(outlineMesh);
 
-                // 3. PIN STRIPE
                 const stripe = new THREE.Mesh(stripeGeo, stripeMat);
                 stripe.position.set(0, 0.16, 0);
                 group.add(stripe);
 
                 scene.add(group);
 
-                // Physics setup (remains the same)
                 const pBody = new CANNON.Body({ mass: 2.5, material: pinMat });
                 const qCyl = new CANNON.Quaternion();
                 qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
@@ -982,7 +1964,7 @@
                 pBody.linearDamping = targetPinCount > 50 ? 0.45 : 0.2;
                 pBody.angularDamping = targetPinCount > 50 ? 0.5 : 0.3;
                 pBody.type = CANNON.Body.KINEMATIC;
-                pBody.position.set(x, LANE_Y + (PIN_HEIGHT / 2), z);
+                pBody.position.set(worldX, LANE_Y + (PIN_HEIGHT / 2), z);
 
                 pBody.addEventListener('collide', (e) => {
                     if (pBody.type === CANNON.Body.KINEMATIC) {
@@ -991,12 +1973,9 @@
 
                         const now = performance.now();
 
-                        // Volume Decay Logic
-                        // If the last hit was more than 1 second ago, reset volume
                         if (now - lastPinHitTime > 1000) {
                             currentPinVolume = 0.7;
                         } else {
-                            // Decrease volume by 0.05 per hit, but cap at 0.175 (25% of 0.7)
                             currentPinVolume = Math.max(0.07, currentPinVolume - 0.05);
                         }
                         lastPinHitTime = now;
@@ -1004,15 +1983,12 @@
                         if (now - lastPinSoundTime > 80) {
                             if (pinKnockSound && pinKnockSound.buffer) {
                                 if (pinKnockSound.isPlaying) pinKnockSound.stop();
-
-                                // Apply the calculated dynamic volume
                                 pinKnockSound.setVolume(currentPinVolume);
                                 pinKnockSound.play();
                             }
                             lastPinSoundTime = now;
                         }
 
-                        // Physics impulse logic remains the same...
                         const forceDir = pBody.position.vsub(e.contact.bi.position);
                         forceDir.normalize();
                         pBody.applyImpulse(forceDir.scale(2), pBody.position);
@@ -1020,7 +1996,6 @@
 
                         spawnImpact(pBody.position, 0xffffff, 8);
 
-                        // Cinematic/Reset logic remains the same...
                         if (!impactOccurred) {
                             impactOccurred = true;
                             isCinematicMode = true;
@@ -1039,34 +2014,29 @@
                 });
 
                 world.addBody(pBody);
-                pins.push({ mesh: group, body: pBody, initialPos: { x: x, z: z } });
+                pins.push({ mesh: group, body: pBody, initialPos: { x: worldX, z: z } });
             };
 
+            const startZ = -22;
             if (targetPinCount === 100) {
                 const spacing = 0.52;
-                const startZ = -22;
                 for (let r = 0; r < 13; r++) {
                     for (let i = 0; i <= r; i++) {
                         const x = (i - r * 0.5) * spacing;
-                        const z = startZ - (r * spacing);
-                        spawnSinglePin(x, z);
+                        spawnSinglePin(x, startZ - (r * spacing));
                     }
                 }
                 const row14Count = 9;
-                const r = 13;
                 for (let i = 0; i < row14Count; i++) {
                     const x = (i - (row14Count - 1) * 0.5) * spacing;
-                    const z = startZ - (r * spacing);
-                    spawnSinglePin(x, z);
+                    spawnSinglePin(x, startZ - (13 * spacing));
                 }
             } else {
                 const spacing = 0.65;
-                const startZ = -22;
                 for (let r = 0; r < 4; r++) {
                     for (let i = 0; i <= r; i++) {
                         const x = (i - r * 0.5) * spacing;
-                        const z = startZ - (r * spacing);
-                        spawnSinglePin(x, z);
+                        spawnSinglePin(x, startZ - (r * spacing));
                     }
                 }
             }
@@ -1074,26 +2044,42 @@
 
         function initLightTrail() {
             const geometry = new THREE.PlaneGeometry(1, 1, 1, TRAIL_MAX_POINTS - 1);
-            const material = new THREE.MeshBasicMaterial({
+
+            // Player 1 Trail (BLUE)
+            const material_P1 = new THREE.MeshBasicMaterial({
                 color: 0x00ccff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
             });
-            trailMesh = new THREE.Mesh(geometry, material);
-            trailMesh.frustumCulled = false;
-            trailMesh.visible = false;
-            scene.add(trailMesh);
+            trailMesh_P1 = new THREE.Mesh(geometry.clone(), material_P1);
+            trailMesh_P1.frustumCulled = false;
+            trailMesh_P1.visible = false;
+            scene.add(trailMesh_P1);
+
+            // Player 2 Trail (RED)
+            const material_P2 = new THREE.MeshBasicMaterial({
+                color: 0xff3333, transparent: true, opacity: 0.6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
+            });
+            trailMesh_P2 = new THREE.Mesh(geometry.clone(), material_P2);
+            trailMesh_P2.frustumCulled = false;
+            trailMesh_P2.visible = false;
+            scene.add(trailMesh_P2);
         }
 
         function updateLightTrail() {
             if (!isBowling) {
-                trailMesh.visible = false;
+                trailMesh_P1.visible = false;
+                trailMesh_P2.visible = false;
                 trailHistory = [];
                 return;
             }
-            trailMesh.visible = true;
+
+            // Use correct trail mesh based on current player
+            const currentTrailMesh = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15) ? trailMesh_P2 : trailMesh_P1;
+            currentTrailMesh.visible = true;
+
             trailHistory.push({ x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z });
 
             if (trailHistory.length > TRAIL_MAX_POINTS) trailHistory.shift();
-            const posAttr = trailMesh.geometry.attributes.position;
+            const posAttr = currentTrailMesh.geometry.attributes.position;
             const baseWidth = 0.12;
             for (let i = 0; i < TRAIL_MAX_POINTS; i++) {
                 const pointIndex = Math.min(i, trailHistory.length - 1);
@@ -1135,11 +2121,27 @@
 
         function onTouchStart(e) {
             if (isBowling) return;
+            // Prevent interaction when matchmaking panel is shown
+            const panel = document.getElementById('matchmaking-panel');
+            if (panel && panel.style.display === 'block') return;
             e.preventDefault();
             isTouching = true;
 
             touchPathPoints = [];
-            touchPathLine.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+            // Use correct touchpath lines based on current player
+            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            const clearPoint = [new THREE.Vector3(myPlayerOffset, 0, 0)];
+            if (isPlayer2) {
+                touchPathLine_P2.geometry.setFromPoints(clearPoint);
+                touchPathLine2_P2.geometry.setFromPoints(clearPoint);
+                touchPathLine3_P2.geometry.setFromPoints(clearPoint);
+                if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(clearPoint);
+            } else {
+                touchPathLine_P1.geometry.setFromPoints(clearPoint);
+                touchPathLine2_P1.geometry.setFromPoints(clearPoint);
+                touchPathLine3_P1.geometry.setFromPoints(clearPoint);
+                if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(clearPoint);
+            }
 
             document.getElementById('hint').style.opacity = '0';
             const t = (e.touches && e.touches[0]) || e;
@@ -1147,7 +2149,7 @@
             touchStartPos.y = t.clientY;
             lastTouchX = t.clientX;
             touchStartTime = Date.now();
-            ballMesh.material.emissive.setHex(0x00ffff);
+            ballMesh.material.emissive.setHex(isPlayer2 ? 0xff3333 : 0x00ffff);
         }
 
         function onTouchMove(e) {
@@ -1157,28 +2159,52 @@
             const deltaX_Movement = (t.clientX - lastTouchX) * 0.015;
 
             const movementLimit = (targetPinCount === 100) ? 3.0 : 1.5;
-            ballBody.position.x = Math.max(-movementLimit, Math.min(movementLimit, ballBody.position.x + deltaX_Movement));
+            ballBody.position.x = Math.max(myPlayerOffset - movementLimit, Math.min(myPlayerOffset + movementLimit, ballBody.position.x + deltaX_Movement));
             lastTouchX = t.clientX;
 
-            let vector = new THREE.Vector3(
+            const mouseNDC = new THREE.Vector2(
                 (t.clientX / window.innerWidth) * 2 - 1,
-                -(t.clientY / window.innerHeight) * 2 + 1,
-                0.5
+                -(t.clientY / window.innerHeight) * 2 + 1
             );
-            vector.unproject(camera);
-            let dir = vector.sub(camera.position).normalize();
-            let distance = -(camera.position.y - 0.15) / dir.y;
-            let pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+            raycaster.setFromCamera(mouseNDC, camera);
+            const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.15);
+            const pos = new THREE.Vector3();
+            raycaster.ray.intersectPlane(groundPlane, pos);
+            if (!pos) return;
 
             const MAX_PATH_POINTS = 100;
-            touchPathLine.geometry.setFromPoints(touchPathPoints);
-            touchPathLine2.geometry.setFromPoints(touchPathPoints);
-            touchPathLine3.geometry.setFromPoints(touchPathPoints);
+            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+
+            const laneLimit = (targetPinCount === 100) ? 3.0 : 1.5;
+            pos.x = Math.max(myPlayerOffset - laneLimit, Math.min(myPlayerOffset + laneLimit, pos.x));
+
             touchPathPoints.push(pos);
             if (touchPathPoints.length > MAX_PATH_POINTS) touchPathPoints.shift();
 
-            touchPathLine.geometry.setFromPoints(touchPathPoints);
-            if (outerGlowLine) outerGlowLine.geometry.setFromPoints(touchPathPoints);
+            // Create offset point arrays for visual effect
+            const offsetPoints_pos = touchPathPoints.map(p => {
+                const offsetPos = p.clone();
+                offsetPos.x += 0.02;
+                return offsetPos;
+            });
+            const offsetPoints_neg = touchPathPoints.map(p => {
+                const offsetPos = p.clone();
+                offsetPos.x -= 0.02;
+                return offsetPos;
+            });
+
+            if (isPlayer2) {
+                touchPathLine_P2.geometry.setFromPoints(touchPathPoints);
+                touchPathLine2_P2.geometry.setFromPoints(offsetPoints_pos);
+                touchPathLine3_P2.geometry.setFromPoints(offsetPoints_neg);
+                if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(touchPathPoints);
+            } else {
+                touchPathLine_P1.geometry.setFromPoints(touchPathPoints);
+                touchPathLine2_P1.geometry.setFromPoints(offsetPoints_pos);
+                touchPathLine3_P1.geometry.setFromPoints(offsetPoints_neg);
+                if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(touchPathPoints);
+            }
         }
 
         function onTouchEnd(e) {
@@ -1204,14 +2230,24 @@
             }
 
             touchPathPoints = [];
-            touchPathLine.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+            // Clear appropriate touchpath lines for current player
+            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            if (isPlayer2) {
+                touchPathLine_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+                touchPathLine2_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+                touchPathLine3_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+            } else {
+                touchPathLine_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+                touchPathLine2_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+                touchPathLine3_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+            }
         }
 
         function throwBall(speed, sideSpeed = 0) {
             isBowling = true;
             document.getElementById('hint').style.opacity = '0';
 
-            ballBody.mass = 500; // ball mass
+            ballBody.mass = 500;
             ballBody.type = CANNON.Body.DYNAMIC;
             ballBody.updateMassProperties();
 
@@ -1219,15 +2255,22 @@
             ballBody.angularVelocity.set(speed * 0.8, randomHookForce * 2, (Math.random() - 0.5) * 15);
 
             resetTimer = setTimeout(checkPins, 4000);
-            playGameSound('rolling');
+            playGameSound('ball_roll');
         }
 
         function checkPins() {
             let fallen = 0;
-            const totalPinsInPlay = pins.length;
             const SCORE_RADIUS = 0.22;
+            const is100 = (targetPinCount === 100);
+            const laneMargin = is100 ? 3.8 : 2.5; // Half lane width plus margin
 
-            pins.forEach((p, index) => {
+            // Only count pins in the current player's lane
+            const playerPins = pins.filter(p =>
+                Math.abs(p.initialPos.x - myPlayerOffset) < laneMargin
+            );
+            const totalPinsInPlay = playerPins.length;
+
+            playerPins.forEach((p, index) => {
                 const dx = p.body.position.x - p.initialPos.x;
                 const dz = p.body.position.z - p.initialPos.z;
                 const distance = Math.sqrt(dx * dx + dz * dz);
@@ -1237,18 +2280,19 @@
 
                 if (distance > SCORE_RADIUS || angle > 0.78 || p.body.position.y < -0.5) {
                     fallen++;
-                    if (pinCircles[index]) pinCircles[index].material.color.setHex(0x2ecc71);
+                    const originalIndex = pins.indexOf(p);
+                    if (pinCircles[originalIndex]) pinCircles[originalIndex].material.color.setHex(0x2ecc71);
                 } else {
-                    if (pinCircles[index]) pinCircles[index].material.color.setHex(0xe74c3c);
+                    const originalIndex = pins.indexOf(p);
+                    if (pinCircles[originalIndex]) pinCircles[originalIndex].material.color.setHex(0xe74c3c);
                 }
             });
 
-            playGameSound('stop_rolling');
+            playGameSound('ball_roll');
 
             currentFallenPins = fallen;
             document.getElementById('score-text').innerText = `Pins: ${fallen} / ${totalPinsInPlay}`;
 
-            // --- Score Logic ---
             let scoreToRecord = fallen;
             const lastIndex = matchHistory.length - 1;
             if (fallen === totalPinsInPlay) {
@@ -1260,9 +2304,8 @@
                 scoreToRecord = totalPinsInPlay * consecutiveStrikes;
             }
             matchHistory.push(scoreToRecord);
-            updateScoreTable();
+            recordRoundScore(scoreToRecord);
 
-            // --- UI and Animation Logic ---
             const msgBox = document.getElementById('msg-box');
             const replayBtn = document.getElementById('watch-replay-btn');
             const title = document.getElementById('msg-title');
@@ -1270,10 +2313,9 @@
             const btn = document.getElementById('action-btn');
 
             if (fallen === totalPinsInPlay) {
-                // Strike Effects
-                pins.forEach(p => {
+                playerPins.forEach(p => {
                     const blastForce = 15;
-                    const direction = p.body.position.clone().vsub(new CANNON.Vec3(0, 0, -22));
+                    const direction = p.body.position.clone().vsub(new CANNON.Vec3(myPlayerOffset, 0, -22));
                     direction.normalize();
                     p.body.applyImpulse(direction.scale(blastForce), p.body.position);
                 });
@@ -1281,21 +2323,35 @@
                 const strikePopup = document.getElementById('strike-popup');
                 strikePopup.classList.add('show');
                 triggerDimmer(true);
-                spawnImpact(new CANNON.Vec3(0, 1, -22), 0xf1c40f, 60, 4.0);
+                spawnImpact(new CANNON.Vec3(myPlayerOffset, 1, -22), 0xf1c40f, 60, 4.0);
 
-                // DELAY the menu so the popup is visible
                 setTimeout(() => {
                     strikePopup.classList.remove('show');
                     triggerDimmer(false);
                     showResultMenu();
                 }, 2000);
             } else {
-                // Show immediately if not a strike
                 showResultMenu();
             }
 
-            // Helper function to handle the menu display
             function showResultMenu() {
+                if (isMultiplayerActive) {
+                    const localDone = isPlayerComplete(getLocalPlayerId());
+                    const opponentDone = isPlayerComplete(getOpponentPlayerId());
+                    if (localDone && opponentDone) {
+                        showMultiplayerFinalResult();
+                        return;
+                    }
+                    if (localDone) {
+                        showMultiplayerWaitMessage(true);
+                        return;
+                    }
+                    if (opponentDone) {
+                        showMultiplayerWaitMessage(false);
+                        return;
+                    }
+                }
+
                 msgBox.style.display = 'block';
                 replayBtn.style.display = 'block';
 
@@ -1304,10 +2360,12 @@
                     let total = matchHistory.reduce((a, b) => a + b, 0);
                     body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
                     btn.innerText = "RESTART GAME";
+                    btn.onclick = fullReset;
                 } else {
                     title.innerText = (fallen === totalPinsInPlay) ? "STRIKE!" : "RESULT";
                     body.innerText = `${fallen} / ${totalPinsInPlay} pins cleared.`;
                     btn.innerText = "NEXT FRAME";
+                    btn.onclick = handleMatchEnd;
                 }
             }
         }
@@ -1331,64 +2389,63 @@
             isReplaying = true;
             replayFrameIndex = 0;
 
-            // UI Changes
             document.getElementById('msg-box').style.display = 'none';
 
-            // Change the button text and move it out of the msg-box if needed, 
-            // or ensure it stays visible to allow canceling.
             const replayBtn = document.getElementById('watch-replay-btn');
             replayBtn.innerText = "CANCEL REPLAY";
-            replayBtn.onclick = stopReplay; // Change the click function to stop
+            replayBtn.onclick = stopReplay;
         }
 
         function stopReplay() {
             isReplaying = false;
             playGameSound('ui_click');
 
-            // UI Reset
             document.getElementById('msg-box').style.display = 'block';
 
             const replayBtn = document.getElementById('watch-replay-btn');
             replayBtn.innerText = "WATCH REPLAY";
-            replayBtn.onclick = startReplay; // Change the click function back to start
+            replayBtn.onclick = startReplay;
 
-            // Reset camera to the main position so it doesn't stay stuck in Action Cam mode
-            camera.position.set(0, 5, 30);
-            camera.lookAt(0, 0, 0);
+            camera.position.set(myPlayerOffset, 5, 30);
+            camera.lookAt(myPlayerOffset, 0, 0);
         }
 
         function fullReset() {
             matchHistory = [];
+            scores = { p1: [], p2: [] };
             updateScoreTable();
             resetGame();
         }
 
-        function updateScoreTable() {
-            let total = 0;
-            for (let i = 0; i < MAX_MATCHES; i++) {
-                const cell = document.getElementById(`m${i}`);
-                if (matchHistory[i] !== undefined) {
-                    cell.innerText = matchHistory[i];
-                    total += matchHistory[i];
+        function updateScoreTable(player) {
+            if (!player) {
+                updateScoreTable('p1');
+                updateScoreTable('p2');
+                return;
+            }
+            if (!scores[player]) scores[player] = [];
 
-                    if (matchHistory[i] > 0 && matchHistory[i] % targetPinCount === 0) {
-                        const streakCount = matchHistory[i] / targetPinCount;
-                        if (streakCount > 1) {
-                            cell.style.color = "#e74c3c";
-                            cell.innerText = `${matchHistory[i]} (${streakCount}x)`;
-                        } else {
-                            cell.style.color = "#f1c40f";
-                            cell.innerText = `${matchHistory[i]}`;
-                        }
+            const history = scores[player];
+            let total = 0;
+
+            for (let i = 0; i < MAX_MATCHES; i++) {
+                const cell = document.getElementById(`${player}-m${i}`);
+                if (cell) {
+                    if (history[i] !== undefined) {
+                        cell.innerText = history[i];
+                        total += history[i];
+                        cell.style.background = "rgba(255, 255, 255, 0.2)";
                     } else {
-                        cell.style.color = "white";
+                        cell.innerText = "-";
+                        cell.style.background = "rgba(255, 255, 255, 0.05)";
                     }
-                } else {
-                    cell.innerText = "-";
-                    cell.style.color = "white";
                 }
             }
-            document.getElementById('total-score').innerText = total;
+
+            const totalCell = document.getElementById(`${player}-total`);
+            if (totalCell) {
+                totalCell.innerText = total;
+            }
         }
 
         function resetGame() {
@@ -1404,19 +2461,35 @@
             isReplaying = false;
 
             touchPathPoints = [];
-            const clearPoint = [new THREE.Vector3(0, 0, 0)];
-            [touchPathLine, touchPathLine2, touchPathLine3, outerGlowLine].forEach(line => {
-                if (line && line.geometry) {
-                    line.geometry.setFromPoints(clearPoint);
-                    line.geometry.attributes.position.needsUpdate = true;
-                }
-            });
+            const clearPoint = [new THREE.Vector3(myPlayerOffset, 0, 0)];
+            // Clear appropriate player's touchpath
+            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            if (isPlayer2) {
+                [touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2, outerGlowLine_P2].forEach(line => {
+                    if (line && line.geometry) {
+                        line.geometry.setFromPoints(clearPoint);
+                        line.geometry.attributes.position.needsUpdate = true;
+                    }
+                });
+            } else {
+                [touchPathLine_P1, touchPathLine2_P1, touchPathLine3_P1, outerGlowLine_P1].forEach(line => {
+                    if (line && line.geometry) {
+                        line.geometry.setFromPoints(clearPoint);
+                        line.geometry.attributes.position.needsUpdate = true;
+                    }
+                });
+            }
 
             actionTargetPin = null;
             lastTargetSwitchTime = 0;
 
-            camera.position.set(0, 4, 12);
-            camera.lookAt(0, 1, -5);
+            camera.position.set(myPlayerOffset, 4, 12);
+            camera.lookAt(myPlayerOffset, 1, -5);
+
+            // Reset camera look target for current player offset
+            if (typeof cameraLookAtTarget !== 'undefined' && cameraLookAtTarget) {
+                cameraLookAtTarget.set(myPlayerOffset, 1, 0);
+            }
 
             if (resetTimer) clearTimeout(resetTimer);
             resetTimer = null;
@@ -1438,14 +2511,17 @@
             ballBody.angularVelocity.set(0, 0, 0);
             ballBody.force.set(0, 0, 0);
             ballBody.torque.set(0, 0, 0);
-            ballBody.position.set(0, LANE_Y + BALL_RADIUS + 0.05, 5);
+            ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 5);
             ballBody.quaternion.set(0, 0, 0, 1);
 
             ballMesh.position.copy(ballBody.position);
             ballMesh.quaternion.copy(ballBody.quaternion);
 
             trailHistory = [];
-            if (trailMesh) trailMesh.visible = false;
+            if (trailMesh_P1) trailMesh_P1.visible = false;
+            if (trailMesh_P2) trailMesh_P2.visible = false;
+
+            stopAllGameSounds();
 
             pins.forEach(p => {
                 scene.remove(p.mesh);
@@ -1458,9 +2534,7 @@
             });
             pinCircles = [];
 
-            createPins();
-
-            playGameSound('stop_rolling');
+            createPins(myPlayerOffset);
 
             if (leftWallMesh) leftWallMesh.visible = true;
             if (rightWallMesh) rightWallMesh.visible = true;
@@ -1468,12 +2542,26 @@
             document.getElementById('action-cam-container').style.display = 'none';
         }
 
+        function stopAllGameSounds() {
+            if (typeof sounds !== 'undefined' && sounds) {
+                Object.values(sounds).forEach(sound => {
+                    if (sound && sound.isPlaying) sound.stop();
+                });
+            }
+            if (typeof gameSounds !== 'undefined' && gameSounds) {
+                Object.values(gameSounds).forEach(sound => {
+                    if (sound && sound.isPlaying) sound.stop();
+                });
+            }
+            if (ballPathSound && ballPathSound.isPlaying) ballPathSound.stop();
+            if (pinKnockSound && pinKnockSound.isPlaying) pinKnockSound.stop();
+        }
+
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
         function playGameSound(soundName) {
             const sound = sounds[soundName];
             if (sound && sound.buffer) {
-                // Check if context is suspended and try to resume
                 if (sound.context.state === 'suspended') {
                     sound.context.resume().then(() => {
                         if (!sound.isPlaying) sound.play();
@@ -1489,12 +2577,10 @@
             if (THREE.AudioContext.getContext().state === 'suspended') {
                 THREE.AudioContext.getContext().resume();
             }
-            // Optional: Remove the listener once unlocked to save resources
             window.removeEventListener('click', unlockAudio);
             window.removeEventListener('touchstart', unlockAudio);
         }
 
-        // Add listeners for the first interaction
         window.addEventListener('click', unlockAudio);
         window.addEventListener('touchstart', unlockAudio);
 
@@ -1518,15 +2604,13 @@
                 const is100 = (targetPinCount === 100);
                 const gutterLimit = is100 ? 3.8 : 2.25;
 
-                // 1. Find the best MOVING pin that is still ON the lane
                 pins.forEach(p => {
                     const v = p.body.velocity.length();
-                    // Height check (y > 0.1) and Gutter check (abs x < limit)
-                    const isOnLane = p.body.position.y > 0.1 && Math.abs(p.body.position.x) < gutterLimit;
+                    const isOnLane = p.body.position.y > 0.1 && Math.abs(p.body.position.x - myPlayerOffset) < gutterLimit;
 
-                    if (isOnLane && v > 0.8) { // Lowered velocity threshold slightly for smoother tracking
+                    if (isOnLane && v > 0.8) {
                         const distFromCenter = Math.sqrt(
-                            Math.pow(p.body.position.x, 2) + Math.pow(p.body.position.z - DECK_CENTER_Z, 2)
+                            Math.pow(p.body.position.x - myPlayerOffset, 2) + Math.pow(p.body.position.z - DECK_CENTER_Z, 2)
                         );
                         const priority = v / (distFromCenter + 1);
                         if (priority > highestPriority) {
@@ -1536,17 +2620,14 @@
                     }
                 });
 
-                // 2. Immediate Void Check for the CURRENT target
-                // If the pin we are currently watching falls, null it out so we can switch immediately
                 if (actionTargetPin) {
                     const targetIsFallen = actionTargetPin.body.position.y < 0.1 ||
-                        Math.abs(actionTargetPin.body.position.x) > gutterLimit;
+                        Math.abs(actionTargetPin.body.position.x - myPlayerOffset) > gutterLimit;
                     if (targetIsFallen) {
                         actionTargetPin = null;
                     }
                 }
 
-                // 3. Switch Logic (Bypass cooldown if current target is gone)
                 if (!actionTargetPin || (currentTime - lastTargetSwitchTime > SWITCH_COOLDOWN)) {
                     if (bestPin && bestPin !== actionTargetPin) {
                         actionTargetPin = bestPin;
@@ -1554,7 +2635,6 @@
                     }
                 }
 
-                // 4. Final Render Check
                 if (actionTargetPin) {
                     const offsetX = is100 ? 3.2 : 1.8;
                     const offsetY = is100 ? 2.5 : 1.3;
@@ -1568,16 +2648,16 @@
                     const safetyMargin = 0.8;
                     const maxX = (currentLaneWidth / 2) - safetyMargin;
 
-                    targetX = Math.max(-maxX, Math.min(maxX, targetX));
+                    // Clamp to player's lane bounds, not centered at 0
+                    targetX = Math.max(myPlayerOffset - maxX, Math.min(myPlayerOffset + maxX, targetX));
 
                     const targetCamPos = new THREE.Vector3(targetX, targetY, targetZ);
                     actionCamera.position.lerp(targetCamPos, 0.04);
                     actionCamera.lookAt(actionTargetPin.mesh.position);
                 } else {
-                    // FALLBACK: If no pins are moving on the lane, look at the deck center
-                    const fallbackPos = new THREE.Vector3(0, is100 ? 4 : 2, DECK_CENTER_Z + 5);
+                    const fallbackPos = new THREE.Vector3(myPlayerOffset, is100 ? 4 : 2, DECK_CENTER_Z + 5);
                     actionCamera.position.lerp(fallbackPos, 0.02);
-                    actionCamera.lookAt(0, 0, DECK_CENTER_Z);
+                    actionCamera.lookAt(myPlayerOffset, 0, DECK_CENTER_Z);
                 }
             }
             actionRenderer.render(scene, actionCamera);
@@ -1586,68 +2666,55 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Only step the physics world if we are NOT replaying
-            if (!isReplaying) {
-                world.step(1 / 60 * (typeof timeScale !== 'undefined' ? timeScale : 1));
+            if (world && !isReplaying) {
+                const currentScale = (typeof timeScale !== 'undefined') ? timeScale : 1;
+                world.step(1 / 60 * currentScale);
+            }
+
+            const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
+
+            if (typeof sunLight !== 'undefined' && sunLight) {
+                sunLight.position.x = currentOffset + 15;
             }
 
             if (ballMesh && ballBody) {
                 if (!isReplaying) {
-                    // --- LIVE PHYSICS MODE ---
                     ballMesh.position.copy(ballBody.position);
                     ballMesh.quaternion.copy(ballBody.quaternion);
 
-                    // Plough-through logic for 100 pins
-                    if (isBowling && ballBody.position.z < -15 && ballBody.position.z > -60) {
-                        if (ballBody.velocity.z > -10) {
-                            ballBody.velocity.z = -15;
-                        }
-                        ballBody.velocity.x *= 0.99;
+                    if (typeof isMultiplayerActive !== 'undefined' && isMultiplayerActive &&
+                        typeof conn !== 'undefined' && conn && conn.open) {
+                        conn.send({
+                            type: 'ballUpdate',
+                            pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
+                            quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w }
+                        });
                     }
 
-                    pins.forEach(p => {
-                        // Remove pins that fall deep into the void
-                        if (p.body.position.y < -5.0 && p.body.type !== CANNON.Body.STATIC) {
-                            p.body.velocity.set(0, 0, 0);
-                            p.body.angularVelocity.set(0, 0, 0);
-                            p.body.type = CANNON.Body.STATIC;
-                        }
-                        p.mesh.position.copy(p.body.position);
-                        p.mesh.quaternion.copy(p.body.quaternion);
-                    });
+                    if (pins && pins.length > 0) {
+                        pins.forEach(p => {
+                            if (p.mesh && p.body) {
+                                p.mesh.position.copy(p.body.position);
+                                p.mesh.quaternion.copy(p.body.quaternion);
+                            }
+                        });
+                    }
 
-                    // RECORDING LOGIC: Increased limit to 900 for longer duration
+                    // REPLAY RECORDING: Capture frame data during gameplay
                     if (isBowling && replayData.length < 900) {
                         replayData.push({
-                            ball: { pos: ballBody.position.clone(), quat: ballBody.quaternion.clone() },
+                            ball: {
+                                pos: ballBody.position.clone(),
+                                quat: ballBody.quaternion.clone()
+                            },
                             pins: pins.map(p => ({
                                 pos: p.body.position.clone(),
                                 quat: p.body.quaternion.clone()
                             }))
                         });
                     }
-
-                    // Sound Logic
-                    if (isBowling && typeof ballPathSound !== 'undefined' && ballPathSound && ballPathSound.buffer) {
-                        const { x, y, z } = ballBody.position;
-                        const currentHalfX = groundBody ? groundBody.shapes[0].halfExtents.x : 2.25;
-                        const isOnLane = Math.abs(x) < currentHalfX;
-                        const isTouchingFloor = y < 0.8 && y > 0.05;
-                        const isBeforeBackDrop = z > -65;
-                        const isMoving = ballBody.velocity.length() > 0.15;
-
-                        if (isOnLane && isTouchingFloor && isBeforeBackDrop && isMoving && !impactOccurred) {
-                            if (!ballPathSound.isPlaying) {
-                                if (ballPathSound.context.state === 'suspended') ballPathSound.context.resume();
-                                ballPathSound.play();
-                            }
-                        } else if (ballPathSound.isPlaying) {
-                            ballPathSound.pause();
-                        }
-                    }
                 } else {
-                    // --- REPLAY PLAYBACK MODE ---
-                    if (replayFrameIndex < replayData.length) {
+                    if (typeof replayFrameIndex !== 'undefined' && replayData && replayFrameIndex < replayData.length) {
                         const frame = replayData[replayFrameIndex];
                         ballMesh.position.copy(frame.ball.pos);
                         ballMesh.quaternion.copy(frame.ball.quat);
@@ -1658,65 +2725,96 @@
                             }
                         });
                         replayFrameIndex++;
-                    } else {
-                        // Auto-stop when frames run out
+                    } else if (typeof stopReplay === 'function') {
                         stopReplay();
                     }
                 }
             }
 
-            // --- CAMERA LOGIC (Handles both Live and Replay) ---
-            if (isBowling || isReplaying) {
-                const isPortrait = window.innerHeight > window.innerWidth;
-                const pinAreaZ = -22;
-                const is100 = (targetPinCount === 100);
+            // --- Sound Logic: Play rolling sound only when ball is on lane ---
+            if (isBowling && typeof ballPathSound !== 'undefined' && ballPathSound && ballPathSound.buffer) {
+                const { x, y, z } = ballBody.position;
+                const is100 = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
+                const laneMargin = is100 ? 3.8 : 2.25; // Lane width
 
-                let desiredPosition = new THREE.Vector3();
-                let desiredLookAt = new THREE.Vector3();
+                // Check conditions for playing sound
+                const isOnLane = Math.abs(x - currentOffset) < laneMargin; // Ball within lane x bounds
+                const isTouchingFloor = y < 0.8 && y > 0.05; // Ball near floor (not in air)
+                const isBeforeBackdrop = z > -65; // Ball hasn't hit backdrop
+                const isMoving = ballBody.velocity.length() > 0.15; // Ball is actually moving
 
-                if (isCinematicMode) {
-                    const yOffset = is100 ? (isPortrait ? 8.5 : 5.5) : (isPortrait ? 5.5 : 3.5);
-                    const zOffset = is100 ? (isPortrait ? 12 : 9) : (isPortrait ? 9 : 6);
-                    const lookZ = is100 ? pinAreaZ - 4 : pinAreaZ;
-                    desiredPosition.set(0, yOffset, pinAreaZ + zOffset);
-                    desiredLookAt.set(0, 0.5, lookZ);
+                if (isOnLane && isTouchingFloor && isBeforeBackdrop && isMoving) {
+                    // Play sound if not already playing
+                    if (!ballPathSound.isPlaying) {
+                        ballPathSound.play();
+                    }
+                } else {
+                    // Mute sound: ball in air, off lane, or at backdrop
+                    if (ballPathSound.isPlaying) {
+                        ballPathSound.stop();
+                    }
                 }
-                else if (impactOccurred || (isReplaying && replayFrameIndex > 30)) {
-                    // Switch to impact cam during replay after a short delay
-                    const lookZ = is100 ? -28 : -24;
-                    const camY = is100 ? 6.5 : 5;
-                    desiredPosition.set(0, camY, -14);
-                    desiredLookAt.set(0, 0.5, lookZ);
-                }
-                else if (ballBody) {
-                    const camY = is100 ? 5.5 : 4;
-                    const targetZ = Math.max(ballBody.position.z + 8, -12);
-                    const targetX = ballBody.position.x * 0.5;
-                    desiredPosition.set(targetX, camY, targetZ);
-                    desiredLookAt.set(ballBody.position.x * 0.5, 1, ballBody.position.z - 10);
-                }
-
-                camera.position.lerp(desiredPosition, 0.04);
-                cameraLookAtTarget.lerp(desiredLookAt, 0.04);
-                camera.lookAt(cameraLookAtTarget);
-            } else {
-                // Idle/Menu Camera
-                camera.position.lerp(new THREE.Vector3(0, 4, 12), 0.05);
-                cameraLookAtTarget.lerp(new THREE.Vector3(0, 1, 0), 0.05);
-                camera.lookAt(cameraLookAtTarget);
             }
 
-            // UI Animations (Pin indicators)
-            const time = performance.now() / 1000;
-            pinCircles.forEach(circle => {
-                circle.scale.setScalar(1 + Math.sin(time * 2) * 0.15);
-                circle.material.opacity = (0.4 + (Math.sin(time * 3) + 1) / 2 * 0.6) * 0.5 + 0.3;
-            });
+            if (camera) {
+                if (typeof isBowling !== 'undefined' && isBowling) {
+                    const isPortrait = window.innerHeight > window.innerWidth;
+                    const pinAreaZ = -22;
+                    const is100 = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
+                    const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
+
+                    let desiredPosition = new THREE.Vector3();
+                    let desiredLookAt = new THREE.Vector3();
+
+                    if (typeof isCinematicMode !== 'undefined' && isCinematicMode) {
+                        // Cinematic slow-motion view
+                        const yOffset = is100 ? (isPortrait ? 8.5 : 5.5) : (isPortrait ? 5.5 : 3.5);
+                        const zOffset = is100 ? (isPortrait ? 12 : 9) : (isPortrait ? 9 : 6);
+                        const lookZ = is100 ? pinAreaZ - 4 : pinAreaZ;
+                        desiredPosition.set(currentOffset, yOffset, pinAreaZ + zOffset);
+                        desiredLookAt.set(currentOffset, 0.5, lookZ);
+                    }
+                    else if (typeof impactOccurred !== 'undefined' && impactOccurred) {
+                        // Fixed camera focused on pins after impact
+                        const lookZ = is100 ? -28 : -24;
+                        const camY = is100 ? 6.5 : 5;
+                        desiredPosition.set(currentOffset, camY, -14);
+                        desiredLookAt.set(currentOffset, 1, lookZ);
+                    }
+                    else if (ballBody) {
+                        // Follow the ball during throw
+                        const camY = is100 ? 5.5 : 4;
+                        const targetZ = Math.max(ballBody.position.z + 8, -12);
+                        // Keep camera in player's lane, slightly offset for viewing angle
+                        const camOffsetX = currentOffset + (ballBody.position.x - currentOffset) * 0.3;
+                        desiredPosition.set(camOffsetX, camY, targetZ);
+                        desiredLookAt.set(ballBody.position.x, 1, ballBody.position.z - 10);
+                    }
+
+                    if (typeof cameraLookAtTarget !== 'undefined' && cameraLookAtTarget) {
+                        camera.position.lerp(desiredPosition, 0.04);
+                        cameraLookAtTarget.lerp(desiredLookAt, 0.04);
+                        camera.lookAt(cameraLookAtTarget);
+                    } else {
+                        // Fallback if cameraLookAtTarget is not initialized
+                        camera.position.lerp(desiredPosition, 0.04);
+                        camera.lookAt(desiredLookAt);
+                    }
+                } else {
+                    // Idle/Menu camera
+                    const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
+                    camera.position.lerp(new THREE.Vector3(currentOffset, 4, 12), 0.05);
+                    camera.lookAt(currentOffset, 1, 0);
+                }
+            }
 
             if (typeof updateActionCam === 'function') updateActionCam();
-            updateLightTrail();
-            updateImpacts();
-            renderer.render(scene, camera);
+            if (typeof updateLightTrail === 'function') updateLightTrail();
+            if (typeof updateImpacts === 'function') updateImpacts();
+
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
         }
 
         function onWindowResize() {
@@ -1725,7 +2823,19 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        window.onload = init;
+        window.onload = () => {
+            init();
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomId = urlParams.get('room');
+
+            if (roomId) {
+                console.log("DEBUG: Auto-joining room: " + roomId);
+                setTimeout(() => {
+                    joinGame(roomId);
+                }, 1000);
+            }
+        };
     </script>
 </body>
 
