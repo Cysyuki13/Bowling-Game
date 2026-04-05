@@ -27,7 +27,6 @@
             left: 0;
             width: 100%;
             height: 100%;
-            /* This allows clicks to pass through the empty space of the overlay */
             pointer-events: none;
             display: flex;
             background: transparent;
@@ -37,13 +36,11 @@
             padding: 15px;
             box-sizing: border-box;
             z-index: 1000;
-            /* Ensure UI is above the game canvas */
         }
 
         #action-cam-container {
             pointer-events: auto !important;
             z-index: 100;
-            /* Make it higher than the overlay background */
         }
 
         .top-ui {
@@ -141,11 +138,8 @@
             top: 20%;
             left: 50%;
             transform: translateX(-50%);
-            /* Remove the translateY(-50%) */
             background: rgba(15, 15, 25, 0.8);
-            /* Added more transparency */
             padding: 20px;
-            /* Reduced padding */
             border-radius: 24px;
             text-align: center;
             pointer-events: auto;
@@ -156,19 +150,14 @@
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
         }
 
-        /* Strike Popup Styling */
-        /* Updated Strike Popup Styling */
         #strike-popup {
             position: absolute;
             top: 40%;
             left: 50%;
             transform: translate(-50%, -50%) scale(0);
             font-size: clamp(40px, 15vw, 150px);
-            /* Slightly larger for impact */
             font-weight: 900;
             color: #ffffff;
-            /* White core for a "hotter" look */
-            /* Multi-layered shadow for a neon/fire effect */
             text-shadow:
                 0 0 10px #f1c40f,
                 0 0 20px #f1c40f,
@@ -184,46 +173,12 @@
             text-transform: uppercase;
         }
 
-        /* Thumping animation when the popup shows */
-        @keyframes strike-thump {
-            0% {
-                transform: translate(-50%, -50%) scale(0.5);
-                opacity: 0;
-            }
-
-            50% {
-                transform: translate(-50%, -50%) scale(1.5);
-                opacity: 1;
-            }
-
-            70% {
-                transform: translate(-50%, -50%) scale(1.1);
-            }
-
-            100% {
-                transform: translate(-50%, -50%) scale(1.2);
-            }
-        }
-
-        /* Pulsing glow animation */
-        @keyframes strike-glow {
-            from {
-                text-shadow: 0 0 20px #f1c40f, 0 0 40px #e67e22;
-            }
-
-            to {
-                text-shadow: 0 0 40px #ffffff, 0 0 80px #ff0000, 0 0 120px #ff0000;
-            }
-        }
-
         #strike-popup.show {
+            display: block;
             opacity: 1;
-            animation:
-                strike-thump 0.5s ease-out forwards,
-                strike-glow 0.8s ease-in-out infinite alternate;
+            animation: strike-thump 0.5s ease-out forwards, strike-glow 0.8s ease-in-out infinite alternate;
         }
 
-        /* Menu and Volume Styling */
         .menu-container {
             position: absolute;
             top: 15px;
@@ -245,22 +200,22 @@
             backdrop-filter: blur(10px);
         }
 
-        .volume-popup {
+        .settings-popup {
             margin-top: 10px;
             background: rgba(15, 15, 25, 0.95);
             padding: 15px;
             border-radius: 15px;
             border: 1px solid #e67e22;
             display: none;
-            /* Hidden by default */
             flex-direction: column;
             align-items: center;
             gap: 10px;
-            width: 150px;
+            width: 160px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
         }
 
-        .volume-popup label {
+        .settings-popup label {
             font-size: 12px;
             font-weight: bold;
             color: #f1c40f;
@@ -278,6 +233,23 @@
             font-weight: bold;
         }
 
+        .settings-btn {
+            background: rgba(230, 126, 34, 0.2);
+            color: white;
+            border: 1px solid #e67e22;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .settings-btn:hover {
+            background: rgba(230, 126, 34, 0.4);
+        }
+
         #screen-dimmer {
             position: absolute;
             top: 0;
@@ -286,9 +258,7 @@
             height: 100%;
             z-index: 1000;
             background: rgba(0, 0, 0, 0.85);
-            /* Adjust 0.85 for darkness level */
             z-index: 5000;
-            /* Sit behind the Text but above the Game */
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.5s ease;
@@ -298,9 +268,7 @@
             opacity: 1;
         }
 
-        /* Add this class for the "Enlarged" state */
         #action-cam-container.enlarged {
-            /* !important is required to override the inline style="..." width/height */
             width: 90vw !important;
             height: 50vh !important;
             bottom: 50% !important;
@@ -312,10 +280,8 @@
         #watch-replay-btn {
             pointer-events: auto;
             display: none;
-            /* Kept hidden until a round ends */
             position: absolute;
             bottom: 30px;
-            /* Distance from bottom */
             left: 50%;
             transform: translateX(-50%);
             padding: 12px 30px;
@@ -328,7 +294,6 @@
             font-weight: bold;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
             z-index: 1100;
-            /* High z-index to stay above the action cam */
             transition: all 0.3s ease;
         }
 
@@ -350,16 +315,13 @@
 
             .history-table {
                 min-width: 180px;
-                /* Shrunk from 240px */
                 font-size: 10px;
-                /* Shrunk from 12px */
             }
 
             .history-table th,
             .history-table td {
                 padding: 4px 2px;
                 width: 25px;
-                /* Narrowed columns */
             }
 
             .menu-container {
@@ -369,14 +331,39 @@
 
             .menu-icon-btn {
                 font-size: 18px !important;
-                /* Smaller gear icon */
                 padding: 8px !important;
             }
 
-            .volume-popup {
-                width: 120px;
-                /* Narrower volume menu */
+            .settings-popup {
+                width: 140px;
                 padding: 10px;
+            }
+        }
+
+        @keyframes strike-thump {
+            0% {
+                transform: translate(-50%, -50%) scale(0);
+                opacity: 0;
+            }
+
+            50% {
+                transform: translate(-50%, -50%) scale(1.2);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes strike-glow {
+            from {
+                text-shadow: 0 0 10px #fff, 0 0 20px #f1c40f;
+            }
+
+            to {
+                text-shadow: 0 0 20px #fff, 0 0 40px #e67e22;
             }
         }
     </style>
@@ -394,20 +381,31 @@
             <canvas id="action-canvas" style="pointer-events: none;"></canvas>
         </div>
 
-        <div class="menu-container" onmousedown="event.stopPropagation()">
-            <button id="menu-btn" class="menu-icon-btn" onclick="toggleMenu()">⚙️</button>
-            <div id="volume-menu" class="volume-popup">
+        <div class="menu-container" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"
+            ontouchmove="event.stopPropagation()">
+            <button class="menu-icon-btn" onclick="toggleSettingsMenu()">⚙️</button>
+            <div id="settings-menu" class="settings-popup">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e67e22;">SETTINGS</h3>
+
                 <label>VOLUME</label>
                 <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5"
                     oninput="updateVolume(this.value)">
                 <div id="vol-percent">50%</div>
+
+                <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
+
+                <label>GAME MODE</label>
+                <button id="mode-toggle-btn" class="settings-btn" onclick="toggleGameMode()">
+                    10 PINS
+                </button>
             </div>
         </div>
 
         <div class="top-ui">
             <div class="score-board">
                 <div id="score-text" style="font-size: 20px; font-weight: bold; color: #f39c12; margin-bottom: 8px;">
-                    Pins: 0</div>
+                    Pins: 0
+                </div>
                 <table class="history-table" id="history-table">
                     <thead>
                         <tr>
@@ -439,7 +437,7 @@
 
         <div id="strike-popup">STRIKE!</div>
 
-        <div id="msg-box">
+        <div id="msg-box" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
             <h1 id="msg-title">STRIKE!</h1>
             <p id="msg-body">Explosive hit!</p>
             <button id="action-btn" class="btn" onclick="handleMatchEnd()">NEXT FRAME</button>
@@ -451,7 +449,6 @@
         </button>
 
         <div id="screen-dimmer"></div>
-
 
     </div>
 
@@ -465,16 +462,20 @@
 
         // --- STATE ---
         let pins = [];
-        let pinCircles = []; // Add this line
-        let pinSoundPool = []; // For multiple pin hits
-        const POOL_SIZE = 10;
+        let pinCircles = [];
+        let targetPinCount = 10;
+        let lastPinSoundTime = 0;
 
         let scene, camera, renderer, world, sunLight;
         let ballBody, ballMesh;
+        let laneMesh;
+        let groundBody;
+
         let isBowling = false;
         let isTouching = false;
         let touchStartPos = { x: 0, y: 0 };
         let touchStartTime = 0;
+        let lastTouchX = 0;
         let impactParticles = [];
         let trailHistory = [];
         let trailMesh;
@@ -486,47 +487,48 @@
         let impactOccurred = false;
         let resetTimer = null;
 
-        // --- ADD THESE THREE LINES ---
         let timeScale = 1.0;
         let isCinematicMode = false;
         let cinematicTargetPin = null;
-        let leftWallMesh, rightWallMesh;
 
         let audioListener, audioLoader;
         let ballPathSound, pinKnockSound;
-
-        let isMenuOpen = false;
-
-        let actionCamera, actionRenderer, actionCanvas;
-        let isActionCamActive = false;
-
         let gameSounds = {};
 
+        let actionCamera, actionRenderer, actionCanvas;
         let actionTargetPin = null;
         let lastTargetSwitchTime = 0;
-        const SWITCH_COOLDOWN = 1000; // 1 second CD before it can pick a new pin
+        const SWITCH_COOLDOWN = 1000;
 
         const DECK_CENTER_Z = -22;
 
         let isReplaying = false;
-        let replayData = []; // This stores the "movie" of your throw
+        let replayData = [];
         let replayFrameIndex = 0;
 
         let cameraLookAtTarget = new THREE.Vector3(0, 1, 0);
 
-        let touchPathLine;
-        let outerGlowLine; // ADD THIS LINE HERE
+        let touchPathLine, touchPathLine2, touchPathLine3;
+        let outerGlowLine;
         let touchPathPoints = [];
-
-        // let listener, audioLoader, rollingSound;
-
-        // Add these with your other globals
 
         const groundMat = new CANNON.Material();
         const ballMat = new CANNON.Material();
         const pinMat = new CANNON.Material();
 
+        let leftGutter, rightGutter;
+        let leftWallJoint, rightWallJoint;
+
+        let sounds = {};
+
+        let leftWallMesh, rightWallMesh;
+        let leftWallBody, rightWallBody;
+
+        let currentPinVolume = 0.7;
+        let lastPinHitTime = 0;
+
         function init() {
+            // 1. Scene Setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x010105);
             scene.fog = new THREE.FogExp2(0x010105, 0.03);
@@ -541,92 +543,74 @@
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.body.appendChild(renderer.domElement);
 
+            // 2. Lighting
             scene.add(new THREE.AmbientLight(0xffffff, 0.6));
             const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
             scene.add(hemiLight);
 
             sunLight = new THREE.DirectionalLight(0xffffff, 3);
-            // 1. Move the light further "down" the lane so it's more central
-            sunLight.position.set(15, 35, -20);
+            sunLight.position.set(15, 35, -40);
             sunLight.intensity = 2.5;
             sunLight.castShadow = true;
-
-            // 2. High Resolution
             sunLight.shadow.mapSize.width = 2048;
             sunLight.shadow.mapSize.height = 2048;
-
-            // 3. Expand the "Shadow Box" (Frustum)
-            // We make the 'bottom' and 'top' larger to cover the start (Z=6) to the end (Z=-30)
             sunLight.shadow.camera.left = -20;
             sunLight.shadow.camera.right = 20;
-            sunLight.shadow.camera.top = 40;    // Covers the area behind the light
-            sunLight.shadow.camera.bottom = -40; // Covers the area in front of the light
+            sunLight.shadow.camera.top = 40;
+            sunLight.shadow.camera.bottom = -40;
             sunLight.shadow.camera.near = 0.5;
             sunLight.shadow.camera.far = 100;
-
-            // 4. Improve contact and quality
             sunLight.shadow.bias = -0.0005;
-
             scene.add(sunLight);
 
-            // Inside init() function:
+            // 3. UI Lines
             const pathMaterial = new THREE.LineBasicMaterial({
-                color: 0x00ffff,
-                transparent: true,
-                opacity: 0.9,
-                blending: THREE.AdditiveBlending
+                color: 0x00ffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending
             });
             touchPathLine = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
             touchPathLine2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
             touchPathLine3 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial);
-
-            // Offset them slightly to create width
             touchPathLine2.position.x += 0.02;
             touchPathLine3.position.x -= 0.02;
-
             scene.add(touchPathLine, touchPathLine2, touchPathLine3);
 
-            // Initialize the global outerGlowLine variable
             const outerGlowMaterial = new THREE.LineBasicMaterial({
-                color: 0x0088ff,
-                transparent: true,
-                opacity: 0.3,
-                blending: THREE.AdditiveBlending
+                color: 0x0088ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending
             });
             outerGlowLine = new THREE.Line(new THREE.BufferGeometry(), outerGlowMaterial);
-            outerGlowLine.scale.set(1.02, 1, 1.02); // Slightly wider for glow effect
+            outerGlowLine.scale.set(1.02, 1, 1.02);
             scene.add(outerGlowLine);
 
+            // 4. Street Lamps
             const streetLamp1 = new THREE.PointLight(0xffaa44, 1.5, 50);
             streetLamp1.position.set(10, 10, -15);
             scene.add(streetLamp1);
-
-            gameSounds['ball_rolling'] = ballPathSound;
-            gameSounds['pin_knock'] = pinKnockSound;
 
             const streetLamp2 = new THREE.PointLight(0x00ffff, 4, 40);
             streetLamp2.position.set(-5, 8, -30);
             scene.add(streetLamp2);
 
-            // Add this inside function init()
+            // 5. AUDIO SETUP (Fixing the ReferenceError)
             audioListener = new THREE.AudioListener();
             camera.add(audioListener);
-
             audioLoader = new THREE.AudioLoader();
 
-            // Load Ball Path Sound (Looping)
+            // Ensure gameSounds object exists globally if you use it in resetGame
+            if (typeof gameSounds === 'undefined') window.gameSounds = {};
+
             ballPathSound = new THREE.Audio(audioListener);
             audioLoader.load('bowling-ball-path.mp3', function (buffer) {
                 ballPathSound.setBuffer(buffer);
                 ballPathSound.setLoop(true);
                 ballPathSound.setVolume(0.5);
+                gameSounds['ball_roll'] = ballPathSound; // Storing in gameSounds for consistency
             });
 
-            // Load Pin Knock Sound
             pinKnockSound = new THREE.Audio(audioListener);
             audioLoader.load('single-bowling-pin-knock.mp3', function (buffer) {
                 pinKnockSound.setBuffer(buffer);
                 pinKnockSound.setVolume(0.7);
+                gameSounds['collision'] = pinKnockSound;
             });
 
             audioLoader.load('ui_sound.mp3', function (buffer) {
@@ -636,29 +620,51 @@
                 gameSounds['ui_click'] = uiSound;
             });
 
+            // 6. PHYSICS SETUP (Bouncy Walls)
             world = new CANNON.World();
             world.gravity.set(0, -23, 0);
 
+            // Export materials to global scope so other functions can use them
+            window.ballMat = new CANNON.Material("ballMat");
+            window.groundMat = new CANNON.Material("groundMat");
+            window.pinMat = new CANNON.Material("pinMat");
+            window.wallMat = new CANNON.Material("wallMat");
+
             const ballGroundContact = new CANNON.ContactMaterial(ballMat, groundMat, { friction: 0.2, restitution: 0.1 });
-            const ballPinContact = new CANNON.ContactMaterial(ballMat, pinMat, { friction: 0.4, restitution: 0.3 });
+            const ballPinContact = new CANNON.ContactMaterial(ballMat, pinMat, {
+                friction: 0.0,
+                restitution: 0.5
+            });
             const pinPinContact = new CANNON.ContactMaterial(pinMat, pinMat, { friction: 0.5, restitution: 0.2 });
             const pinGroundContact = new CANNON.ContactMaterial(pinMat, groundMat, { friction: 0.6, restitution: 0.1 });
 
-            actionCanvas = document.getElementById('action-canvas');
-            actionCamera = new THREE.PerspectiveCamera(45, 250 / 150, 0.1, 100);
-            actionRenderer = new THREE.WebGLRenderer({ canvas: actionCanvas, antialias: true });
-            actionRenderer.setSize(250, 150);
+            // Bouncy wall contact
+            const ballWallContact = new CANNON.ContactMaterial(ballMat, wallMat, {
+                friction: 0.1,
+                restitution: 0.8, // High bounciness
+                contactEquationStiffness: 1e8,
+                contactEquationRelaxation: 3
+            });
 
             world.addContactMaterial(ballGroundContact);
             world.addContactMaterial(ballPinContact);
             world.addContactMaterial(pinPinContact);
             world.addContactMaterial(pinGroundContact);
+            world.addContactMaterial(ballWallContact);
 
+            // 7. Action Camera Rendering
+            actionCanvas = document.getElementById('action-canvas');
+            actionCamera = new THREE.PerspectiveCamera(45, 250 / 150, 0.1, 100);
+            actionRenderer = new THREE.WebGLRenderer({ canvas: actionCanvas, antialias: true });
+            actionRenderer.setSize(250, 150);
+
+            // 8. Object Initialization
             createStreetEnvironment();
             createBall();
             createPins();
             initLightTrail();
 
+            // 9. Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('touchstart', onTouchStart, { passive: false });
             window.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -668,29 +674,17 @@
             window.addEventListener('mousemove', (e) => { if (isTouching) onTouchMove({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }); });
             window.addEventListener('mouseup', (e) => onTouchEnd({ changedTouches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }));
 
-            const testContainer = document.getElementById('action-cam-container');
-            if (testContainer) {
-                console.log("SUCCESS: Action Cam Container found in DOM.");
-                testContainer.style.border = "5px solid yellow"; // Temporary visible check
-            } else {
-                console.error("ERROR: Action Cam Container NOT found in DOM!");
-            }
-
+            // 10. Start
             resetGame();
-
             animate();
         }
 
         function toggleActionCamSize(event) {
             if (event) event.stopPropagation();
             playGameSound('ui_click');
-
             const container = document.getElementById('action-cam-container');
-
-            // Toggle class
             container.classList.toggle('enlarged');
 
-            // Force a UI refresh for the renderer
             setTimeout(() => {
                 if (actionRenderer && actionCamera) {
                     const w = container.clientWidth;
@@ -698,185 +692,196 @@
                     actionRenderer.setSize(w, h);
                     actionCamera.aspect = w / h;
                     actionCamera.updateProjectionMatrix();
-                    console.log("Resized Action Cam to: " + w + "x" + h);
                 }
             }, 50);
         }
 
-        function startReplay() {
-            if (replayData.length === 0) return;
+        function toggleSettingsMenu() {
             playGameSound('ui_click');
-            isReplaying = true;
-            replayFrameIndex = 0;
-            document.getElementById('msg-box').style.display = 'none';
+            const menu = document.getElementById('settings-menu');
+            menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
         }
 
-        function stopReplay() {
-            isReplaying = false;
-            // Bring the result box back once the replay finishes
-            document.getElementById('msg-box').style.display = 'block';
-            document.getElementById('watch-replay-btn').style.display = 'block';
-            console.log("Replay Finished.");
-        }
+        function toggleGameMode() {
+            if (targetPinCount === 10) {
+                targetPinCount = 100;
+                document.getElementById('mode-toggle-btn').innerText = "100 PINS";
+            } else {
+                targetPinCount = 10;
+                document.getElementById('mode-toggle-btn').innerText = "10 PINS";
+            }
 
-        function toggleMenu() {
+            updateLaneWidth();
+            matchHistory = [];
+            updateScoreTable();
+            resetGame();
             playGameSound('ui_click');
-            const menu = document.getElementById('volume-menu');
-            isMenuOpen = (menu.style.display === 'none' || menu.style.display === '');
-            menu.style.display = isMenuOpen ? 'flex' : 'none';
         }
 
         function updateVolume(value) {
             const percent = Math.round(value * 100);
             document.getElementById('vol-percent').innerText = percent + "%";
-
-            // Update the Three.js Master Volume
             if (audioListener) {
                 audioListener.setMasterVolume(value * 2);
             }
         }
 
+        function updateLaneWidth() {
+            const is100 = (targetPinCount === 100);
+
+            // 1. Explicitly define the positions for each mode
+            // 10 pins: lane is 4.5 wide, wall should be at 3.6
+            // 100 pins: lane is 7.6 wide, wall should be at 4.4
+            const laneWidth = is100 ? 7.6 : 4.5;
+            const wallX = is100 ? 4.4 : 3.6;
+
+            // 2. Scale the visual lane
+            if (laneMesh) {
+                laneMesh.scale.x = laneWidth / 4.5;
+            }
+
+            // 3. Update the Physics floor width
+            if (groundBody) {
+                const shape = groundBody.shapes[0];
+                shape.halfExtents.x = laneWidth / 2;
+                shape.updateConvexPolyhedronRepresentation();
+                groundBody.updateBoundingRadius();
+            }
+
+            // 4. FIX: Handle Gutters
+            if (leftGutter && rightGutter) {
+                if (is100) {
+                    leftGutter.visible = false;
+                    rightGutter.visible = false;
+                } else {
+                    leftGutter.visible = true;
+                    rightGutter.visible = true;
+                    // Reset to exact original gutter positions
+                    leftGutter.position.x = -2.5;
+                    rightGutter.position.x = 2.5;
+                }
+            }
+
+            // 5. FIX: Move Walls AND Wall Joints (Vertical Pillars)
+            // We use an array to make sure everything moves together
+            const leftSide = [leftWallMesh, leftWallBody, leftWallJoint];
+            const rightSide = [rightWallMesh, rightWallBody, rightWallJoint];
+
+            leftSide.forEach(obj => {
+                if (obj) obj.position.x = -wallX;
+            });
+
+            rightSide.forEach(obj => {
+                if (obj) obj.position.x = wallX;
+            });
+        }
+
         function triggerDimmer(show) {
             const dimmer = document.getElementById('screen-dimmer');
             if (!dimmer) return;
-
-            if (show) {
-                dimmer.classList.add('dimmed');
-                debugDimmer("Triggering ON");
-            } else {
-                dimmer.classList.remove('dimmed');
-                debugDimmer("Triggering OFF (Reset)");
-            }
-        }
-
-        function updateActionCam() {
-            if (!isBowling) {
-                document.getElementById('action-cam-container').style.display = 'none';
-                actionTargetPin = null;
-                return;
-            }
-
-            document.getElementById('action-cam-container').style.display = 'block';
-            const currentTime = performance.now();
-
-            // 1. PRE-IMPACT: Follow the ball
-            if (!impactOccurred) {
-                const ballPos = ballMesh.position;
-                actionCamera.position.lerp(new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3), 0.1);
-                actionCamera.lookAt(ballPos.x, 0.4, ballPos.z - 2);
-            }
-            // 2. POST-IMPACT: Follow the pins
-            else {
-                let bestPin = null;
-                let highestPriority = -1;
-
-                pins.forEach(p => {
-                    const v = p.body.velocity.length();
-                    const isOnLane = p.body.position.y > -1.0;
-
-                    // Only look at pins moving faster than a slow roll (v > 1.5)
-                    if (isOnLane && v > 1.0) {
-                        // Calculate distance from the center point (0, 0, -22)
-                        const distFromCenter = Math.sqrt(
-                            Math.pow(p.body.position.x, 2) +
-                            Math.pow(p.body.position.z - DECK_CENTER_Z, 2)
-                        );
-
-                        // PRIORITY FORMULA: Velocity / (Distance + 1)
-                        // Pins at the center (dist 0) keep full velocity.
-                        // Pins far away have their velocity effectively reduced.
-                        const priority = v / (distFromCenter + 1);
-
-                        if (priority > highestPriority) {
-                            highestPriority = priority;
-                            bestPin = p;
-                        }
-                    }
-                });
-
-                // Check if current target fell into void
-                const currentTargetInVoid = actionTargetPin && actionTargetPin.body.position.y < -1.0;
-
-                // Switch if: no target, target fell, or cooldown passed and we have a new best priority
-                if (!actionTargetPin || currentTargetInVoid || (currentTime - lastTargetSwitchTime > SWITCH_COOLDOWN)) {
-                    if (bestPin && bestPin !== actionTargetPin) {
-                        actionTargetPin = bestPin;
-                        lastTargetSwitchTime = currentTime;
-                    }
-                }
-
-                if (actionTargetPin) {
-                    const targetCamPos = new THREE.Vector3(
-                        actionTargetPin.mesh.position.x + 1.8,
-                        1.3,
-                        actionTargetPin.mesh.position.z + 2.5
-                    );
-                    actionCamera.position.lerp(targetCamPos, 0.04);
-                    actionCamera.lookAt(actionTargetPin.mesh.position);
-                }
-            }
-
-            actionRenderer.render(scene, actionCamera);
-        }
-
-        function resetAllGameSounds() {
-            // 1. Stop the looping rolling sound
-            if (ballPathSound && ballPathSound.isPlaying) {
-                ballPathSound.stop();
-            }
-
-            // 2. Stop the pin hit sound (if it's currently playing from a late hit)
-            if (pinKnockSound && pinKnockSound.isPlaying) {
-                pinKnockSound.stop();
-            }
-
-            // 3. Optional: Reset the master volume to the slider value 
-            // (In case any fade-outs occurred)
-            const vol = document.getElementById('volume-slider').value;
-            if (audioListener) {
-                audioListener.setMasterVolume(vol * 2);
-            }
+            if (show) dimmer.classList.add('dimmed');
+            else dimmer.classList.remove('dimmed');
         }
 
         function createStreetEnvironment() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 1024;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#e3c18d';
+            ctx.fillRect(0, 0, 512, 1024);
+
+            const plankCount = 39;
+            const plankWidth = 512 / plankCount;
+
+            for (let i = 0; i < plankCount; i++) {
+                ctx.fillStyle = `rgba(139, 69, 19, ${Math.random() * 0.1})`;
+                ctx.fillRect(i * plankWidth, 0, plankWidth, 1024);
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(i * plankWidth, 0);
+                ctx.lineTo(i * plankWidth, 1024);
+                ctx.stroke();
+            }
+
+            const laneTexture = new THREE.CanvasTexture(canvas);
+            laneTexture.wrapS = THREE.RepeatWrapping;
+            laneTexture.wrapT = THREE.RepeatWrapping;
+            laneTexture.repeat.set(1, 10);
+
             const laneGeo = new THREE.BoxGeometry(4.5, 0.2, 100);
-            const laneMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.95, metalness: 0.05 });
-            const laneMesh = new THREE.Mesh(laneGeo, laneMat);
+            const laneMat = new THREE.MeshStandardMaterial({
+                map: laneTexture,
+                roughness: 0.9,
+                metalness: 0.7,
+                color: 0x444444
+            });
+
+            laneMesh = new THREE.Mesh(laneGeo, laneMat);
             laneMesh.position.set(0, 0, -35);
             laneMesh.receiveShadow = true;
             scene.add(laneMesh);
 
+            // --- GUTTER CREATION ---
+            const gutterGeo = new THREE.BoxGeometry(0.5, 0.2, 100);
+            const gutterMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
+
+            leftGutter = new THREE.Mesh(gutterGeo, gutterMat);
+            leftGutter.position.set(-2.5, -0.05, -35);
+            scene.add(leftGutter);
+
+            rightGutter = new THREE.Mesh(gutterGeo, gutterMat.clone());
+            rightGutter.position.set(2.5, -0.05, -35);
+            scene.add(rightGutter);
+
+            // --- VISUAL WALLS ---
             const wallGeo = new THREE.BoxGeometry(1.2, 18, 100);
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, transparent: true, opacity: 1 });
+            const wallVisualMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d });
 
-            const wallDist = 3.6; // Wall Distance from center 3.6 default (2.8 NO Gutter), slightly wider for better visuals
+            const wallDist = 3.6;
 
-            leftWallMesh = new THREE.Mesh(wallGeo, wallMat);
-            leftWallMesh.position.set(-wallDist, 9, -35); // was -4.8
+            leftWallMesh = new THREE.Mesh(wallGeo, wallVisualMat);
+            leftWallMesh.position.set(-wallDist, 9, -35);
             scene.add(leftWallMesh);
 
-            rightWallMesh = new THREE.Mesh(wallGeo, wallMat.clone());
-            rightWallMesh.position.set(wallDist, 9, -35); // was 4.8
+            rightWallMesh = new THREE.Mesh(wallGeo, wallVisualMat.clone());
+            rightWallMesh.position.set(wallDist, 9, -35);
             scene.add(rightWallMesh);
 
+            // --- PHYSICS BODIES ---
+
+            // 1. Ground (Still uses groundMat - not bouncy)
             const groundShape = new CANNON.Box(new CANNON.Vec3(2.25, 0.1, 50));
-            const groundBody = new CANNON.Body({ mass: 0, material: groundMat });
+            groundBody = new CANNON.Body({ mass: 0, material: groundMat });
             groundBody.addShape(groundShape);
             groundBody.position.set(0, 0, -35);
             world.addBody(groundBody);
 
+            // 2. Bouncy Walls (Updated to use wallMat)
             const physicsWallShape = new CANNON.Box(new CANNON.Vec3(0.6, 9, 50));
 
-            const leftWallBody = new CANNON.Body({ mass: 0, material: groundMat });
+            // Left Wall
+            leftWallBody = new CANNON.Body({
+                mass: 0,
+                material: typeof wallMat !== 'undefined' ? wallMat : groundMat
+            });
             leftWallBody.addShape(physicsWallShape);
-            leftWallBody.position.set(-wallDist, 9, -35); // was -4.8
+            leftWallBody.position.set(-wallDist, 9, -35);
             world.addBody(leftWallBody);
 
-            const rightWallBody = new CANNON.Body({ mass: 0, material: groundMat });
+            // Right Wall
+            rightWallBody = new CANNON.Body({
+                mass: 0,
+                material: typeof wallMat !== 'undefined' ? wallMat : groundMat
+            });
             rightWallBody.addShape(physicsWallShape);
             rightWallBody.position.set(wallDist, 9, -35);
             world.addBody(rightWallBody);
         }
+
+
 
         function createBall() {
             ballMesh = new THREE.Mesh(
@@ -887,22 +892,17 @@
             scene.add(ballMesh);
 
             const ballShape = new CANNON.Sphere(BALL_RADIUS);
-            // Start with mass 0 to keep it in place
             ballBody = new CANNON.Body({ mass: 0, shape: ballShape, material: ballMat });
 
             ballBody.type = CANNON.Body.STATIC;
             ballBody.mass = 0;
-
             ballBody.updateMassProperties();
             ballBody.linearDamping = 0.1;
             ballBody.angularDamping = 0.1;
 
-            // Explicitly set the position
             const startPos = new CANNON.Vec3(0, LANE_Y + BALL_RADIUS + 0.05, 6);
             ballBody.position.copy(startPos);
             world.addBody(ballBody);
-
-            // Sync mesh immediately
             ballMesh.position.copy(ballBody.position);
         }
 
@@ -928,100 +928,146 @@
 
             const SCORE_RADIUS = 0.22;
             const circleGeo = new THREE.RingGeometry(SCORE_RADIUS - 0.05, SCORE_RADIUS, 32);
-
-            const circleMat = new THREE.MeshBasicMaterial({
-                color: 0xe74c3c, // Initial Red color
-                side: THREE.DoubleSide,
+            const circleMat = new THREE.MeshLambertMaterial({
+                color: 0xffffff,      // Pure white base
+                emissive: 0x00ffff,   // Neon Cyan glow (contrast well with green)
+                emissiveIntensity: 0.5,
                 transparent: true,
-                opacity: 0.5
+                opacity: 0.6
             });
 
-            const spacing = 0.65;
-            const rows = 4;
-            const startZ = -22;
+            const spawnSinglePin = (x, z) => {
+                const circle = new THREE.Mesh(circleGeo, circleMat.clone());
+                circle.rotation.x = -Math.PI / 2;
+                circle.position.set(x, LANE_Y + 0.01, z);
+                scene.add(circle);
+                pinCircles.push(circle);
 
-            for (let r = 0; r < rows; r++) {
-                for (let i = 0; i <= r; i++) {
-                    const x = (i - r * 0.5) * spacing;
-                    const z = startZ - (r * spacing);
+                const group = new THREE.Group();
 
-                    // Ring on the floor
-                    const circleMaterialInstance = circleMat.clone();
-                    const circle = new THREE.Mesh(circleGeo, circleMaterialInstance);
-                    circle.rotation.x = -Math.PI / 2;
-                    circle.position.set(x, LANE_Y + 0.01, z);
-                    scene.add(circle);
-                    pinCircles.push(circle);
+                // 1. MAIN PIN MESH
+                const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
+                pMesh.castShadow = true;
+                group.add(pMesh);
 
-                    // --- GLOW SPRITE CODE REMOVED FROM HERE ---
+                // 2. OUTLINE EFFECT MESH
+                // We create a slightly larger version of the pin geometry 
+                // and render only the back side in black.
+                const outlineMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x000000,
+                    side: THREE.BackSide
+                });
+                const outlineMesh = new THREE.Mesh(pinGeo, outlineMaterial);
+                // Adjust this scale (1.07) to make the outline thicker or thinner
+                outlineMesh.scale.setScalar(1.07);
+                group.add(outlineMesh);
 
-                    // Visual Pin Group
-                    const group = new THREE.Group();
-                    const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
-                    pMesh.castShadow = true;
-                    group.add(pMesh);
+                // 3. PIN STRIPE
+                const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+                stripe.position.set(0, 0.16, 0);
+                group.add(stripe);
 
-                    const stripe = new THREE.Mesh(stripeGeo, stripeMat);
-                    stripe.position.set(0, 0.16, 0);
-                    group.add(stripe);
+                scene.add(group);
 
-                    scene.add(group);
+                // Physics setup (remains the same)
+                const pBody = new CANNON.Body({ mass: 2.5, material: pinMat });
+                const qCyl = new CANNON.Quaternion();
+                qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
 
-                    // Physics Body
-                    const pBody = new CANNON.Body({
-                        mass: 2.5,
-                        material: pinMat
-                    });
+                pBody.addShape(new CANNON.Cylinder(0.12, 0.12, 0.1, 12), new CANNON.Vec3(0, -0.35, 0), qCyl);
+                pBody.addShape(new CANNON.Sphere(0.16), new CANNON.Vec3(0, -0.18, 0));
+                pBody.addShape(new CANNON.Cylinder(0.08, 0.13, 0.3, 12), new CANNON.Vec3(0, 0.05, 0), qCyl);
+                pBody.addShape(new CANNON.Sphere(0.09), new CANNON.Vec3(0, 0.31, 0));
 
-                    const qCyl = new CANNON.Quaternion();
-                    qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+                pBody.linearDamping = targetPinCount > 50 ? 0.45 : 0.2;
+                pBody.angularDamping = targetPinCount > 50 ? 0.5 : 0.3;
+                pBody.type = CANNON.Body.KINEMATIC;
+                pBody.position.set(x, LANE_Y + (PIN_HEIGHT / 2), z);
 
-                    pBody.addShape(new CANNON.Cylinder(0.12, 0.12, 0.1, 12), new CANNON.Vec3(0, -0.35, 0), qCyl);
-                    pBody.addShape(new CANNON.Sphere(0.16), new CANNON.Vec3(0, -0.18, 0));
-                    pBody.addShape(new CANNON.Cylinder(0.08, 0.13, 0.3, 12), new CANNON.Vec3(0, 0.05, 0), qCyl);
-                    pBody.addShape(new CANNON.Sphere(0.09), new CANNON.Vec3(0, 0.31, 0));
+                pBody.addEventListener('collide', (e) => {
+                    if (pBody.type === CANNON.Body.KINEMATIC) {
+                        pBody.type = CANNON.Body.DYNAMIC;
+                        pBody.updateMassProperties();
 
-                    pBody.linearDamping = 0.2;
-                    pBody.angularDamping = 0.3;
-                    pBody.type = CANNON.Body.KINEMATIC;
-                    pBody.position.set(x, LANE_Y + (PIN_HEIGHT / 2), z);
+                        const now = performance.now();
 
-                    pBody.addEventListener('collide', (e) => {
-                        if (pBody.type === CANNON.Body.KINEMATIC) {
-                            pBody.type = CANNON.Body.DYNAMIC;
-                            pBody.updateMassProperties();
+                        // Volume Decay Logic
+                        // If the last hit was more than 1 second ago, reset volume
+                        if (now - lastPinHitTime > 1000) {
+                            currentPinVolume = 0.7;
+                        } else {
+                            // Decrease volume by 0.05 per hit, but cap at 0.175 (25% of 0.7)
+                            currentPinVolume = Math.max(0.07, currentPinVolume - 0.05);
+                        }
+                        lastPinHitTime = now;
 
+                        if (now - lastPinSoundTime > 80) {
                             if (pinKnockSound && pinKnockSound.buffer) {
                                 if (pinKnockSound.isPlaying) pinKnockSound.stop();
+
+                                // Apply the calculated dynamic volume
+                                pinKnockSound.setVolume(currentPinVolume);
                                 pinKnockSound.play();
                             }
-
-                            const forceDir = pBody.position.vsub(e.contact.bi.position);
-                            forceDir.normalize();
-                            pBody.applyImpulse(forceDir.scale(2), pBody.position);
-                            pBody.velocity.y += 1.2;
-
-                            spawnImpact(pBody.position, 0xffffff, 8);
-
-                            if (!impactOccurred) {
-                                impactOccurred = true;
-                                isCinematicMode = true;
-                                timeScale = 0.15;
-                                cinematicTargetPin = pBody;
-
-                                setTimeout(() => {
-                                    timeScale = 1.0;
-                                    isCinematicMode = false;
-                                }, 3000);
-
-                                clearTimeout(resetTimer);
-                                resetTimer = setTimeout(checkPins, 3500);
-                            }
+                            lastPinSoundTime = now;
                         }
-                    });
 
-                    world.addBody(pBody);
-                    pins.push({ mesh: group, body: pBody, initialPos: { x: x, z: z } });
+                        // Physics impulse logic remains the same...
+                        const forceDir = pBody.position.vsub(e.contact.bi.position);
+                        forceDir.normalize();
+                        pBody.applyImpulse(forceDir.scale(2), pBody.position);
+                        pBody.velocity.y += 1.2;
+
+                        spawnImpact(pBody.position, 0xffffff, 8);
+
+                        // Cinematic/Reset logic remains the same...
+                        if (!impactOccurred) {
+                            impactOccurred = true;
+                            isCinematicMode = true;
+                            timeScale = 0.15;
+                            cinematicTargetPin = pBody;
+
+                            setTimeout(() => {
+                                timeScale = 1.0;
+                                isCinematicMode = false;
+                            }, 3000);
+
+                            clearTimeout(resetTimer);
+                            resetTimer = setTimeout(checkPins, 3500);
+                        }
+                    }
+                });
+
+                world.addBody(pBody);
+                pins.push({ mesh: group, body: pBody, initialPos: { x: x, z: z } });
+            };
+
+            if (targetPinCount === 100) {
+                const spacing = 0.52;
+                const startZ = -22;
+                for (let r = 0; r < 13; r++) {
+                    for (let i = 0; i <= r; i++) {
+                        const x = (i - r * 0.5) * spacing;
+                        const z = startZ - (r * spacing);
+                        spawnSinglePin(x, z);
+                    }
+                }
+                const row14Count = 9;
+                const r = 13;
+                for (let i = 0; i < row14Count; i++) {
+                    const x = (i - (row14Count - 1) * 0.5) * spacing;
+                    const z = startZ - (r * spacing);
+                    spawnSinglePin(x, z);
+                }
+            } else {
+                const spacing = 0.65;
+                const startZ = -22;
+                for (let r = 0; r < 4; r++) {
+                    for (let i = 0; i <= r; i++) {
+                        const x = (i - r * 0.5) * spacing;
+                        const z = startZ - (r * spacing);
+                        spawnSinglePin(x, z);
+                    }
                 }
             }
         }
@@ -1063,18 +1109,14 @@
 
         function spawnImpact(pos, color, count, scale = 1.0) {
             for (let i = 0; i < count; i++) {
-                // Use the scale parameter to make particles bigger for a strike
                 const part = new THREE.Mesh(
                     new THREE.SphereGeometry(0.04 * scale, 4, 4),
                     new THREE.MeshBasicMaterial({ color: color, transparent: true })
                 );
                 part.position.set(pos.x, pos.y, pos.z);
-
-                // Increase velocity for a bigger explosion
                 const vx = (Math.random() - 0.5) * 0.1 * scale;
                 const vy = Math.random() * 0.3 * scale;
                 const vz = (Math.random() - 0.5) * 0.1 * scale;
-
                 scene.add(part);
                 impactParticles.push({ mesh: part, vel: new THREE.Vector3(vx, vy, vz), life: 1.0 });
             }
@@ -1103,9 +1145,7 @@
             const t = (e.touches && e.touches[0]) || e;
             touchStartPos.x = t.clientX;
             touchStartPos.y = t.clientY;
-
             lastTouchX = t.clientX;
-
             touchStartTime = Date.now();
             ballMesh.material.emissive.setHex(0x00ffff);
         }
@@ -1114,13 +1154,12 @@
             if (isBowling || !isTouching) return;
             const t = (e.touches && e.touches[0]) || e;
 
-            // --- Existing Ball Movement Logic ---
             const deltaX_Movement = (t.clientX - lastTouchX) * 0.015;
-            ballBody.position.x = Math.max(-1.5, Math.min(1.5, ballBody.position.x + deltaX_Movement));
-            lastTouchX = t.clientX;
-            // ------------------------------------
 
-            // Convert Screen Touch to 3D World Position for the "Ink"
+            const movementLimit = (targetPinCount === 100) ? 3.0 : 1.5;
+            ballBody.position.x = Math.max(-movementLimit, Math.min(movementLimit, ballBody.position.x + deltaX_Movement));
+            lastTouchX = t.clientX;
+
             let vector = new THREE.Vector3(
                 (t.clientX / window.innerWidth) * 2 - 1,
                 -(t.clientY / window.innerHeight) * 2 + 1,
@@ -1132,20 +1171,12 @@
             let pos = camera.position.clone().add(dir.multiplyScalar(distance));
 
             const MAX_PATH_POINTS = 100;
-
             touchPathLine.geometry.setFromPoints(touchPathPoints);
             touchPathLine2.geometry.setFromPoints(touchPathPoints);
             touchPathLine3.geometry.setFromPoints(touchPathPoints);
-
-            // Add the new point to our path array
             touchPathPoints.push(pos);
+            if (touchPathPoints.length > MAX_PATH_POINTS) touchPathPoints.shift();
 
-            // Keep the trail from getting too long
-            if (touchPathPoints.length > MAX_PATH_POINTS) {
-                touchPathPoints.shift();
-            }
-
-            // Update the geometry to show the line
             touchPathLine.geometry.setFromPoints(touchPathPoints);
             if (outerGlowLine) outerGlowLine.geometry.setFromPoints(touchPathPoints);
         }
@@ -1156,27 +1187,17 @@
             isTouching = false;
 
             const t = (e.changedTouches && e.changedTouches[0]) || e;
-
-            // Calculate horizontal (X) and vertical (Y) distances
             const deltaX = t.clientX - touchStartPos.x;
             const deltaY = touchStartPos.y - t.clientY;
             const duration = Date.now() - touchStartTime;
 
             ballMesh.material.emissive.setHex(0x003366);
 
-            // Minimum flick distance to trigger a throw
             if (deltaY > 20) {
-                // Calculate forward speed (clamped between 25 and 65)
                 let speedScale = (deltaY / Math.max(duration, 5)) * 25;
                 let forwardSpeed = Math.max(25, Math.min(speedScale, 65));
-
-                // Calculate horizontal aim (sideways speed)
-                // Sensitivity (0.05) can be adjusted to make aiming wider or narrower
                 let sideSpeed = deltaX * 0.05;
-
                 randomHookForce = (Math.random() - 0.5) * 5;
-
-                // Pass both speeds to the throw function
                 throwBall(forwardSpeed, sideSpeed);
             } else {
                 document.getElementById('hint').style.opacity = '1';
@@ -1190,14 +1211,11 @@
             isBowling = true;
             document.getElementById('hint').style.opacity = '0';
 
-            ballBody.mass = 500;
+            ballBody.mass = 500; // ball mass
             ballBody.type = CANNON.Body.DYNAMIC;
             ballBody.updateMassProperties();
 
-            // Apply the velocity: [X = Side Aim, Y = 0, Z = Forward Power]
             ballBody.velocity.set(sideSpeed, 0, -speed * 0.9);
-
-            // Keep your rotation/hook logic
             ballBody.angularVelocity.set(speed * 0.8, randomHookForce * 2, (Math.random() - 0.5) * 15);
 
             resetTimer = setTimeout(checkPins, 4000);
@@ -1206,25 +1224,21 @@
 
         function checkPins() {
             let fallen = 0;
+            const totalPinsInPlay = pins.length;
             const SCORE_RADIUS = 0.22;
 
-            // 1. Calculate how many pins have fallen
             pins.forEach((p, index) => {
                 const dx = p.body.position.x - p.initialPos.x;
                 const dz = p.body.position.z - p.initialPos.z;
                 const distance = Math.sqrt(dx * dx + dz * dz);
-
                 const up = new CANNON.Vec3(0, 1, 0);
                 const pinUp = p.body.quaternion.vmult(up);
                 const angle = Math.acos(up.dot(pinUp));
 
-                // Logic for "Invalid" pin (Fallen or moved)
                 if (distance > SCORE_RADIUS || angle > 0.78 || p.body.position.y < -0.5) {
                     fallen++;
-                    // Turn circle GREEN if the pin is invalid
                     if (pinCircles[index]) pinCircles[index].material.color.setHex(0x2ecc71);
                 } else {
-                    // Keep circle RED if the pin is still valid
                     if (pinCircles[index]) pinCircles[index].material.color.setHex(0xe74c3c);
                 }
             });
@@ -1232,24 +1246,31 @@
             playGameSound('stop_rolling');
 
             currentFallenPins = fallen;
-            document.getElementById('score-text').innerText = `Pins: ${fallen}`;
+            document.getElementById('score-text').innerText = `Pins: ${fallen} / ${totalPinsInPlay}`;
 
+            // --- Score Logic ---
             let scoreToRecord = fallen;
             const lastIndex = matchHistory.length - 1;
-            if (fallen === 10) {
+            if (fallen === totalPinsInPlay) {
                 let consecutiveStrikes = 1;
                 for (let i = lastIndex; i >= 0; i--) {
-                    if (matchHistory[i] >= 10) consecutiveStrikes++;
+                    if (matchHistory[i] >= totalPinsInPlay) consecutiveStrikes++;
                     else break;
                 }
-                scoreToRecord = 10 * consecutiveStrikes;
+                scoreToRecord = totalPinsInPlay * consecutiveStrikes;
             }
             matchHistory.push(scoreToRecord);
             updateScoreTable();
 
-            // 2. Handle Strike Special Effects
-            if (fallen === 10) {
-                // Physics Blast: Push all pins away from the center for impact
+            // --- UI and Animation Logic ---
+            const msgBox = document.getElementById('msg-box');
+            const replayBtn = document.getElementById('watch-replay-btn');
+            const title = document.getElementById('msg-title');
+            const body = document.getElementById('msg-body');
+            const btn = document.getElementById('action-btn');
+
+            if (fallen === totalPinsInPlay) {
+                // Strike Effects
                 pins.forEach(p => {
                     const blastForce = 15;
                     const direction = p.body.position.clone().vsub(new CANNON.Vec3(0, 0, -22));
@@ -1257,60 +1278,38 @@
                     p.body.applyImpulse(direction.scale(blastForce), p.body.position);
                 });
 
-                // Trigger UI Popup
                 const strikePopup = document.getElementById('strike-popup');
-                const dimmer = document.getElementById('screen-dimmer');
-
                 strikePopup.classList.add('show');
+                triggerDimmer(true);
+                spawnImpact(new CANNON.Vec3(0, 1, -22), 0xf1c40f, 60, 4.0);
+
+                // DELAY the menu so the popup is visible
                 setTimeout(() => {
                     strikePopup.classList.remove('show');
                     triggerDimmer(false);
+                    showResultMenu();
                 }, 2000);
-
-
-                triggerDimmer(true);
-                playGameSound('strike');
-
-                // Massive Particle Blast (using the scale parameter)
-                spawnImpact(new CANNON.Vec3(0, 1, -22), 0xf1c40f, 60, 4.0);
-
-            }
-
-            // 3. Show Result Message Box
-            const msgBox = document.getElementById('msg-box');
-            const replayBtn = document.getElementById('watch-replay-btn'); // New reference
-            const title = document.getElementById('msg-title');
-            const body = document.getElementById('msg-body');
-            const btn = document.getElementById('action-btn');
-
-            msgBox.style.display = 'block';
-            replayBtn.style.display = 'block'; // Show the bottom button
-
-            if (matchHistory.length >= MAX_MATCHES) {
-                title.innerText = "FINAL SCORE";
-                let total = matchHistory.reduce((a, b) => a + b, 0) + fallen;
-                body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
-                btn.innerText = "RESTART GAME";
             } else {
-                title.innerText = (fallen === 10) ? "STRIKE!" : "RESULT";
-                body.innerText = `${fallen} pins cleared.`;
-                btn.innerText = "NEXT FRAME";
+                // Show immediately if not a strike
+                showResultMenu();
             }
 
-        }
+            // Helper function to handle the menu display
+            function showResultMenu() {
+                msgBox.style.display = 'block';
+                replayBtn.style.display = 'block';
 
-        function debugDimmer(action) {
-            const dimmer = document.getElementById('screen-dimmer');
-            if (!dimmer) {
-                console.error("DEBUG: Dimmer element NOT found in DOM!");
-                return;
+                if (matchHistory.length >= MAX_MATCHES) {
+                    title.innerText = "FINAL SCORE";
+                    let total = matchHistory.reduce((a, b) => a + b, 0);
+                    body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
+                    btn.innerText = "RESTART GAME";
+                } else {
+                    title.innerText = (fallen === totalPinsInPlay) ? "STRIKE!" : "RESULT";
+                    body.innerText = `${fallen} / ${totalPinsInPlay} pins cleared.`;
+                    btn.innerText = "NEXT FRAME";
+                }
             }
-
-            const isVisible = dimmer.classList.contains('dimmed');
-            const opacity = window.getComputedStyle(dimmer).opacity;
-
-            console.log(`%c [DIMMER DEBUG] Action: ${action} | Active: ${isVisible} | Opacity: ${opacity}`,
-                "color: #00ff00; font-weight: bold; background: #222;");
         }
 
         function handleMatchEnd() {
@@ -1325,7 +1324,38 @@
             resetGame();
         }
 
+        function startReplay() {
+            if (replayData.length === 0) return;
+            playGameSound('ui_click');
 
+            isReplaying = true;
+            replayFrameIndex = 0;
+
+            // UI Changes
+            document.getElementById('msg-box').style.display = 'none';
+
+            // Change the button text and move it out of the msg-box if needed, 
+            // or ensure it stays visible to allow canceling.
+            const replayBtn = document.getElementById('watch-replay-btn');
+            replayBtn.innerText = "CANCEL REPLAY";
+            replayBtn.onclick = stopReplay; // Change the click function to stop
+        }
+
+        function stopReplay() {
+            isReplaying = false;
+            playGameSound('ui_click');
+
+            // UI Reset
+            document.getElementById('msg-box').style.display = 'block';
+
+            const replayBtn = document.getElementById('watch-replay-btn');
+            replayBtn.innerText = "WATCH REPLAY";
+            replayBtn.onclick = startReplay; // Change the click function back to start
+
+            // Reset camera to the main position so it doesn't stay stuck in Action Cam mode
+            camera.position.set(0, 5, 30);
+            camera.lookAt(0, 0, 0);
+        }
 
         function fullReset() {
             matchHistory = [];
@@ -1341,18 +1371,17 @@
                     cell.innerText = matchHistory[i];
                     total += matchHistory[i];
 
-                    // Check if this score is a multiple of 10 (a strike or doubled strike)
-                    if (matchHistory[i] > 0 && matchHistory[i] % 10 === 0) {
-                        const streakCount = matchHistory[i] / 10;
+                    if (matchHistory[i] > 0 && matchHistory[i] % targetPinCount === 0) {
+                        const streakCount = matchHistory[i] / targetPinCount;
                         if (streakCount > 1) {
-                            cell.style.color = "#e74c3c";  // red for streak strikes
+                            cell.style.color = "#e74c3c";
                             cell.innerText = `${matchHistory[i]} (${streakCount}x)`;
                         } else {
-                            cell.style.color = "#f1c40f"; // gold for normal strike
+                            cell.style.color = "#f1c40f";
                             cell.innerText = `${matchHistory[i]}`;
                         }
                     } else {
-                        cell.style.color = "white";  // normal color for other scores
+                        cell.style.color = "white";
                     }
                 } else {
                     cell.innerText = "-";
@@ -1362,10 +1391,7 @@
             document.getElementById('total-score').innerText = total;
         }
 
-
-
         function resetGame() {
-            // 1. Reset Game State Flags
             isBowling = false;
             randomHookForce = 0;
             currentFallenPins = 0;
@@ -1379,158 +1405,208 @@
 
             touchPathPoints = [];
             const clearPoint = [new THREE.Vector3(0, 0, 0)];
-            // 3. Force the BufferGeometry to reset and update
             [touchPathLine, touchPathLine2, touchPathLine3, outerGlowLine].forEach(line => {
                 if (line && line.geometry) {
                     line.geometry.setFromPoints(clearPoint);
-                    // Important: Tell the GPU the attributes have changed
                     line.geometry.attributes.position.needsUpdate = true;
                 }
             });
 
             actionTargetPin = null;
             lastTargetSwitchTime = 0;
-            impactOccurred = false;
 
-            // 2. Reset Camera to Starting Position
             camera.position.set(0, 4, 12);
             camera.lookAt(0, 1, -5);
 
-            // 3. Clear Timers and UI
             if (resetTimer) clearTimeout(resetTimer);
             resetTimer = null;
 
-            console.log("DEBUG: Resetting Game State...");
-            triggerDimmer(false); // Force off
+            triggerDimmer(false);
 
-            // Ensure the Strike Popup is also cleared
             const strikePopup = document.getElementById('strike-popup');
             if (strikePopup) strikePopup.classList.remove('show');
 
             document.getElementById('score-text').innerText = `Pins: 0`;
             document.getElementById('msg-box').style.display = 'none';
             document.getElementById('hint').style.opacity = '1';
+            document.getElementById('watch-replay-btn').style.display = 'none';
 
-            // 4. Reset Ball Physics & Visuals
-            // We set to STATIC so it doesn't move while the user is positioning it
             ballBody.type = CANNON.Body.STATIC;
             ballBody.mass = 0;
             ballBody.updateMassProperties();
-
-            // Wipe all latent forces and velocities
             ballBody.velocity.set(0, 0, 0);
             ballBody.angularVelocity.set(0, 0, 0);
             ballBody.force.set(0, 0, 0);
             ballBody.torque.set(0, 0, 0);
-
-            // Set Starting Position (slightly above lane to prevent floor clipping)
             ballBody.position.set(0, LANE_Y + BALL_RADIUS + 0.05, 5);
             ballBody.quaternion.set(0, 0, 0, 1);
 
-            // Immediate Visual Sync
             ballMesh.position.copy(ballBody.position);
             ballMesh.quaternion.copy(ballBody.quaternion);
 
-            document.getElementById('watch-replay-btn').style.display = 'none';
-
-            // 5. Reset FX
             trailHistory = [];
             if (trailMesh) trailMesh.visible = false;
 
+            pins.forEach(p => {
+                scene.remove(p.mesh);
+                world.remove(p.body);
+            });
+            pins = [];
+
             pinCircles.forEach(circle => {
-                circle.material.color.setHex(0xe74c3c);
+                scene.remove(circle);
             });
+            pinCircles = [];
 
-            // 6. Reset All Pins to Initial Formation
-            pins.forEach((p, index) => {
-                const spacing = 0.65;
-                const rows = 4;
-                const startZ = -22;
-                let count = 0;
-
-                // Loop through the formation logic to find the original X/Z for this pin index
-                for (let r = 0; r < rows; r++) {
-                    for (let i = 0; i <= r; i++) {
-                        if (count === index) {
-                            const x = (i - r * 0.5) * spacing;
-                            const z = startZ - (r * spacing);
-
-                            // Reset Physics Body
-                            p.body.type = CANNON.Body.KINEMATIC;
-                            p.body.mass = 2.5;
-                            p.body.updateMassProperties();
-
-                            p.body.position.set(x, LANE_Y + (PIN_HEIGHT / 2) + 0.05, z);
-                            p.body.velocity.set(0, 0, 0);
-                            p.body.angularVelocity.set(0, 0, 0);
-                            p.body.quaternion.set(0, 0, 0, 1);
-
-                            // Immediate Mesh Sync
-                            p.mesh.position.copy(p.body.position);
-                            p.mesh.quaternion.copy(p.body.quaternion);
-                        }
-                        count++;
-                    }
-                }
-            });
+            createPins();
 
             playGameSound('stop_rolling');
-            resetAllGameSounds();
 
-            // 7. Re-enable Walls and Reset Circles
             if (leftWallMesh) leftWallMesh.visible = true;
             if (rightWallMesh) rightWallMesh.visible = true;
 
-            pinCircles.forEach(circle => {
-                circle.material.color.setHex(0xe74c3c); // Reset all to red
-            });
-
             document.getElementById('action-cam-container').style.display = 'none';
-            isActionCamActive = false;
         }
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-        function playGameSound(type) {
-            // Ensure AudioContext is active (browsers block auto-play)
+        function playGameSound(soundName) {
+            const sound = sounds[soundName];
+            if (sound && sound.buffer) {
+                // Check if context is suspended and try to resume
+                if (sound.context.state === 'suspended') {
+                    sound.context.resume().then(() => {
+                        if (!sound.isPlaying) sound.play();
+                    });
+                } else {
+                    if (sound.isPlaying) sound.stop();
+                    sound.play();
+                }
+            }
+        }
+
+        function unlockAudio() {
             if (THREE.AudioContext.getContext().state === 'suspended') {
                 THREE.AudioContext.getContext().resume();
             }
+            // Optional: Remove the listener once unlocked to save resources
+            window.removeEventListener('click', unlockAudio);
+            window.removeEventListener('touchstart', unlockAudio);
+        }
 
-            if (type === 'collision' && pinKnockSound && pinKnockSound.buffer) {
-                if (pinKnockSound.isPlaying) pinKnockSound.stop();
-                pinKnockSound.play();
+        // Add listeners for the first interaction
+        window.addEventListener('click', unlockAudio);
+        window.addEventListener('touchstart', unlockAudio);
+
+        function updateActionCam() {
+            if (!isBowling) {
+                document.getElementById('action-cam-container').style.display = 'none';
+                actionTargetPin = null;
+                return;
             }
 
-            if (type === 'rolling') {
-                if (ballPathSound && ballPathSound.buffer && !ballPathSound.isPlaying) {
-                    ballPathSound.play();
+            document.getElementById('action-cam-container').style.display = 'block';
+            const currentTime = performance.now();
+
+            if (!impactOccurred) {
+                const ballPos = ballMesh.position;
+                actionCamera.position.lerp(new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3), 0.1);
+                actionCamera.lookAt(ballPos.x, 0.4, ballPos.z - 2);
+            } else {
+                let bestPin = null;
+                let highestPriority = -1;
+                const is100 = (targetPinCount === 100);
+                const gutterLimit = is100 ? 3.8 : 2.25;
+
+                // 1. Find the best MOVING pin that is still ON the lane
+                pins.forEach(p => {
+                    const v = p.body.velocity.length();
+                    // Height check (y > 0.1) and Gutter check (abs x < limit)
+                    const isOnLane = p.body.position.y > 0.1 && Math.abs(p.body.position.x) < gutterLimit;
+
+                    if (isOnLane && v > 0.8) { // Lowered velocity threshold slightly for smoother tracking
+                        const distFromCenter = Math.sqrt(
+                            Math.pow(p.body.position.x, 2) + Math.pow(p.body.position.z - DECK_CENTER_Z, 2)
+                        );
+                        const priority = v / (distFromCenter + 1);
+                        if (priority > highestPriority) {
+                            highestPriority = priority;
+                            bestPin = p;
+                        }
+                    }
+                });
+
+                // 2. Immediate Void Check for the CURRENT target
+                // If the pin we are currently watching falls, null it out so we can switch immediately
+                if (actionTargetPin) {
+                    const targetIsFallen = actionTargetPin.body.position.y < 0.1 ||
+                        Math.abs(actionTargetPin.body.position.x) > gutterLimit;
+                    if (targetIsFallen) {
+                        actionTargetPin = null;
+                    }
+                }
+
+                // 3. Switch Logic (Bypass cooldown if current target is gone)
+                if (!actionTargetPin || (currentTime - lastTargetSwitchTime > SWITCH_COOLDOWN)) {
+                    if (bestPin && bestPin !== actionTargetPin) {
+                        actionTargetPin = bestPin;
+                        lastTargetSwitchTime = currentTime;
+                    }
+                }
+
+                // 4. Final Render Check
+                if (actionTargetPin) {
+                    const offsetX = is100 ? 3.2 : 1.8;
+                    const offsetY = is100 ? 2.5 : 1.3;
+                    const offsetZ = is100 ? 5.5 : 2.5;
+
+                    let targetX = actionTargetPin.mesh.position.x + offsetX;
+                    const targetY = offsetY;
+                    const targetZ = actionTargetPin.mesh.position.z + offsetZ;
+
+                    const currentLaneWidth = is100 ? 7.6 : 4.5;
+                    const safetyMargin = 0.8;
+                    const maxX = (currentLaneWidth / 2) - safetyMargin;
+
+                    targetX = Math.max(-maxX, Math.min(maxX, targetX));
+
+                    const targetCamPos = new THREE.Vector3(targetX, targetY, targetZ);
+                    actionCamera.position.lerp(targetCamPos, 0.04);
+                    actionCamera.lookAt(actionTargetPin.mesh.position);
+                } else {
+                    // FALLBACK: If no pins are moving on the lane, look at the deck center
+                    const fallbackPos = new THREE.Vector3(0, is100 ? 4 : 2, DECK_CENTER_Z + 5);
+                    actionCamera.position.lerp(fallbackPos, 0.02);
+                    actionCamera.lookAt(0, 0, DECK_CENTER_Z);
                 }
             }
-
-            if (type === 'stop_rolling') {
-                if (ballPathSound && ballPathSound.isPlaying) {
-                    ballPathSound.stop();
-                }
-            }
+            actionRenderer.render(scene, actionCamera);
         }
 
         function animate() {
             requestAnimationFrame(animate);
 
-            // 1. Physics Step - Only run physics if NOT replaying
+            // Only step the physics world if we are NOT replaying
             if (!isReplaying) {
                 world.step(1 / 60 * (typeof timeScale !== 'undefined' ? timeScale : 1));
             }
 
-            // 2. Sync Meshes & Recording Logic
             if (ballMesh && ballBody) {
                 if (!isReplaying) {
-                    // --- NORMAL MODE: Copy physics to meshes ---
+                    // --- LIVE PHYSICS MODE ---
                     ballMesh.position.copy(ballBody.position);
                     ballMesh.quaternion.copy(ballBody.quaternion);
 
+                    // Plough-through logic for 100 pins
+                    if (isBowling && ballBody.position.z < -15 && ballBody.position.z > -60) {
+                        if (ballBody.velocity.z > -10) {
+                            ballBody.velocity.z = -15;
+                        }
+                        ballBody.velocity.x *= 0.99;
+                    }
+
                     pins.forEach(p => {
+                        // Remove pins that fall deep into the void
                         if (p.body.position.y < -5.0 && p.body.type !== CANNON.Body.STATIC) {
                             p.body.velocity.set(0, 0, 0);
                             p.body.angularVelocity.set(0, 0, 0);
@@ -1540,8 +1616,8 @@
                         p.mesh.quaternion.copy(p.body.quaternion);
                     });
 
-                    // --- RECORDING: Save the frame for Replay ---
-                    if (isBowling && replayData.length < 600) {
+                    // RECORDING LOGIC: Increased limit to 900 for longer duration
+                    if (isBowling && replayData.length < 900) {
                         replayData.push({
                             ball: { pos: ballBody.position.clone(), quat: ballBody.quaternion.clone() },
                             pins: pins.map(p => ({
@@ -1551,16 +1627,16 @@
                         });
                     }
 
-                    // --- KEEP YOUR EXISTING AUDIO LOGIC HERE ---
-                    if (isBowling && ballPathSound && ballPathSound.buffer) {
-                        const x = ballBody.position.x;
-                        const y = ballBody.position.y;
-                        const z = ballBody.position.z;
-                        const isOnLane = Math.abs(x) < 2.4;
-                        const isTouchingFloor = y < 0.8 && y > 0.1;
-                        const isBeforeBackDrop = z > -75;
+                    // Sound Logic
+                    if (isBowling && typeof ballPathSound !== 'undefined' && ballPathSound && ballPathSound.buffer) {
+                        const { x, y, z } = ballBody.position;
+                        const currentHalfX = groundBody ? groundBody.shapes[0].halfExtents.x : 2.25;
+                        const isOnLane = Math.abs(x) < currentHalfX;
+                        const isTouchingFloor = y < 0.8 && y > 0.05;
+                        const isBeforeBackDrop = z > -65;
+                        const isMoving = ballBody.velocity.length() > 0.15;
 
-                        if (isOnLane && isTouchingFloor && isBeforeBackDrop) {
+                        if (isOnLane && isTouchingFloor && isBeforeBackDrop && isMoving && !impactOccurred) {
                             if (!ballPathSound.isPlaying) {
                                 if (ballPathSound.context.state === 'suspended') ballPathSound.context.resume();
                                 ballPathSound.play();
@@ -1570,57 +1646,67 @@
                         }
                     }
                 } else {
-                    // --- REPLAY MODE: Play back recorded positions ---
+                    // --- REPLAY PLAYBACK MODE ---
                     if (replayFrameIndex < replayData.length) {
                         const frame = replayData[replayFrameIndex];
                         ballMesh.position.copy(frame.ball.pos);
                         ballMesh.quaternion.copy(frame.ball.quat);
                         pins.forEach((p, i) => {
-                            p.mesh.position.copy(frame.pins[i].pos);
-                            p.mesh.quaternion.copy(frame.pins[i].quat);
+                            if (frame.pins[i]) {
+                                p.mesh.position.copy(frame.pins[i].pos);
+                                p.mesh.quaternion.copy(frame.pins[i].quat);
+                            }
                         });
                         replayFrameIndex++;
                     } else {
-                        stopReplay(); // Ends replay and shows result box
+                        // Auto-stop when frames run out
+                        stopReplay();
                     }
                 }
             }
 
-            if (isBowling) {
+            // --- CAMERA LOGIC (Handles both Live and Replay) ---
+            if (isBowling || isReplaying) {
                 const isPortrait = window.innerHeight > window.innerWidth;
-                const pinAreaZ = -22; // The center of the pins
+                const pinAreaZ = -22;
+                const is100 = (targetPinCount === 100);
 
                 let desiredPosition = new THREE.Vector3();
                 let desiredLookAt = new THREE.Vector3();
 
                 if (isCinematicMode) {
-                    // STATE: Cinematic Impact View
-                    desiredPosition.set(0, isPortrait ? 5.5 : 3.5, pinAreaZ + (isPortrait ? 9 : 6));
-                    desiredLookAt.set(0, 0.5, pinAreaZ);
+                    const yOffset = is100 ? (isPortrait ? 8.5 : 5.5) : (isPortrait ? 5.5 : 3.5);
+                    const zOffset = is100 ? (isPortrait ? 12 : 9) : (isPortrait ? 9 : 6);
+                    const lookZ = is100 ? pinAreaZ - 4 : pinAreaZ;
+                    desiredPosition.set(0, yOffset, pinAreaZ + zOffset);
+                    desiredLookAt.set(0, 0.5, lookZ);
                 }
-                else if (impactOccurred) {
-                    // STATE: Post-Impact result view
-                    desiredPosition.set(0, 4, -14);
-                    desiredLookAt.set(0, 1, -24);
+                else if (impactOccurred || (isReplaying && replayFrameIndex > 30)) {
+                    // Switch to impact cam during replay after a short delay
+                    const lookZ = is100 ? -28 : -24;
+                    const camY = is100 ? 6.5 : 5;
+                    desiredPosition.set(0, camY, -14);
+                    desiredLookAt.set(0, 0.5, lookZ);
                 }
-                else {
-                    // STATE: Following the ball
+                else if (ballBody) {
+                    const camY = is100 ? 5.5 : 4;
                     const targetZ = Math.max(ballBody.position.z + 8, -12);
-                    const targetX = Math.max(-3, Math.min(3, ballBody.position.x * 0.7));
-
-                    desiredPosition.set(targetX, 4, targetZ);
-                    // Look slightly ahead of the ball
-                    desiredLookAt.set(ballBody.position.x * 0.4, 1.2, ballBody.position.z - 6);
+                    const targetX = ballBody.position.x * 0.5;
+                    desiredPosition.set(targetX, camY, targetZ);
+                    desiredLookAt.set(ballBody.position.x * 0.5, 1, ballBody.position.z - 10);
                 }
 
-                // Apply Smooth Transitions
-                // 0.05 is the "smoothness" - lower is slower/smoother, higher is snappier
-                camera.position.lerp(desiredPosition, 0.05);
-                cameraLookAtTarget.lerp(desiredLookAt, 0.05);
+                camera.position.lerp(desiredPosition, 0.04);
+                cameraLookAtTarget.lerp(desiredLookAt, 0.04);
+                camera.lookAt(cameraLookAtTarget);
+            } else {
+                // Idle/Menu Camera
+                camera.position.lerp(new THREE.Vector3(0, 4, 12), 0.05);
+                cameraLookAtTarget.lerp(new THREE.Vector3(0, 1, 0), 0.05);
                 camera.lookAt(cameraLookAtTarget);
             }
 
-            // Keep the pulsing circles and visual updates
+            // UI Animations (Pin indicators)
             const time = performance.now() / 1000;
             pinCircles.forEach(circle => {
                 circle.scale.setScalar(1 + Math.sin(time * 2) * 0.15);
@@ -1631,20 +1717,6 @@
             updateLightTrail();
             updateImpacts();
             renderer.render(scene, camera);
-        }
-
-        function playGameSound(id) {
-            const sound = gameSounds[id];
-            if (sound && !sound.isPlaying) {
-                sound.play();
-            }
-        }
-
-        function pauseGameSound(id) {
-            const sound = gameSounds[id];
-            if (sound && sound.isPlaying) {
-                sound.pause();
-            }
         }
 
         function onWindowResize() {
