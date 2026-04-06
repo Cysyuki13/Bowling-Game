@@ -518,6 +518,36 @@
             margin-top: 20px;
         }
 
+        .matchmaking-buttons button {
+            background: #e67e22;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .matchmaking-buttons button:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+
+        .matchmaking-buttons button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #auto-match-btn {
+            background: #9b59b6;
+        }
+
+        #auto-match-btn:hover:not(:disabled) {
+            background: #8e44ad;
+        }
+
         .join-panel-buttons {
             display: flex;
             gap: 8px;
@@ -537,6 +567,7 @@
         }
 
         #create-match-btn,
+        #auto-match-btn,
         #join-match-btn,
         #single-player-btn,
         #cancel-search-btn {
@@ -716,10 +747,10 @@
             <div class="matchmaking-buttons">
                 <button id="create-match-btn" onclick="createMatch()">CREATE MATCH</button>
                 <button id="join-match-btn" onclick="showJoinMatchPanel()">JOIN MATCH</button>
+                <button id="auto-match-btn" onclick="autoMatch()">AUTO MATCH</button>
                 <button id="single-player-btn" onclick="startSinglePlayer()">SINGLE PLAYER</button>
             </div>
-            <div id="join-match-panel"
-                style="display:none; margin-top: 10px; position: relative; width: 100%;">
+            <div id="join-match-panel" style="display:none; margin-top: 10px; position: relative; width: 100%;">
                 <label for="join-code-input" class="sr-only">Join match code</label>
                 <input id="join-code-input" type="text" maxlength="5" placeholder="Enter code"
                     style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.25); color: white; outline: none; text-align: center;" />
@@ -739,33 +770,46 @@
     </div>
 
     <script>
-        // --- CONSTANTS ---
-        const LANE_Y = 0.1;
-        const BALL_RADIUS = 0.35;
-        const PIN_HEIGHT = 0.8;
-        const TRAIL_MAX_POINTS = 60;
-        const MAX_MATCHES = 5;
+        // ============================================
+        // GAME CONSTANTS - Physics and Gameplay Parameters
+        // ============================================
+        const LANE_Y = 0.1;             // Y position of the bowling lane
+        const BALL_RADIUS = 0.35;       // Radius of the bowling ball (physics and render)
+        const PIN_HEIGHT = 0.8;         // Height of bowling pins
+        const TRAIL_MAX_POINTS = 60;    // Maximum points in ball trail visualization
+        const MAX_MATCHES = 5;          // Number of frames/matches to complete
 
-        // --- STATE ---
-        let pins = [];
-        let pinCircles = [];
-        let targetPinCount = 10;
-        let offsetDistance10 = 7.2;
-        let offsetDistance100 = 8.8;
-        let lastPinSoundTime = 0;
+        // ============================================
+        // GAME STATE - Core gameplay variables
+        // ============================================
+        let pins = [];                  // Array of pin objects (mesh + physics body)
+        let pinCircles = [];            // Visual circles under pins
+        let targetPinCount = 10;        // Current game mode: 10 or 100 pins
+        let offsetDistance10 = 7.2;     // Lane offset for 10-pin mode
+        let offsetDistance100 = 8.8;    // Lane offset for 100-pin mode
+        let lastPinSoundTime = 0;       // Throttle pin collision sounds
+        let hasShownLocalCompleteMessage = false;       // Prevent duplicate "player complete" message
+        let hasShownOpponentCompleteMessage = false;    // Prevent duplicate opponent message
+        let hasRecordedScoreInCurrentGame = false;      // Guard flag to prevent premature final result
 
-        let scene, camera, renderer, world, sunLight;
-        let ballBody, ballMesh;
-        let laneMesh;
-        let groundBody;
+        // ============================================
+        // THREE.JS RENDERING - Scene, Camera, Renderer
+        // ============================================
+        let scene, camera, renderer, world, sunLight, raycaster;
+        let ballBody, ballMesh;         // Physics body and 3D mesh for player's ball
+        let laneMesh;                   // The bowling lane mesh
+        let groundBody;                 // Physics body for lane ground
 
-        let isBowling = false;
-        let isTouching = false;
-        let touchStartPos = { x: 0, y: 0 };
-        let touchStartTime = 0;
-        let lastTouchX = 0;
-        let impactParticles = [];
-        let trailHistory = [];
+        // ============================================
+        // GAMEPLAY STATE - Ball and interaction tracking
+        // ============================================
+        let isBowling = false;          // Flag: is the ball currently in flight?
+        let isTouching = false;         // Flag: is player touching screen?
+        let touchStartPos = { x: 0, y: 0 };     // Initial touch position
+        let touchStartTime = 0;         // Time when touch started
+        let lastTouchX = 0;             // Last known X coordinate of touch
+        let impactParticles = [];       // Particle effects from ball/pin collisions
+        let trailHistory = [];          // Ball trajectory points for visual trail
         // trailMesh moved to global declarations above
         let randomHookForce = 0;
 
@@ -781,20 +825,26 @@
         let isCinematicMode = false;
         let cinematicTargetPin = null;
 
+        // ============================================
+        // AUDIO SYSTEM - Sound management
+        // ============================================
         let audioListener, audioLoader;
         let ballPathSound, pinKnockSound;
         let gameSounds = {};
 
-        let actionCamera, actionRenderer, actionCanvas;
-        let actionTargetPin = null;
-        let lastTargetSwitchTime = 0;
-        const SWITCH_COOLDOWN = 1000;
+        // ============================================
+        // CINEMATIC AND REPLAY SYSTEM - Ball tracking and playback
+        // ============================================
+        let actionCamera, actionRenderer, actionCanvas;    // Secondary camera for action replay view
+        let actionTargetPin = null;                         // Pin being focused by action camera
+        let lastTargetSwitchTime = 0;                      // Throttle camera target switches
+        const SWITCH_COOLDOWN = 1000;                      // Cooldown between target switches (ms)
 
-        const DECK_CENTER_Z = -22;
+        const DECK_CENTER_Z = -22;                          // Center point of the bowling lane
 
-        let isReplaying = false;
-        let replayData = [];
-        let replayFrameIndex = 0;
+        let isReplaying = false;        // Flag: is replay mode active?
+        let replayData = [];            // Recorded ball/pin states for replay
+        let replayFrameIndex = 0;       // Current frame in replay
 
         let modeSwitchRequestPending = false;
         let modeSwitchRequestMode = null;
@@ -837,46 +887,60 @@
         }
 
         // --- MULTIPLAYER VARIABLES ---
-        let isHost = true;  // Default to true for single-player (acts as host/p1)
-        let myPlayerId = 1;
-        let myPlayerOffset = 0;
-        let isMultiplayerActive = false;
-        let matchRef = null;
-        let matchListeners = [];
-        let opponentBallMesh;
-        let opponentGhostPins = [];
-        let matchCode = null;
-        let isCreatingMatch = false;
-        let isJoiningMatch = false;
+        // ============================================
+        // MULTIPLAYER SYSTEM - Firebase real-time networking
+        // ============================================
+        let isHost = true;              // Role: true=host(p1), false=guest(p2)
+        let myPlayerId = 1;             // Current player ID (1 or 2)
+        let myPlayerOffset = 0;         // X position of player's lane on shared court
+        let isMultiplayerActive = false;        // Flag: is multiplayer game in progress?
+        let matchRef = null;            // Firebase reference to current match
+        let matchListeners = [];        // Array of Firebase listeners to clean up
+        let opponentBallMesh;           // Ghost ball showing opponent's position
+        let sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9); // Unique session ID to prevent self-joining
+        let opponentGhostPins = [];     // Ghost pins showing opponent's lane
+        let matchCode = null;           // 5-digit code for match identification
+        let isCreatingMatch = false;    // Flag: currently creating a match?
+        let isJoiningMatch = false;     // Flag: currently joining a match?
 
-        let playAgainRequested = false;
-        let playAgainOpponentRequested = false;
-        let playAgainCountdownTimer = null;
-        let playAgainCountdownRemaining = 5;
+        // ============================================
+        // PLAY AGAIN SYSTEM - Rematch coordination
+        // ============================================
+        let playAgainRequested = false;                 // Player requested rematch
+        let playAgainOpponentRequested = false;         // Opponent requested rematch
+        let playAgainCountdownTimer = null;             // Timer for auto-restart countdown
+        let playAgainCountdownRemaining = 5;            // Seconds remaining in countdown
 
+        // ============================================
+        // EVENT TIMESTAMPS - Prevent duplicate event processing
+        // ============================================
         let lastEventTimestamps = {
-            playAgainRequest: 0,
-            playAgainResponse: 0,
-            modeSwitchRequest: 0,
-            modeSwitchResponse: 0
+            playAgainRequest: 0,        // Timestamp of last play-again request received
+            playAgainResponse: 0,       // Timestamp of last play-again response received
+            modeSwitchRequest: 0,       // Timestamp of last mode-switch request received
+            modeSwitchResponse: 0       // Timestamp of last mode-switch response received
         };
-        let ballSyncCounter = 0;
+        let ballSyncCounter = 0;        // Counter for ball synchronization updates
 
-        let isDragging = false;
-        let mouse = new THREE.Vector2();
-        let raycaster = new THREE.Raycaster();
-
+        // ============================================
+        // SCORE TRACKING AND UI RENDERING
+        // ============================================
         let scores = {
-            p1: [],
-            p2: []
+            p1: [],     // Array of scores for player 1
+            p2: []      // Array of scores for player 2
         };
 
-        // --- MATCHMAKING STATE ---
-        let isSearchingForMatch = false;
-        let matchmakingTimeout = null;
+        // ============================================
+        // MATCHMAKING STATE - Player search for opponents
+        // ============================================
+        let isSearchingForMatch = false;     // Player is actively searching for opponent
+        let matchmakingTimeout = null;       // Timeout for auto-cancel if no opponent found
 
-        // --- MULTIPLAYER FUNCTIONS ---
+        // ============================================
+        // MULTIPLAYER UI FUNCTIONS
+        // ============================================
 
+        // Display the matchmaking panel (where players search for opponents)
         function showMatchmakingPanel() {
             const panel = document.getElementById('matchmaking-panel');
             const blocker = document.getElementById('matchmaking-modal-blocker');
@@ -891,13 +955,19 @@
             if (blocker) blocker.style.display = 'none';
         }
 
+        // Display matchmaking status message (searching, found, waiting, etc)
         function updateMatchmakingStatus(message) {
             const status = document.getElementById('matchmaking-status');
             if (status) {
                 if (message === 'searching') {
                     status.innerHTML = '<div class="loading-spinner"></div><p>Searching for players...</p>';
                 } else if (message === 'found') {
-                    status.innerHTML = '<p style="color: #2ecc71;">✓ Match found! Connecting...</p>';
+                    const roleMessage = isHost ? 'Hosting game...' : 'Joining game...';
+                    status.innerHTML = `<p style="color: #2ecc71;">✓ ${roleMessage}</p>`;
+                } else if (message === 'hosting') {
+                    status.innerHTML = '<div class="loading-spinner"></div><p>Waiting for player...</p>';
+                } else if (message === 'host_ready') {
+                    status.innerHTML = '<p style="color: #2ecc71;">✓ Host is ready. Waiting for player...</p>';
                 } else if (message === 'timeout') {
                     status.innerHTML = '<p style="color: #f39c12;">No players found. Starting as Host...</p>';
                 } else {
@@ -915,9 +985,9 @@
             matchListeners = [];
         }
 
+        // Setup Firebase real-time listeners for multiplayer synchronization
         function setupFirebaseListeners() {
             if (!matchRef) {
-                console.warn("DEBUG: setupFirebaseListeners called without active matchRef.");
                 return;
             }
 
@@ -948,8 +1018,10 @@
             return isHost ? 'p2' : 'p1';
         }
 
+        // Check if player has completed all required matches (MAX_MATCHES)
         function isPlayerComplete(playerId) {
-            return Array.isArray(scores[playerId]) && scores[playerId].length >= MAX_MATCHES;
+            const result = Array.isArray(scores[playerId]) && scores[playerId].length >= MAX_MATCHES;
+            return result;
         }
 
         function getLocalRole() {
@@ -965,7 +1037,9 @@
             updateMatchmakingStatus(code ? `Code: ${code} - waiting for player...` : '');
         }
 
+        // Handle guest join/leave events from Firebase
         function handleGuestUpdate(snapshot) {
+            if (!matchRef) return;
             const guestData = snapshot.val();
             if (isHost) {
                 if (guestData && !isMultiplayerActive) {
@@ -980,7 +1054,9 @@
             }
         }
 
+        // Handle host connection status from Firebase
         function handleHostUpdate(snapshot) {
+            if (!matchRef) return;
             const hostData = snapshot.val();
             if (!isHost) {
                 if (hostData && !isMultiplayerActive) {
@@ -995,6 +1071,7 @@
             }
         }
 
+        // Handle opponent disconnection - reset to main menu
         function handleOpponentDisconnect() {
             isMultiplayerActive = false;
             camera.position.set(0, 4, 20);
@@ -1003,6 +1080,15 @@
             sunLight.position.set(15, 35, -40);
             updateLaneWidth();
             if (opponentBallMesh) opponentBallMesh.visible = false;
+
+            // Reset all buttons and UI state
+            document.getElementById('create-match-btn').disabled = false;
+            document.getElementById('join-match-btn').disabled = false;
+            document.getElementById('auto-match-btn').disabled = false;
+            document.getElementById('single-player-btn').disabled = false;
+            document.getElementById('cancel-search-btn').style.display = 'none';
+            updateMatchmakingStatus(''); // Clear any status messages
+
             const msgTitle = document.getElementById('msg-title');
             if (msgTitle) {
                 msgTitle.innerText = "PLAYER LEFT";
@@ -1097,12 +1183,11 @@
                 timestamp: Date.now()
             };
             matchRef.child(`events/${type}`).set(event).catch((err) => {
-                console.error('DEBUG: Failed to send multiplayer event', type, err);
             });
         }
 
+        // Create a new multiplayer match as host
         function createMatch() {
-            console.log("DEBUG: Creating match...");
             unlockAudio();
 
             isCreatingMatch = true;
@@ -1112,6 +1197,8 @@
 
             document.getElementById('create-match-btn').disabled = true;
             document.getElementById('join-match-btn').disabled = true;
+            document.getElementById('auto-match-btn').disabled = true;
+            document.getElementById('single-player-btn').disabled = true;
             document.getElementById('cancel-search-btn').style.display = 'block';
 
             cancelMatchmaking();
@@ -1135,14 +1222,19 @@
                 setupFirebaseListeners();
                 updateMatchmakingStatus('Code: ' + code + ' - waiting for player...');
             }).catch((err) => {
-                console.error("DEBUG: Firebase createMatch failed", err);
                 updateMatchmakingStatus('Unable to create match.');
                 cancelMatchmaking();
             });
         }
 
+
+        // ============================================
+        // MULTIPLAYER MATCH JOINING
+        // ============================================
+
+        // Join an existing multiplayer match as a guest player
+        // Validates match existence, sets up player offset, and initializes multiplayer mode
         function joinGame(targetHostId) {
-            console.log("DEBUG: Attempting to join match:", targetHostId);
             unlockAudio();
 
             isHost = false;
@@ -1192,9 +1284,9 @@
                     if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
                     if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
 
-                    if (groundBody) world.remove(groundBody);
-                    if (leftWallBody) world.remove(leftWallBody);
-                    if (rightWallBody) world.remove(rightWallBody);
+                    if (groundBody) world.removeBody(groundBody);
+                    if (leftWallBody) world.removeBody(leftWallBody);
+                    if (rightWallBody) world.removeBody(rightWallBody);
 
                     createStreetEnvironment(myPlayerOffset);
                     createPins(myPlayerOffset);
@@ -1208,12 +1300,11 @@
                     activateMultiplayerMode(false);
                     resetGame();
                 }).catch((err) => {
-                    console.error("DEBUG: Firebase joinGame failed", err);
                     updateMatchmakingStatus('Unable to join match.');
                     cancelMatchmaking();
                 });
             }).catch((err) => {
-                console.error("DEBUG: Firebase joinGame check failed", err);
+
                 updateMatchmakingStatus('Unable to join match.');
                 cancelMatchmaking();
             });
@@ -1247,13 +1338,15 @@
             isCreatingMatch = false;
             document.getElementById('create-match-btn').disabled = true;
             document.getElementById('join-match-btn').disabled = true;
+            document.getElementById('auto-match-btn').disabled = true;
+            document.getElementById('single-player-btn').disabled = true;
             document.getElementById('cancel-search-btn').style.display = 'block';
             updateMatchmakingStatus('Joining code: ' + code + ' ...');
             joinGame(code);
         }
 
+        // Cancel current matchmaking process
         function cancelMatchmaking() {
-            console.log("DEBUG: Cancelling matchmaking...");
             isSearchingForMatch = false;
             isCreatingMatch = false;
             isJoiningMatch = false;
@@ -1278,27 +1371,188 @@
 
             document.getElementById('create-match-btn').disabled = false;
             document.getElementById('join-match-btn').disabled = false;
+            document.getElementById('auto-match-btn').disabled = false;
+            document.getElementById('single-player-btn').disabled = false;
             document.getElementById('cancel-search-btn').style.display = 'none';
             updateMatchmakingStatus('');
         }
 
+        // Initiate automatic matchmaking with time-slot based code generation
+        function autoMatch() {
+            unlockAudio();
+
+            isSearchingForMatch = true;
+            document.getElementById('create-match-btn').disabled = true;
+            document.getElementById('join-match-btn').disabled = true;
+            document.getElementById('auto-match-btn').disabled = true;
+            document.getElementById('single-player-btn').disabled = true;
+            document.getElementById('cancel-search-btn').style.display = 'block';
+
+            updateMatchmakingStatus('searching');
+
+            // Generate a match code based on current time slot (every 10 seconds)
+            // This increases chance two players will use the same code
+            const timeSlot = Math.floor(Date.now() / 10000);
+            const autoMatchCode = String(10000 + (timeSlot % 90000)).slice(1);
+
+            matchRef = getMatchRef(autoMatchCode);
+
+            // Try to join an existing match first
+            matchRef.once('value').then((snapshot) => {
+                const data = snapshot.val();
+
+                if (data && data.host && !data.guest) {
+                    // Validate: Don't join your own match
+                    if (data.host.sessionId === sessionId) {
+                        cancelMatchmaking();
+                        updateMatchmakingStatus('Cannot match with self. Retrying...');
+                        setTimeout(() => autoMatch(), 1000);
+                        return;
+                    }
+
+                    // Validate: Only join if host was created in same time slot (within last 10 seconds)
+                    const hostJoinTime = data.host.joinedAt || 0;
+                    const currentTimeSlot = Math.floor(Date.now() / 10000);
+                    const hostTimeSlot = Math.floor(hostJoinTime / 10000);
+
+                    if (currentTimeSlot !== hostTimeSlot) {
+                        cancelMatchmaking();
+                        updateMatchmakingStatus('Not in same search window. Retrying...');
+                        setTimeout(() => autoMatch(), 1000);
+                        return;
+                    }
+
+                    // Match exists with host waiting - join as guest
+                    isHost = false;
+                    matchCode = autoMatchCode;
+                    const offsetDistance = (data.host.mode || 10) === 100 ? offsetDistance100 : offsetDistance10;
+                    myPlayerOffset = offsetDistance;
+                    targetPinCount = data.host.mode || 10;
+
+                    document.getElementById('mode-toggle-btn').innerText = (targetPinCount === 10) ? '10 PINS' : '100 PINS';
+                    updateLaneWidth();
+
+                    matchRef.child('guest').set({
+                        connected: true,
+                        joinedAt: firebase.database.ServerValue.TIMESTAMP
+                    }).then(() => {
+                        matchRef.child('guest').onDisconnect().remove();
+                        setupFirebaseListeners();
+                        updateMatchmakingStatus('found');
+                        hideMatchmakingPanel();
+                        document.getElementById('cancel-search-btn').style.display = 'none';
+
+                        if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
+                        if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
+                        if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
+                        if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
+                        if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
+
+                        if (groundBody) world.removeBody(groundBody);
+                        if (leftWallBody) world.removeBody(leftWallBody);
+                        if (rightWallBody) world.removeBody(rightWallBody);
+
+                        createStreetEnvironment(myPlayerOffset);
+                        createPins(myPlayerOffset);
+
+                        camera.position.set(myPlayerOffset, 4, 12);
+                        camera.lookAt(myPlayerOffset, 1, 0);
+
+                        if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+                        if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+
+                        activateMultiplayerMode(false);
+                        resetGame();
+                    }).catch((err) => {
+
+                        updateMatchmakingStatus('Search failed. Try again.');
+                        cancelMatchmaking();
+                    });
+                } else if (!data || !data.host) {
+                    // No match exists - create one as host
+
+                    isHost = true;
+                    myPlayerOffset = 0;
+                    matchCode = autoMatchCode;
+                    setMatchCodeUI(autoMatchCode);
+
+                    matchRef.set({
+                        host: { connected: true, mode: targetPinCount, joinedAt: firebase.database.ServerValue.TIMESTAMP, sessionId: sessionId },
+                        guest: null,
+                        scores: { p1: [], p2: [] },
+                        ballUpdate: null,
+                        events: {},
+                        mode: targetPinCount
+                    }).then(() => {
+                        const hostRef = matchRef.child('host');
+                        hostRef.onDisconnect().remove();
+                        setupFirebaseListeners();
+                        updateMatchmakingStatus('hosting'); // Show loading while waiting for guest
+
+                        // After 2 seconds, show "Host is ready" message
+                        setTimeout(() => {
+                            if (isSearchingForMatch && !isMultiplayerActive) {
+                                updateMatchmakingStatus('host_ready');
+                            }
+                        }, 2000);
+
+                        // Auto-cancel if guest doesn't join within 30 seconds
+                        matchmakingTimeout = setTimeout(() => {
+                            if (!isMultiplayerActive) {
+
+                                cancelMatchmaking();
+                                updateMatchmakingStatus('No player found. Try again.');
+                            }
+                        }, 30000);
+                    }).catch((err) => {
+
+                        updateMatchmakingStatus('Match creation failed. Try again.');
+                        cancelMatchmaking();
+                    });
+                } else {
+                    // Match full
+
+                    cancelMatchmaking();
+                    updateMatchmakingStatus('Match full. Retrying...');
+                    setTimeout(() => autoMatch(), 1000);
+                }
+            }).catch((err) => {
+
+                updateMatchmakingStatus('Connection failed. Try again.');
+                cancelMatchmaking();
+            });
+        }
+
+        // ============================================
+        // SINGLE PLAYER MODE
+        // ============================================
+
+        // Initialize single-player game mode
+        // Hides matchmaking UI and resets game state
         function startSinglePlayer() {
-            console.log("DEBUG: Starting single player...");
             hideMatchmakingPanel();
             resetGame();
         }
 
+        // ============================================
+        // SCORE RECORDING
+        // ============================================
+
+        // Record a completed frame score and update game state
+        // Syncs scores with Firebase in multiplayer mode and updates UI
         function recordRoundScore(scoreValue) {
             const myId = getLocalPlayerId();
 
             if (!scores[myId]) scores[myId] = [];
             scores[myId].push(scoreValue);
 
+            // Mark that at least one score has been recorded in this game
+            hasRecordedScoreInCurrentGame = true;
+
             updateScoreTable(myId);
 
             if (isMultiplayerActive && matchRef) {
                 matchRef.child('scores').child(myId).set(scores[myId]).catch((err) => {
-                    console.error('DEBUG: Failed to sync score', err);
                 });
             }
 
@@ -1327,22 +1581,39 @@
             }
         }
 
+        // Check if both players have completed all matches and show final result if so
         function updateMultiplayerMatchState() {
             if (!isMultiplayerActive) return;
 
             const localDone = isPlayerComplete(getLocalPlayerId());
             const opponentDone = isPlayerComplete(getOpponentPlayerId());
 
-            if (localDone && opponentDone) {
+            // Only show final result if at least one score has been recorded in this game
+            // This prevents stale Firebase data from triggering final result immediately after reset
+            if (localDone && opponentDone && hasRecordedScoreInCurrentGame) {
                 showMultiplayerFinalResult();
-            } else if (localDone) {
+            } else if (localDone && !hasShownLocalCompleteMessage) {
                 showMultiplayerWaitMessage(true);
-            } else if (opponentDone) {
+            } else if (opponentDone && !hasShownOpponentCompleteMessage) {
                 showMultiplayerWaitMessage(false);
             }
         }
 
+        // ============================================
+        // PLAY AGAIN AND REMATCH SYSTEM
+        // ============================================
+
+        // Send play-again request to opponent
         function sendPlayAgainRequest() {
+            triggerDimmer(false);
+            const msgBox = document.getElementById('msg-box');
+            if (msgBox) {
+                msgBox.style.display = 'none';
+                // Only clear the body content, not the entire structure
+                const body = document.getElementById('msg-body');
+                if (body) body.innerText = '';
+            }
+
             if (!isMultiplayerActive || !matchRef) {
                 fullReset();
                 return;
@@ -1425,13 +1696,30 @@
             }
         }
 
+        function resetPlayAgainState() {
+            playAgainRequested = false;
+            playAgainOpponentRequested = false;
+            if (playAgainCountdownTimer) {
+                clearInterval(playAgainCountdownTimer);
+                playAgainCountdownTimer = null;
+            }
+            playAgainCountdownRemaining = 5;
+        }
+
+        // Begin play again - full reset for new match
         function beginPlayAgain() {
             resetPlayAgainState();
             const msgBox = document.getElementById('msg-box');
-            if (msgBox) msgBox.style.display = 'none';
+            if (msgBox) {
+                msgBox.style.display = 'none';
+                // Only clear the body content, not the entire structure
+                const body = document.getElementById('msg-body');
+                if (body) body.innerText = '';
+            }
             fullReset();
         }
 
+        // Show waiting message when a player completes but opponent hasn't
         function showMultiplayerWaitMessage(localFinished) {
             const msgBox = document.getElementById('msg-box');
             const replayBtn = document.getElementById('watch-replay-btn');
@@ -1440,13 +1728,19 @@
             const btn = document.getElementById('action-btn');
 
             msgBox.style.display = 'block';
-            replayBtn.style.display = 'none';
+            replayBtn.style.display = 'block';
+            replayBtn.innerText = 'WATCH REPLAY';
+            replayBtn.onclick = startReplay;
             triggerDimmer(false);
 
             if (localFinished) {
                 title.innerText = 'MATCH COMPLETE';
                 body.innerText = 'You have finished 5 matches. Waiting for your opponent to finish their 5 matches...';
-                btn.style.display = 'none';
+                btn.style.display = 'inline-block';
+                btn.disabled = false;
+                btn.innerText = 'CLOSE';
+                btn.onclick = () => { msgBox.style.display = 'none'; };
+                hasShownLocalCompleteMessage = true;
             } else {
                 title.innerText = 'OPPONENT COMPLETE';
                 body.innerText = 'Your opponent has finished 5 matches. Continue your remaining frames to complete the match.';
@@ -1454,9 +1748,20 @@
                 btn.disabled = false;
                 btn.innerText = 'CONTINUE';
                 btn.onclick = () => { msgBox.style.display = 'none'; resetGame(); };
+                hasShownOpponentCompleteMessage = true;
             }
         }
 
+        function getPlayerTotal(playerId) {
+            if (!scores[playerId]) return 0;
+            return scores[playerId].reduce((sum, score) => sum + (score !== undefined ? score : 0), 0);
+        }
+
+        // ============================================
+        // FINAL RESULT AND WINNING DETERMINATION
+        // ============================================
+
+        // Display final match results when both players complete
         function showMultiplayerFinalResult() {
             const msgBox = document.getElementById('msg-box');
             const replayBtn = document.getElementById('watch-replay-btn');
@@ -1470,14 +1775,25 @@
             if (p1Total === p2Total) {
                 winnerText = 'DRAW';
             } else if (p1Total > p2Total) {
-                winnerText = 'PLAYER 1 WINS!';
+                winnerText = 'PLAYER1 WINS!';
             } else {
-                winnerText = 'PLAYER 2 WINS!';
+                winnerText = 'PLAYER2 WINS!';
             }
 
             title.innerText = 'FINAL RESULT';
+            triggerDimmer(true);
+
+            let winnerLabel = winnerText;
+            let winnerStatus = '';
+            if (winnerText !== 'DRAW') {
+                const parts = winnerText.split(' ');
+                winnerLabel = `${parts[0]} ${parts[1]}`;
+                winnerStatus = parts.slice(2).join(' ');
+            }
+
             body.innerHTML = `
-                <div style="font-size:18px; font-weight:bold; margin-bottom:12px; color:#f1c40f;">${winnerText}</div>
+                <div style="text-align:center; font-size:18px; font-weight:bold; margin-bottom:4px; color:#f1c40f; letter-spacing:1px;">${winnerLabel}</div>
+                ${winnerStatus ? `<div style="text-align:center; font-size:24px; font-weight:bold; margin-bottom:14px; color:#ffffff;">${winnerStatus}</div>` : ''}
                 <div style="display:flex; justify-content:space-between; gap:12px; margin-top:10px;">
                     <div style="flex:1; background:rgba(255,255,255,0.08); padding:12px; border-radius:12px; text-align:center;">
                         <div style="font-size:14px; font-weight:bold; margin-bottom:8px;">PLAYER 1</div>
@@ -1504,8 +1820,16 @@
                 strikePopup.classList.add('show');
                 setTimeout(() => strikePopup.classList.remove('show'), 3000);
             }
+
+            setTimeout(() => triggerDimmer(false), 4000);
         }
 
+        // ============================================
+        // OPPONENT BALL SYNCHRONIZATION
+        // ============================================
+
+        // Update opponent ball position and rotation from Firebase data
+        // Synchronizes ball physics state across multiplayer clients
         function updateOpponentBall(data) {
             if (!opponentBallMesh || targetPinCount === 100) return;
             if (data.active) {
@@ -1523,6 +1847,12 @@
             updateOpponentPins(data);
         }
 
+        // ============================================
+        // OPPONENT PIN SYNCHRONIZATION
+        // ============================================
+
+        // Update opponent pin positions and rotations from Firebase data
+        // Shows ghost pins representing opponent's pin state during their turn
         function updateOpponentPins(data) {
             if (!Array.isArray(data.pins) || opponentGhostPins.length === 0) return;
             data.pins.forEach((pinData, index) => {
@@ -1534,8 +1864,15 @@
             });
         }
 
+        // ============================================
+        // MULTIPLAYER MODE ACTIVATION
+        // ============================================
+
+        // Initialize multiplayer game state and environment
+        // Sets up dual lanes, opponent visualization, and camera positioning
         function activateMultiplayerMode(isHostRole) {
             isMultiplayerActive = true;
+
             updateLaneWidth();
             const p2Row = document.getElementById('p2-row');
             if (p2Row) p2Row.style.display = 'table-row';
@@ -1551,7 +1888,6 @@
             camera.lookAt(cameraLookAtTarget);
             sunLight.position.set(offsetDistance / 2 + 15, 35, -40);
 
-            console.log("DEBUG: Building remote lane at offset " + remoteOffset);
             createStreetEnvironment(remoteOffset);
             if (targetPinCount !== 100) {
                 createGhostPins(remoteOffset);
@@ -1559,6 +1895,8 @@
 
             if (opponentBallMesh) {
                 opponentBallMesh.visible = targetPinCount !== 100;
+                // Position opponent ball at opponent's lane
+                opponentBallMesh.position.set(remoteOffset, LANE_Y + BALL_RADIUS, 6);
             }
 
             if (isHostRole) {
@@ -1588,6 +1926,9 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.body.appendChild(renderer.domElement);
+
+            // Initialize raycaster for touch/mouse interaction
+            raycaster = new THREE.Raycaster();
 
             // 2. Lighting
             scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -1837,6 +2178,12 @@
             });
         }
 
+        // ============================================
+        // GAME MODE TOGGLE
+        // ============================================
+
+        // Switch between 10-pin and 100-pin bowling modes
+        // Handles pin count changes, lane width adjustments, and memory cleanup
         function doToggleGameMode(newMode) {
             const previousTargetPinCount = targetPinCount;
             if (typeof newMode === 'undefined') {
@@ -1857,9 +2204,23 @@
                 pins.forEach(pin => {
                     scene.remove(pin.mesh);
                     world.removeBody(pin.body);
+
+                    // Dispose GPU memory
+                    if (pin.mesh.geometry) pin.mesh.geometry.dispose();
+                    if (pin.mesh.material) pin.mesh.material.dispose();
+                    pin.mesh.children.forEach(child => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) child.material.dispose();
+                    });
                 });
                 pins = [];
-                pinCircles.forEach(circle => scene.remove(circle));
+
+                // Dispose pin circle outlines
+                pinCircles.forEach(circle => {
+                    scene.remove(circle);
+                    if (circle.geometry) circle.geometry.dispose();
+                    if (circle.material) circle.material.dispose();
+                });
                 pinCircles = [];
             }
 
@@ -1891,7 +2252,6 @@
                 }
                 if (matchRef) {
                     matchRef.child('scores').set(scores).catch((err) => {
-                        console.error('DEBUG: Failed to reset multiplayer scores', err);
                     });
                 }
             }
@@ -1949,13 +2309,13 @@
                 accept.style.display = 'none';
                 decline.style.display = 'none';
             }
-            document.getElementById('screen-dimmer').classList.add('dimmed');
+            triggerDimmer(true);
         }
 
         function hideModeSwitchModal() {
             const modal = document.getElementById('mode-switch-modal');
             modal.style.display = 'none';
-            document.getElementById('screen-dimmer').classList.remove('dimmed');
+            triggerDimmer(false);
         }
 
         function updateVolume(value) {
@@ -1973,7 +2333,6 @@
             const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
             const fullWallHeight = 18;
             const lowWallHeight = 1.2;
-            console.log("DEBUG updateLaneWidth: isMultiplayerActive =", isMultiplayerActive, "currentOffset =", currentOffset, "targetPinCount =", targetPinCount);
 
             if (scene) {
                 scene.traverse(obj => {
@@ -2000,7 +2359,6 @@
                         } else {
                             wallHeight = fullWallHeight;
                         }
-                        console.log("DEBUG wall update: side =", obj.userData.side, "offset =", obj.userData.offset, "isPlayer2Lane =", isPlayer2Lane, "wallHeight =", wallHeight, "scale.y =", obj.scale.y);
                         obj.scale.y = wallHeight / fullWallHeight;
                         obj.position.y = wallHeight / 2;
                     }
@@ -2120,7 +2478,6 @@
                 leftWallHeight = fullWallHeight;
                 rightWallHeight = fullWallHeight;
             }
-            console.log("DEBUG createStreetEnvironment: isMultiplayerActive =", isMultiplayerActive, "offset =", offset, "isPlayer2Lane =", isPlayer2Lane, "leftWallHeight =", leftWallHeight, "rightWallHeight =", rightWallHeight);
 
             const leftWallGeo = new THREE.BoxGeometry(1.2, leftWallHeight, 100);
             const rightWallGeo = new THREE.BoxGeometry(1.2, rightWallHeight, 100);
@@ -2414,23 +2771,28 @@
         function initLightTrail() {
             const geometry = new THREE.PlaneGeometry(1, 1, 1, TRAIL_MAX_POINTS - 1);
 
+
             // Player 1 Trail (BLUE)
             const material_P1 = new THREE.MeshBasicMaterial({
                 color: 0x00ccff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
             });
+
             trailMesh_P1 = new THREE.Mesh(geometry.clone(), material_P1);
             trailMesh_P1.frustumCulled = false;
             trailMesh_P1.visible = false;
             scene.add(trailMesh_P1);
 
+
             // Player 2 Trail (RED)
             const material_P2 = new THREE.MeshBasicMaterial({
                 color: 0xff3333, transparent: true, opacity: 0.6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
             });
+
             trailMesh_P2 = new THREE.Mesh(geometry.clone(), material_P2);
             trailMesh_P2.frustumCulled = false;
             trailMesh_P2.visible = false;
             scene.add(trailMesh_P2);
+
         }
 
         function updateLightTrail() {
@@ -2442,8 +2804,8 @@
                 return;
             }
 
-            // 1. 根據目前玩家位置 (Offset) 選擇正確的 Mesh
-            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset !== 0);
+            // 1. 根據目前玩家身份選擇正確的 Mesh
+            const isPlayer2 = getLocalPlayerId() === 'p2';
             const currentTrailMesh = isPlayer2 ? trailMesh_P2 : trailMesh_P1;
 
             // 確保 Mesh 是顯示的
@@ -2529,13 +2891,14 @@
 
         function onTouchStart(e) {
             if (isBowling) return;
+            if (isMultiplayerActive && isPlayerComplete(getLocalPlayerId()) && !isPlayerComplete(getOpponentPlayerId())) return;
             // Prevent interaction when matchmaking panel is shown
             const panel = document.getElementById('matchmaking-panel');
             if (panel && panel.style.display === 'block') return;
             e.preventDefault();
             isTouching = true;
 
-            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            const isPlayer2 = getLocalPlayerId() === 'p2';
             if (isPlayer2) {
                 touchPathPoints_P2 = [];
             } else {
@@ -2548,11 +2911,19 @@
                 touchPathLine2_P2.geometry.setFromPoints(clearPoint);
                 touchPathLine3_P2.geometry.setFromPoints(clearPoint);
                 if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(clearPoint);
+                touchPathLine_P2.geometry.attributes.position.needsUpdate = true;
+                touchPathLine2_P2.geometry.attributes.position.needsUpdate = true;
+                touchPathLine3_P2.geometry.attributes.position.needsUpdate = true;
+                if (outerGlowLine_P2) outerGlowLine_P2.geometry.attributes.position.needsUpdate = true;
             } else {
                 touchPathLine_P1.geometry.setFromPoints(clearPoint);
                 touchPathLine2_P1.geometry.setFromPoints(clearPoint);
                 touchPathLine3_P1.geometry.setFromPoints(clearPoint);
                 if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(clearPoint);
+                touchPathLine_P1.geometry.attributes.position.needsUpdate = true;
+                touchPathLine2_P1.geometry.attributes.position.needsUpdate = true;
+                touchPathLine3_P1.geometry.attributes.position.needsUpdate = true;
+                if (outerGlowLine_P1) outerGlowLine_P1.geometry.attributes.position.needsUpdate = true;
             }
 
             document.getElementById('hint').style.opacity = '0';
@@ -2587,7 +2958,7 @@
             if (!pos) return;
 
             const MAX_PATH_POINTS = 100;
-            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            const isPlayer2 = getLocalPlayerId() === 'p2';
 
             const laneLimit = (targetPinCount === 100) ? 3.0 : 1.5;
             pos.x = Math.max(myPlayerOffset - laneLimit, Math.min(myPlayerOffset + laneLimit, pos.x));
@@ -2613,11 +2984,19 @@
                 touchPathLine2_P2.geometry.setFromPoints(offsetPoints_pos);
                 touchPathLine3_P2.geometry.setFromPoints(offsetPoints_neg);
                 if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(currentPlayerTouchPoints);
+                touchPathLine_P2.geometry.attributes.position.needsUpdate = true;
+                touchPathLine2_P2.geometry.attributes.position.needsUpdate = true;
+                touchPathLine3_P2.geometry.attributes.position.needsUpdate = true;
+                if (outerGlowLine_P2) outerGlowLine_P2.geometry.attributes.position.needsUpdate = true;
             } else {
                 touchPathLine_P1.geometry.setFromPoints(currentPlayerTouchPoints);
                 touchPathLine2_P1.geometry.setFromPoints(offsetPoints_pos);
                 touchPathLine3_P1.geometry.setFromPoints(offsetPoints_neg);
                 if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(currentPlayerTouchPoints);
+                touchPathLine_P1.geometry.attributes.position.needsUpdate = true;
+                touchPathLine2_P1.geometry.attributes.position.needsUpdate = true;
+                touchPathLine3_P1.geometry.attributes.position.needsUpdate = true;
+                if (outerGlowLine_P1) outerGlowLine_P1.geometry.attributes.position.needsUpdate = true;
             }
         }
 
@@ -2644,19 +3023,25 @@
             }
 
             // Clear appropriate touchpath lines for current player
-            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            const isPlayer2 = getLocalPlayerId() === 'p2';
             if (isPlayer2) {
                 touchPathPoints_P2 = [];
                 currentPlayerTouchPoints = touchPathPoints_P2;
                 touchPathLine_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine2_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine3_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+                touchPathLine_P2.geometry.attributes.position.needsUpdate = true;
+                touchPathLine2_P2.geometry.attributes.position.needsUpdate = true;
+                touchPathLine3_P2.geometry.attributes.position.needsUpdate = true;
             } else {
                 touchPathPoints_P1 = [];
                 currentPlayerTouchPoints = touchPathPoints_P1;
                 touchPathLine_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine2_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine3_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
+                touchPathLine_P1.geometry.attributes.position.needsUpdate = true;
+                touchPathLine2_P1.geometry.attributes.position.needsUpdate = true;
+                touchPathLine3_P1.geometry.attributes.position.needsUpdate = true;
             }
         }
 
@@ -2707,6 +3092,13 @@
             resetTimer = setTimeout(checkPinsStability, 500);
         }
 
+        // ============================================
+        // BALL PHYSICS AND THROWING
+        // ============================================
+
+        // Initiates ball throw with physics simulation
+        // Handles different ball masses and physics for 10-pin vs 100-pin modes
+        // Sets up velocity, spin, and collision detection timers
         function throwBall(speed, sideSpeed = 0) {
             isBowling = true;
             document.getElementById('hint').style.opacity = '0';
@@ -2727,6 +3119,13 @@
             playGameSound('ball_roll');
         }
 
+        // ============================================
+        // PIN SCORING AND COLLISION DETECTION
+        // ============================================
+
+        // Analyzes pin positions after ball throw to determine score
+        // Checks distance from initial position and tilt angle to count fallen pins
+        // Updates visual indicators and calculates final score for the frame
         function checkPins() {
             let fallen = 0;
             const SCORE_RADIUS = 0.22;
@@ -2819,17 +3218,25 @@
                         showMultiplayerWaitMessage(false);
                         return;
                     }
+                    // Neither done, show result message
                 }
 
                 msgBox.style.display = 'block';
                 replayBtn.style.display = 'block';
 
+                // Ensure elements exist before trying to set properties
+                if (!title || !body || !btn) {
+                    return;
+                }
+
                 if (matchHistory.length >= MAX_MATCHES) {
-                    title.innerText = "FINAL SCORE";
-                    let total = matchHistory.reduce((a, b) => a + b, 0);
-                    body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
-                    btn.innerText = "RESTART GAME";
-                    btn.onclick = fullReset;
+                    if (!isMultiplayerActive) {
+                        title.innerText = "FINAL SCORE";
+                        let total = matchHistory.reduce((a, b) => a + b, 0);
+                        body.innerText = `You hit ${fallen} pins this turn.\nTotal Score: ${total}`;
+                        btn.innerText = "RESTART GAME";
+                        btn.onclick = fullReset;
+                    }
                 } else {
                     title.innerText = (fallen === totalPinsInPlay) ? "STRIKE!" : "RESULT";
                     body.innerText = `${fallen} / ${totalPinsInPlay} pins cleared.`;
@@ -2851,6 +3258,12 @@
             resetGame();
         }
 
+        // ============================================
+        // REPLAY SYSTEM
+        // ============================================
+
+        // Starts replay playback of recorded ball trajectory and pin movements
+        // Switches camera to follow the ball path from recorded frame data
         function startReplay() {
             if (replayData.length === 0) return;
             playGameSound('ui_click');
@@ -2865,6 +3278,8 @@
             replayBtn.onclick = stopReplay;
         }
 
+        // Stops replay playback and returns to normal game view
+        // Resets camera position and restores game UI state
         function stopReplay() {
             isReplaying = false;
             playGameSound('ui_click');
@@ -2879,10 +3294,31 @@
             camera.lookAt(myPlayerOffset, 0, 0);
         }
 
+        // ============================================
+        // GAME RESET AND STATE MANAGEMENT
+        // ============================================
+
+        // Completely resets all game state for a new match
+        // Clears scores, match history, and multiplayer flags
+        // Updates UI and syncs state with Firebase if in multiplayer mode
         function fullReset() {
             matchHistory = [];
             scores = { p1: [], p2: [] };
+            hasShownLocalCompleteMessage = false;
+            hasShownOpponentCompleteMessage = false;
+            hasRecordedScoreInCurrentGame = false;
+            const msgBox = document.getElementById('msg-box');
+            if (msgBox) {
+                msgBox.style.display = 'none';
+                // Only clear the body content, not the entire structure
+                const body = document.getElementById('msg-body');
+                if (body) body.innerText = '';
+            }
             updateScoreTable();
+            if (isMultiplayerActive && matchRef) {
+                matchRef.child('scores').set(scores).catch((err) => {
+                });
+            }
             resetGame();
         }
 
@@ -2917,6 +3353,12 @@
             }
         }
 
+        // ============================================
+        // GAME STATE RESET
+        // ============================================
+
+        // Reset all game state variables and UI elements for a new frame/turn
+        // Clears physics state, touch paths, camera position, and prepares for next throw
         function resetGame() {
             isBowling = false;
             randomHookForce = 0;
@@ -2931,10 +3373,10 @@
 
             touchPathPoints_P1 = [];
             touchPathPoints_P2 = [];
-            currentPlayerTouchPoints = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15) ? touchPathPoints_P2 : touchPathPoints_P1;
+            currentPlayerTouchPoints = getLocalPlayerId() === 'p2' ? touchPathPoints_P2 : touchPathPoints_P1;
             const clearPoint = [new THREE.Vector3(myPlayerOffset, 0, 0)];
             // Clear appropriate player's touchpath
-            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            const isPlayer2 = getLocalPlayerId() === 'p2';
             if (isPlayer2) {
                 [touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2, outerGlowLine_P2].forEach(line => {
                     if (line && line.geometry) {
@@ -2994,18 +3436,37 @@
 
             stopAllGameSounds();
 
+            // Properly dispose of pin meshes and bodies
             pins.forEach(p => {
                 scene.remove(p.mesh);
-                world.remove(p.body);
+                world.removeBody(p.body);
+
+                // Dispose GPU memory for mesh and its children
+                if (p.mesh.geometry) p.mesh.geometry.dispose();
+                if (p.mesh.material) p.mesh.material.dispose();
+
+                // Dispose children (pin body parts: white, black stripe, red line)
+                p.mesh.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
             });
             pins = [];
 
+            // Dispose pin circle outlines
             pinCircles.forEach(circle => {
                 scene.remove(circle);
+                if (circle.geometry) circle.geometry.dispose();
+                if (circle.material) circle.material.dispose();
             });
             pinCircles = [];
 
-            opponentGhostPins.forEach(pin => scene.remove(pin));
+            // Dispose opponent ghost pins
+            opponentGhostPins.forEach(pin => {
+                scene.remove(pin);
+                if (pin.geometry) pin.geometry.dispose();
+                if (pin.material) pin.material.dispose();
+            });
             opponentGhostPins = [];
 
             createPins(myPlayerOffset);
@@ -3038,13 +3499,14 @@
             if (pinKnockSound && pinKnockSound.isPlaying) pinKnockSound.stop();
         }
 
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let audioCtx; // Declare audioCtx, will be created after user gesture
 
         function playGameSound(soundName) {
+            if (!audioCtx) return; // Wait for audio context to be initialized
             const sound = sounds[soundName];
             if (sound && sound.buffer) {
-                if (sound.context.state === 'suspended') {
-                    sound.context.resume().then(() => {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().then(() => {
                         if (!sound.isPlaying) sound.play();
                     });
                 } else {
@@ -3057,11 +3519,16 @@
         let audioContextStarted = false;
         function unlockAudio() {
             if (audioContextStarted) return;
-            const context = THREE.AudioContext.getContext();
-            if (context.state === 'suspended') {
-                context.resume();
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             }
-            audioContextStarted = true;
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().then(() => {
+                    audioContextStarted = true;
+                });
+            } else {
+                audioContextStarted = true;
+            }
         }
 
         window.addEventListener('click', unlockAudio);
@@ -3166,6 +3633,12 @@
             actionRenderer.render(scene, actionCamera);
         }
 
+        // ============================================
+        // MAIN ANIMATION LOOP
+        // ============================================
+
+        // Main game loop that runs every frame
+        // Handles physics simulation, rendering, and multiplayer synchronization
         function animate() {
             requestAnimationFrame(animate);
 
@@ -3187,7 +3660,7 @@
 
                     if (isMultiplayerActive && matchRef) {
                         ballSyncCounter += 1;
-                        if (ballSyncCounter % 12 === 0) {
+                        if (ballSyncCounter % 3 === 0) {
                             const activeBall = isBowling || ballBody.velocity.length() > 0.04;
                             matchRef.child('ballUpdate').set({
                                 active: activeBall,
@@ -3196,11 +3669,10 @@
                                 from: getLocalPlayerId(),
                                 timestamp: Date.now()
                             }).catch((err) => {
-                                console.error('DEBUG: Failed to sync ball update', err);
                             });
                         }
-                        const pinSyncInterval = (targetPinCount === 100) ? 5 : 6;
-                        if (ballSyncCounter % pinSyncInterval === 0 && pins.length > 0) {
+
+                        if (ballSyncCounter % 3 === 0 && pins.length > 0) {
                             const pinPayload = pins.map(p => ({
                                 pos: {
                                     x: p.body.position.x,
@@ -3219,7 +3691,6 @@
                                 timestamp: Date.now(),
                                 pins: pinPayload
                             }).catch((err) => {
-                                console.error('DEBUG: Failed to sync pin update', err);
                             });
                         }
                     }
@@ -3364,7 +3835,6 @@
             const roomId = urlParams.get('room');
 
             if (roomId) {
-                console.log("DEBUG: Auto-joining room: " + roomId);
                 setTimeout(() => {
                     joinGame(roomId);
                 }, 1000);
@@ -3388,8 +3858,6 @@
         // 3. 初始化 Firebase 並掛載到全域變數 db
         firebase.initializeApp(firebaseConfig);
         window.db = firebase.database();
-
-        console.log("Firebase 雲端同步系統已就緒！");
     </script>
 </body>
 
