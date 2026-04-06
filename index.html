@@ -8,7 +8,8 @@
     <title>Street Bowling 3D</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
-    <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
     <style>
         body {
             margin: 0;
@@ -53,6 +54,10 @@
         }
 
         .score-board {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
             background: rgba(20, 20, 40, 0.85);
             padding: 12px;
             border-radius: 12px;
@@ -61,6 +66,7 @@
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
             max-width: fit-content;
+            z-index: 100;
         }
 
         .history-table {
@@ -188,6 +194,7 @@
             flex-direction: column;
             align-items: flex-end;
             pointer-events: auto;
+            z-index: 1100;
         }
 
         .menu-icon-btn {
@@ -303,41 +310,72 @@
             transform: translateX(-50%) scale(1.1);
         }
 
-        @media (max-width: 600px) {
+        /* --- ENHANCED MOBILE SCOREBOARD --- */
+        @media (max-width: 180px) {
             .score-board {
                 padding: 8px;
-                border-radius: 8px;
+                border-radius: 12px;
+                width: 92vw;
+                /* Use more horizontal space on mobile */
+                max-width: 340px;
+                background: rgba(15, 15, 30, 0.9);
             }
 
             #score-text {
                 font-size: 16px !important;
-                margin-bottom: 4px !important;
+                margin-bottom: 6px !important;
+                text-align: center;
+                width: 100%;
             }
 
-            .history-table {
-                min-width: 180px;
-                font-size: 10px;
+            #score-table {
+                table-layout: fixed;
+                /* Prevents column squishing */
+                border-spacing: 2px;
+                font-size: 11px;
             }
 
-            .history-table th,
-            .history-table td {
+            #score-table th {
                 padding: 4px 2px;
-                width: 25px;
+                font-size: 9px;
+                letter-spacing: 0;
             }
 
+            #score-table td {
+                padding: 10px 2px;
+                /* Taller tap targets */
+                min-width: 0;
+                font-size: 12px;
+            }
+
+            /* Narrow the "Player" column to give more room to scores */
+            #score-table th:first-child,
+            #score-table td:first-child {
+                width: 55px;
+                font-size: 10px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            /* Make the Total column stand out */
+            .total {
+                background: rgba(241, 196, 15, 0.2) !important;
+                color: #f1c40f !important;
+                font-weight: 900;
+            }
+
+            /* Position the top-ui better on small screens */
+            .top-ui {
+                padding-right: 0;
+                align-items: center;
+                width: 100%;
+            }
+
+            /* Settings and Menu adjustments */
             .menu-container {
-                top: 10px !important;
-                right: 10px !important;
-            }
-
-            .menu-icon-btn {
-                font-size: 18px !important;
-                padding: 8px !important;
-            }
-
-            .settings-popup {
-                width: 140px;
-                padding: 10px;
+                top: 10px;
+                right: 10px;
             }
         }
 
@@ -352,7 +390,9 @@
             color: white;
             font-size: 14px;
             text-align: center;
-            width: 280px;
+            width: 100%;
+            max-width: 280px;
+            margin: 0;
         }
 
         #score-table th {
@@ -392,13 +432,13 @@
 
         @media screen and (max-width: 600px) {
             #score-table {
-                width: 220px;
-                font-size: 11px;
+                width: min(45vw, 180px);
+                font-size: 10px;
             }
 
             #score-table th,
             #score-table td {
-                padding: 4px 2px;
+                padding: 3px 2px;
             }
         }
 
@@ -478,8 +518,27 @@
             margin-top: 20px;
         }
 
-        #find-match-btn,
-        #solo-play-btn,
+        .join-panel-buttons {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        #create-match-btn,
+        #join-match-btn,
+        #single-player-btn,
         #cancel-search-btn {
             padding: 15px 30px;
             font-size: 16px;
@@ -490,30 +549,40 @@
             transition: all 0.3s ease;
         }
 
-        #find-match-btn {
+        #create-match-btn {
             background: #e67e22;
             color: white;
         }
 
-        #find-match-btn:hover:not(:disabled) {
+        #create-match-btn:hover:not(:disabled) {
             background: #d35400;
             transform: scale(1.05);
         }
 
-        #find-match-btn:disabled {
+        #create-match-btn:disabled {
             background: #555;
             cursor: not-allowed;
             opacity: 0.7;
         }
 
-        #solo-play-btn {
+        #join-match-btn {
             background: rgba(100, 100, 150, 0.5);
             color: white;
             border: 1px solid #8888ff;
         }
 
-        #solo-play-btn:hover {
+        #join-match-btn:hover {
             background: rgba(100, 100, 150, 0.7);
+        }
+
+        #single-player-btn {
+            background: rgba(80, 160, 80, 0.8);
+            color: white;
+            border: 1px solid #66cc66;
+        }
+
+        #single-player-btn:hover {
+            background: rgba(80, 160, 80, 1);
         }
 
         #cancel-search-btn {
@@ -568,12 +637,12 @@
             <button class="menu-icon-btn" onclick="toggleSettingsMenu()">⚙️</button>
             <div id="settings-menu" class="settings-popup">
                 <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e67e22;">SETTINGS</h3>
-                <label>VOLUME</label>
+                <label for="volume-slider">VOLUME</label>
                 <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5"
                     oninput="updateVolume(this.value)">
                 <div id="vol-percent">50%</div>
                 <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
-                <label>GAME MODE</label>
+                <label for="mode-toggle-btn">GAME MODE</label>
                 <button id="mode-toggle-btn" class="settings-btn" onclick="toggleGameMode()">10 PINS</button>
             </div>
         </div>
@@ -592,12 +661,12 @@
                             <th>3</th>
                             <th>4</th>
                             <th>5</th>
-                            <th>Total</th>
+                            <th class="total-col">TOT</th>
                         </tr>
                     </thead>
                     <tbody id="score-body">
                         <tr id="p1-row">
-                            <td>P1 (Blue)</td>
+                            <td>P1</td>
                             <td id="p1-m0">-</td>
                             <td id="p1-m1">-</td>
                             <td id="p1-m2">-</td>
@@ -606,7 +675,7 @@
                             <td id="p1-total" class="total">0</td>
                         </tr>
                         <tr id="p2-row" style="display: none;">
-                            <td>P2 (Red)</td>
+                            <td>P2</td>
                             <td id="p2-m0">-</td>
                             <td id="p2-m1">-</td>
                             <td id="p2-m2">-</td>
@@ -626,7 +695,8 @@
             <p id="msg-body">Explosive hit!</p>
             <button id="action-btn" class="btn" onclick="handleMatchEnd()">NEXT FRAME</button>
         </div>
-        <div id="mode-switch-modal" style="display:none; position:absolute; top:35%; left:50%; transform:translate(-50%, -50%); width:320px; padding:24px; background:rgba(15,15,25,0.97); border:2px solid #e67e22; border-radius:20px; z-index:5100; box-shadow:0 0 40px rgba(0,0,0,0.75); text-align:center;">
+        <div id="mode-switch-modal"
+            style="display:none; position:absolute; top:35%; left:50%; transform:translate(-50%, -50%); width:320px; padding:24px; background:rgba(15,15,25,0.97); border:2px solid #e67e22; border-radius:20px; z-index:5100; box-shadow:0 0 40px rgba(0,0,0,0.75); text-align:center;">
             <h2 id="mode-switch-title" style="margin:0 0 12px; color:#f1c40f; font-size:20px;">Mode Change Request</h2>
             <p id="mode-switch-body" style="margin:0 0 18px; color:#ddd; font-size:14px; line-height:1.5;"></p>
             <div id="mode-switch-actions" style="display:flex; justify-content:space-between; gap:10px;">
@@ -644,11 +714,24 @@
             <p>Play with other players online</p>
             <div id="matchmaking-status"></div>
             <div class="matchmaking-buttons">
-                <button id="find-match-btn" onclick="startMatchmaking()">FIND MATCH</button>
-                <button id="solo-play-btn" onclick="startSinglePlayer()">SINGLE PLAYER</button>
+                <button id="create-match-btn" onclick="createMatch()">CREATE MATCH</button>
+                <button id="join-match-btn" onclick="showJoinMatchPanel()">JOIN MATCH</button>
+                <button id="single-player-btn" onclick="startSinglePlayer()">SINGLE PLAYER</button>
+            </div>
+            <div id="join-match-panel"
+                style="display:none; margin-top: 10px; position: relative; width: 100%;">
+                <label for="join-code-input" class="sr-only">Join match code</label>
+                <input id="join-code-input" type="text" maxlength="5" placeholder="Enter code"
+                    style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.25); color: white; outline: none; text-align: center;" />
+                <div class="join-panel-buttons">
+                    <button id="join-code-btn" class="btn" onclick="attemptJoinMatch()"
+                        style="flex: 1; padding: 10px 0; min-width: 0; margin-top: 0;">JOIN</button>
+                    <button id="join-cancel-btn" class="btn" onclick="hideJoinMatchPanel()"
+                        style="flex: 1; padding: 10px 0; background: #888; min-width: 0; margin-top: 0;">BACK</button>
+                </div>
             </div>
             <button id="cancel-search-btn" onclick="cancelMatchmaking()" style="display: none; margin-top: 10px;">CANCEL
-                SEARCH</button>
+                MATCH</button>
         </div>
 
         <div id="screen-dimmer"></div>
@@ -667,6 +750,8 @@
         let pins = [];
         let pinCircles = [];
         let targetPinCount = 10;
+        let offsetDistance10 = 7.2;
+        let offsetDistance100 = 8.8;
         let lastPinSoundTime = 0;
 
         let scene, camera, renderer, world, sunLight;
@@ -689,6 +774,8 @@
 
         let impactOccurred = false;
         let resetTimer = null;
+        let pinSettleStartTime = 0;
+        let pinSettleStableSince = 0;
 
         let timeScale = 1.0;
         let isCinematicMode = false;
@@ -712,15 +799,20 @@
         let modeSwitchRequestPending = false;
         let modeSwitchRequestMode = null;
         let modeSwitchRequester = null;
+        let wasShowingWaitMessage = false;
+        let waitMessageLocalFinished = false;
+        let lastScoreUpdateTimestamp = {};
 
-        let cameraLookAtTarget = new THREE.Vector3(0, 1, 0);
+        let cameraLookAtTarget = new THREE.Vector3(0, 1, -22);
 
         // Player 1 & 2 Touchpaths (different colors)
         let touchPathLine_P1, touchPathLine2_P1, touchPathLine3_P1;
         let outerGlowLine_P1;
         let touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2;
         let outerGlowLine_P2;
-        let touchPathPoints = [];
+        let touchPathPoints_P1 = [];
+        let touchPathPoints_P2 = [];
+        let currentPlayerTouchPoints = touchPathPoints_P1;
 
         // Player 1 & 2 Trail meshes (different colors)
         let trailMesh_P1, trailMesh_P2;
@@ -740,19 +832,35 @@
         let currentPinVolume = 0.7;
         let lastPinHitTime = 0;
 
+        function isMobileClient() {
+            return typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent);
+        }
+
         // --- MULTIPLAYER VARIABLES ---
         let isHost = true;  // Default to true for single-player (acts as host/p1)
         let myPlayerId = 1;
         let myPlayerOffset = 0;
         let isMultiplayerActive = false;
-        let conn = null;
-        let peer = null;
+        let matchRef = null;
+        let matchListeners = [];
         let opponentBallMesh;
+        let opponentGhostPins = [];
+        let matchCode = null;
+        let isCreatingMatch = false;
+        let isJoiningMatch = false;
 
         let playAgainRequested = false;
         let playAgainOpponentRequested = false;
         let playAgainCountdownTimer = null;
         let playAgainCountdownRemaining = 5;
+
+        let lastEventTimestamps = {
+            playAgainRequest: 0,
+            playAgainResponse: 0,
+            modeSwitchRequest: 0,
+            modeSwitchResponse: 0
+        };
+        let ballSyncCounter = 0;
 
         let isDragging = false;
         let mouse = new THREE.Vector2();
@@ -763,243 +871,11 @@
             p2: []
         };
 
-        const LOBBY_ID = "street-bowling-shared-lobby-v1";
-
         // --- MATCHMAKING STATE ---
         let isSearchingForMatch = false;
         let matchmakingTimeout = null;
 
         // --- MULTIPLAYER FUNCTIONS ---
-
-        function findRandomMatch() {
-            console.log("DEBUG: searching for match...");
-
-            // Make sure peer exists before trying to connect
-            if (!peer) {
-                console.error("ERROR: Peer not initialized");
-                updateMatchmakingStatus('Error: Peer not ready');
-                return;
-            }
-
-            // Attempt to connect to the lobby
-            const connAttempt = peer.connect(LOBBY_ID, {
-                reliable: true,
-                serialization: 'json'
-            });
-
-            const timeout = setTimeout(() => {
-                console.log("DEBUG: No host found. I am now the Host.");
-                updateMatchmakingStatus('Creating room...');
-
-                // Close the failed connection attempt
-                if (connAttempt && connAttempt.close) {
-                    try { connAttempt.close(); } catch (e) { }
-                }
-
-                setTimeout(setupAsHost, 1000);
-            }, 2500);
-
-            matchmakingTimeout = timeout;
-
-            // Handle successful connection
-            if (connAttempt) {
-                connAttempt.on('open', () => {
-                    clearTimeout(timeout);
-                    matchmakingTimeout = null;
-                    console.log("DEBUG: Found a Host! Joining as Guest.");
-                    updateMatchmakingStatus('found');
-                    conn = connAttempt;
-                    isHost = false;
-                    myPlayerOffset = 15;
-
-                    // Delete old lanes that were created at offset 0 during init()
-                    if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
-                    if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
-                    if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
-                    if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
-                    if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
-                    if (groundBody) world.remove(groundBody);
-                    if (leftWallBody) world.remove(leftWallBody);
-                    if (rightWallBody) world.remove(rightWallBody);
-
-                    // Create new lanes at the correct offset for Player 2
-                    createStreetEnvironment(myPlayerOffset);
-                    createPins(myPlayerOffset);
-
-                    // Update camera to look from Player 2's lane
-                    camera.position.set(myPlayerOffset, 4, 12);
-                    camera.lookAt(myPlayerOffset, 1, 0);
-
-                    // Update ball position to Player 2's lane
-                    if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-                    if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-
-                    setupDataListeners();
-                    activateMultiplayerMode(false);
-                    hideMatchmakingPanel();
-                    isSearchingForMatch = false;
-                    resetGame();
-                });
-
-                // Handle connection errors (expected: peer-unavailable when no host exists)
-                connAttempt.on('error', (err) => {
-                    // "peer-unavailable" is expected when no host exists yet - this is normal matchmaking
-                    if (err.type === 'peer-unavailable') {
-                        console.log("DEBUG: No host available at lobby, will become host...");
-                    } else {
-                        console.error("DEBUG: Connection attempt error:", err.type);
-                    }
-                    clearTimeout(timeout);
-                    updateMatchmakingStatus('No players found, creating room...');
-                    setTimeout(setupAsHost, 1000);
-                });
-
-                // Handle connection closed
-                connAttempt.on('close', () => {
-                    console.log("DEBUG: Connection by peer ended, becoming host");
-                    clearTimeout(timeout);
-                    if (!isHost) {
-                        setupAsHost();
-                    }
-                });
-            }
-        }
-
-        function setupAsHost() {
-            if (peer) {
-                try {
-                    peer.destroy();
-                } catch (e) {
-                    console.log("DEBUG: Error destroying peer:", e);
-                }
-            }
-
-            peer = new Peer(LOBBY_ID, {
-                config: {
-                    'iceServers': [
-                        { url: 'stun:stun.l.google.com:19302' },
-                        { url: 'stun:stun1.l.google.com:19302' }
-                    ]
-                }
-            });
-
-            peer.on('open', (id) => {
-                isHost = true;
-                console.log("DEBUG: Lobby created with ID:", id);
-                updateMatchmakingStatus('Waiting for Player 2...');
-
-                peer.on('connection', (incomingConn) => {
-                    if (conn) {
-                        console.log("DEBUG: Already have a player. Rejecting extra join.");
-                        incomingConn.close();
-                        return;
-                    }
-                    conn = incomingConn;
-                    console.log("DEBUG: Player 2 connected!");
-                    updateMatchmakingStatus('found');
-                    hideMatchmakingPanel();
-                    isSearchingForMatch = false;
-                    setupDataListeners();
-                    activateMultiplayerMode(true);
-                    resetGame();
-                });
-            });
-
-            peer.on('error', (err) => {
-                // Log errors but suppress certain expected errors
-                if (err.type === 'unavailable-id') {
-                    console.log("DEBUG: Lobby ID taken, retrying matchmaking...");
-                    setTimeout(() => {
-                        if (isSearchingForMatch) {
-                            findRandomMatch();
-                        }
-                    }, 800);
-                } else if (err.type === 'peer-unavailable') {
-                    console.log("DEBUG: Peer unavailable (expected)");
-                } else if (err.type === 'disconnected') {
-                    console.log("DEBUG: Peer disconnected (expected)");
-                } else {
-                    console.error("DEBUG: Host peer error:", err.type);
-                    updateMatchmakingStatus('Error: ' + err.type);
-                }
-            });
-        }
-
-        function initNetworking() {
-            peer = new Peer();
-
-            peer.on('open', (id) => {
-                console.log("Your Peer ID: joinGame(\"" + id + "\")");
-            });
-
-            peer.on('error', (err) => {
-                // Suppress expected matchmaking errors
-                if (err.type === 'peer-unavailable' || err.type === 'unavailable-id') {
-                    console.log("DEBUG: PeerJS info:", err.type);
-                } else {
-                    console.error("PeerJS Error:", err.type, err);
-                }
-            });
-
-            peer.on('connection', (incomingConn) => {
-                conn = incomingConn;
-                conn.on('open', () => {
-                    console.log("DEBUG: Connection established with Guest!");
-                    activateMultiplayerMode(true);
-                    setupDataListeners();
-                    resetGame();
-                });
-            });
-        }
-
-        function setupDataListeners() {
-            if (!conn) {
-                console.warn("DEBUG: setupDataListeners called but 'conn' is undefined.");
-                return;
-            }
-
-            console.log("DEBUG: Data listeners attached to connection.");
-
-            conn.on('open', () => {
-                console.log("DEBUG: P2P Connection fully open!");
-                activateMultiplayerMode(isHost);
-            });
-
-            conn.on('data', (data) => {
-                if (data.type === 'remoteBall' || data.type === 'ballUpdate') {
-                    updateOpponentBall(data);
-                } else if (data.type === 'modeSwitchRequest') {
-                    handleModeSwitchRequest(data);
-                } else if (data.type === 'modeSwitchResponse') {
-                    handleModeSwitchResponse(data);
-                }
-
-                if (data.type === 'scoreUpdate') {
-                    const targetId = data.senderId; // Use the ID sent by the other player
-                    scores[targetId] = data.history;
-                    updateScoreTable(targetId);
-                    updateMultiplayerMatchState();
-                } else if (data.type === 'playAgainRequest') {
-                    receivePlayAgainRequest(data);
-                }
-            });
-
-            conn.on('close', () => {
-                console.log("DEBUG: Opponent disconnected.");
-                isMultiplayerActive = false;
-
-                if (opponentBallMesh) opponentBallMesh.visible = false;
-
-                const msgTitle = document.getElementById('msg-title');
-                if (msgTitle) {
-                    msgTitle.innerText = "PLAYER LEFT";
-                    document.getElementById('msg-box').style.display = 'block';
-                    document.getElementById('msg-body').innerText = "Opponent disconnected. Refresh to find a new match.";
-                    document.getElementById('action-btn').innerHTML = "REFRESH";
-                    document.getElementById('action-btn').onclick = () => location.reload();
-                }
-            });
-        }
 
         function showMatchmakingPanel() {
             const panel = document.getElementById('matchmaking-panel');
@@ -1030,107 +906,38 @@
             }
         }
 
-        function startMatchmaking() {
-            console.log("DEBUG: Starting matchmaking...");
-            isSearchingForMatch = true;
-            document.getElementById('find-match-btn').disabled = true;
-            document.getElementById('solo-play-btn').disabled = true;
-            document.getElementById('cancel-search-btn').style.display = 'block';
-            updateMatchmakingStatus('searching');
-
-            // Initialize peer connection for matchmaking if needed
-            if (!peer) {
-                peer = new Peer({
-                    config: {
-                        'iceServers': [
-                            { url: 'stun:stun.l.google.com:19302' },
-                            { url: 'stun:stun1.l.google.com:19302' }
-                        ]
-                    }
-                });
-
-                let peerReady = false;
-
-                peer.on('open', (id) => {
-                    console.log("DEBUG: Peer ready with ID:", id);
-                    peerReady = true;
-                    if (isSearchingForMatch) {
-                        // Now that peer is ready, try to find a match
-                        findRandomMatch();
-                    }
-                });
-
-                peer.on('error', (err) => {
-                    // Suppress peer-unavailable errors - they're expected during matchmaking
-                    if (err.type === 'peer-unavailable') {
-                        console.log("DEBUG: Peer unavailable (expected during matchmaking)");
-                    } else if (err.type === 'unavailable-id') {
-                        console.log("DEBUG: ID unavailable, will retry matchmaking");
-                    } else {
-                        console.error("PeerJS Error:", err.type, err);
-                        if (isSearchingForMatch) {
-                            updateMatchmakingStatus('Connection error: ' + err.type);
-                        }
-                    }
-                });
-
-                // If peer doesn't open in 3 seconds, try anyway
-                setTimeout(() => {
-                    if (isSearchingForMatch && !peerReady) {
-                        console.log("DEBUG: Peer not ready, attempting connection anyway");
-                        findRandomMatch();
-                    }
-                }, 3000);
-            } else {
-                // Peer already exists, try to find match
-                findRandomMatch();
-            }
+        function getMatchRef(code) {
+            return db.ref(`matches/${code}`);
         }
 
-        function cancelMatchmaking() {
-            console.log("DEBUG: Cancelling matchmaking...");
-            isSearchingForMatch = false;
-            if (matchmakingTimeout) {
-                clearTimeout(matchmakingTimeout);
-                matchmakingTimeout = null;
-            }
-            if (peer) {
-                peer.destroy();
-                peer = null;
-            }
-            document.getElementById('find-match-btn').disabled = false;
-            document.getElementById('solo-play-btn').disabled = false;
-            document.getElementById('cancel-search-btn').style.display = 'none';
-            updateMatchmakingStatus('');
+        function cleanupFirebaseListeners() {
+            matchListeners.forEach((ref) => ref.off());
+            matchListeners = [];
         }
 
-        function startSinglePlayer() {
-            console.log("DEBUG: Starting single player...");
-            hideMatchmakingPanel();
-            resetGame();
-        }
-
-        function recordRoundScore(scoreValue) {
-            // Force the ID based on the connection role
-            // If I am the host, I am p1. If I am the guest, I am p2.
-            const myId = isHost ? "p1" : "p2";
-
-            if (!scores[myId]) scores[myId] = [];
-            scores[myId].push(scoreValue);
-
-            // Update local UI
-            updateScoreTable(myId);
-
-            // Sync to the other player
-            if (isMultiplayerActive && conn && conn.open) {
-                conn.send({
-                    type: 'scoreUpdate',
-                    senderId: myId, // Explicitly tell the other person WHO I AM
-                    history: scores[myId]
-                });
+        function setupFirebaseListeners() {
+            if (!matchRef) {
+                console.warn("DEBUG: setupFirebaseListeners called without active matchRef.");
+                return;
             }
 
-            updateMultiplayerMatchState();
+            cleanupFirebaseListeners();
+
+            const guestRef = matchRef.child('guest');
+            const hostRef = matchRef.child('host');
+            const ballRef = matchRef.child('ballUpdate');
+            const pinRef = matchRef.child('pinUpdate');
+            const scoresRef = matchRef.child('scores');
+            const eventsRef = matchRef.child('events');
+
+            guestRef.on('value', handleGuestUpdate);
+            hostRef.on('value', handleHostUpdate);
+            ballRef.on('value', handleBallUpdateEvent);
+            pinRef.on('value', handlePinUpdateEvent);
+            scoresRef.on('value', handleScoresUpdate);
+            eventsRef.on('value', handleEventsUpdate);
+
+            matchListeners.push(guestRef, hostRef, ballRef, pinRef, scoresRef, eventsRef);
         }
 
         function getLocalPlayerId() {
@@ -1145,8 +952,379 @@
             return Array.isArray(scores[playerId]) && scores[playerId].length >= MAX_MATCHES;
         }
 
-        function getPlayerTotal(playerId) {
-            return (scores[playerId] || []).reduce((sum, value) => sum + (typeof value === 'number' ? value : 0), 0);
+        function getLocalRole() {
+            return isHost ? 'host' : 'guest';
+        }
+
+        function getOpponentRole() {
+            return isHost ? 'guest' : 'host';
+        }
+
+        function setMatchCodeUI(code) {
+            matchCode = code;
+            updateMatchmakingStatus(code ? `Code: ${code} - waiting for player...` : '');
+        }
+
+        function handleGuestUpdate(snapshot) {
+            const guestData = snapshot.val();
+            if (isHost) {
+                if (guestData && !isMultiplayerActive) {
+                    updateMatchmakingStatus('Player joined! Starting match...');
+                    hideMatchmakingPanel();
+                    document.getElementById('cancel-search-btn').style.display = 'none';
+                    activateMultiplayerMode(true);
+                    resetGame();
+                } else if (!guestData && isMultiplayerActive) {
+                    handleOpponentDisconnect();
+                }
+            }
+        }
+
+        function handleHostUpdate(snapshot) {
+            const hostData = snapshot.val();
+            if (!isHost) {
+                if (hostData && !isMultiplayerActive) {
+                    updateMatchmakingStatus('Connected! Setting up lane...');
+                    hideMatchmakingPanel();
+                    document.getElementById('cancel-search-btn').style.display = 'none';
+                    activateMultiplayerMode(false);
+                    resetGame();
+                } else if (!hostData && isMultiplayerActive) {
+                    handleOpponentDisconnect();
+                }
+            }
+        }
+
+        function handleOpponentDisconnect() {
+            isMultiplayerActive = false;
+            camera.position.set(0, 4, 20);
+            cameraLookAtTarget.set(0, 1, -22);
+            camera.lookAt(cameraLookAtTarget);
+            sunLight.position.set(15, 35, -40);
+            updateLaneWidth();
+            if (opponentBallMesh) opponentBallMesh.visible = false;
+            const msgTitle = document.getElementById('msg-title');
+            if (msgTitle) {
+                msgTitle.innerText = "PLAYER LEFT";
+                document.getElementById('msg-box').style.display = 'block';
+                document.getElementById('msg-body').innerText = "Opponent disconnected. Returning to single player...";
+                document.getElementById('action-btn').innerHTML = "OK";
+                document.getElementById('action-btn').onclick = () => {
+                    document.getElementById('msg-box').style.display = 'none';
+                    fullReset();
+                    showMatchmakingPanel();
+                };
+            }
+            cleanupFirebaseListeners();
+            matchRef = null;
+
+            setTimeout(() => {
+                if (!isMultiplayerActive) {
+                    fullReset();
+                    showMatchmakingPanel();
+                }
+            }, 2200);
+        }
+
+        function handleBallUpdateEvent(snapshot) {
+            const data = snapshot.val();
+            if (!data || data.from === getLocalPlayerId()) return;
+            updateOpponentBall(data);
+        }
+
+        function areScoreArraysEqual(a, b) {
+            if (!Array.isArray(a) || !Array.isArray(b)) return false;
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) return false;
+            }
+            return true;
+        }
+
+        function handleScoresUpdate(snapshot) {
+            const allScores = snapshot.val() || {};
+            const opponentId = getOpponentPlayerId();
+            if (Array.isArray(allScores[opponentId])) {
+                const incomingScores = allScores[opponentId];
+                const currentScores = scores[opponentId] || [];
+                if (!areScoreArraysEqual(incomingScores, currentScores)) {
+                    scores[opponentId] = incomingScores;
+                    updateScoreTable(opponentId);
+                    updateMultiplayerMatchState();
+                }
+            }
+        }
+
+        function processMatchEvent(key, event) {
+            if (!event || typeof event.timestamp !== 'number') return;
+            if (event.from === getLocalPlayerId()) return;
+            if (event.timestamp <= lastEventTimestamps[key]) return;
+
+            lastEventTimestamps[key] = event.timestamp;
+
+            switch (key) {
+                case 'playAgainRequest':
+                    receivePlayAgainRequest(event);
+                    break;
+                case 'playAgainResponse':
+                    if (playAgainRequested && event.accepted) {
+                        beginPlayAgain();
+                    }
+                    break;
+                case 'modeSwitchRequest':
+                    handleModeSwitchRequest(event);
+                    break;
+                case 'modeSwitchResponse':
+                    handleModeSwitchResponse(event);
+                    break;
+            }
+        }
+
+        function handleEventsUpdate(snapshot) {
+            const events = snapshot.val() || {};
+            processMatchEvent('playAgainRequest', events.playAgainRequest);
+            processMatchEvent('playAgainResponse', events.playAgainResponse);
+            processMatchEvent('modeSwitchRequest', events.modeSwitchRequest);
+            processMatchEvent('modeSwitchResponse', events.modeSwitchResponse);
+        }
+
+        function sendMatchEvent(type, payload = {}) {
+            if (!isMultiplayerActive || !matchRef) return;
+            const event = {
+                ...payload,
+                type,
+                from: getLocalPlayerId(),
+                timestamp: Date.now()
+            };
+            matchRef.child(`events/${type}`).set(event).catch((err) => {
+                console.error('DEBUG: Failed to send multiplayer event', type, err);
+            });
+        }
+
+        function createMatch() {
+            console.log("DEBUG: Creating match...");
+            unlockAudio();
+
+            isCreatingMatch = true;
+            isJoiningMatch = false;
+            isSearchingForMatch = false;
+            hideJoinMatchPanel();
+
+            document.getElementById('create-match-btn').disabled = true;
+            document.getElementById('join-match-btn').disabled = true;
+            document.getElementById('cancel-search-btn').style.display = 'block';
+
+            cancelMatchmaking();
+
+            const code = Math.floor(10000 + Math.random() * 90000).toString();
+            isHost = true;
+            myPlayerOffset = 0;
+            setMatchCodeUI(code);
+
+            matchRef = getMatchRef(code);
+            const hostRef = matchRef.child('host');
+            matchRef.set({
+                host: { connected: true, joinedAt: firebase.database.ServerValue.TIMESTAMP },
+                guest: null,
+                scores: { p1: [], p2: [] },
+                ballUpdate: null,
+                events: {},
+                mode: targetPinCount
+            }).then(() => {
+                hostRef.onDisconnect().remove();
+                setupFirebaseListeners();
+                updateMatchmakingStatus('Code: ' + code + ' - waiting for player...');
+            }).catch((err) => {
+                console.error("DEBUG: Firebase createMatch failed", err);
+                updateMatchmakingStatus('Unable to create match.');
+                cancelMatchmaking();
+            });
+        }
+
+        function joinGame(targetHostId) {
+            console.log("DEBUG: Attempting to join match:", targetHostId);
+            unlockAudio();
+
+            isHost = false;
+            matchCode = targetHostId;
+            myPlayerOffset = 15;
+
+            document.getElementById('create-match-btn').disabled = true;
+            document.getElementById('join-match-btn').disabled = true;
+            document.getElementById('cancel-search-btn').style.display = 'block';
+
+            cancelMatchmaking();
+
+            matchRef = getMatchRef(targetHostId);
+            matchRef.once('value').then((snapshot) => {
+                const data = snapshot.val();
+                if (!data || !data.host) {
+                    updateMatchmakingStatus('Match not found.');
+                    cancelMatchmaking();
+                    return;
+                }
+                const mode = data.host.mode || 10;
+                targetPinCount = mode;
+                document.getElementById('mode-toggle-btn').innerText = (targetPinCount === 10) ? '10 PINS' : '100 PINS';
+                updateLaneWidth();
+                const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
+                myPlayerOffset = offsetDistance;
+                if (data.guest && data.guest.connected) {
+                    updateMatchmakingStatus('Match already full.');
+                    cancelMatchmaking();
+                    return;
+                }
+
+                const guestRef = matchRef.child('guest');
+                matchRef.child('guest').set({
+                    connected: true,
+                    joinedAt: firebase.database.ServerValue.TIMESTAMP
+                }).then(() => {
+                    guestRef.onDisconnect().remove();
+                    setupFirebaseListeners();
+                    updateMatchmakingStatus('Connected! Setting up lane...');
+                    hideMatchmakingPanel();
+                    document.getElementById('cancel-search-btn').style.display = 'none';
+
+                    if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
+                    if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
+                    if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
+                    if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
+                    if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
+
+                    if (groundBody) world.remove(groundBody);
+                    if (leftWallBody) world.remove(leftWallBody);
+                    if (rightWallBody) world.remove(rightWallBody);
+
+                    createStreetEnvironment(myPlayerOffset);
+                    createPins(myPlayerOffset);
+
+                    camera.position.set(myPlayerOffset, 4, 12);
+                    camera.lookAt(myPlayerOffset, 1, 0);
+
+                    if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+                    if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
+
+                    activateMultiplayerMode(false);
+                    resetGame();
+                }).catch((err) => {
+                    console.error("DEBUG: Firebase joinGame failed", err);
+                    updateMatchmakingStatus('Unable to join match.');
+                    cancelMatchmaking();
+                });
+            }).catch((err) => {
+                console.error("DEBUG: Firebase joinGame check failed", err);
+                updateMatchmakingStatus('Unable to join match.');
+                cancelMatchmaking();
+            });
+        }
+
+        function startMatchmaking() {
+            createMatch();
+        }
+
+        function showJoinMatchPanel() {
+            document.getElementById('join-match-panel').style.display = 'flex';
+            document.getElementById('join-code-input').value = '';
+            document.getElementById('join-code-input').focus();
+        }
+
+        function hideJoinMatchPanel() {
+            const panel = document.getElementById('join-match-panel');
+            if (panel) panel.style.display = 'none';
+        }
+
+        function attemptJoinMatch() {
+            const input = document.getElementById('join-code-input');
+            if (!input) return;
+            const code = input.value.trim();
+            if (!/^[0-9]{5}$/.test(code)) {
+                updateMatchmakingStatus('Enter a valid 5-digit code.');
+                return;
+            }
+            hideJoinMatchPanel();
+            isJoiningMatch = true;
+            isCreatingMatch = false;
+            document.getElementById('create-match-btn').disabled = true;
+            document.getElementById('join-match-btn').disabled = true;
+            document.getElementById('cancel-search-btn').style.display = 'block';
+            updateMatchmakingStatus('Joining code: ' + code + ' ...');
+            joinGame(code);
+        }
+
+        function cancelMatchmaking() {
+            console.log("DEBUG: Cancelling matchmaking...");
+            isSearchingForMatch = false;
+            isCreatingMatch = false;
+            isJoiningMatch = false;
+            matchCode = null;
+            hideJoinMatchPanel();
+            if (matchmakingTimeout) {
+                clearTimeout(matchmakingTimeout);
+                matchmakingTimeout = null;
+            }
+
+            if (matchRef) {
+                if (isHost && !isMultiplayerActive) {
+                    matchRef.remove().catch(() => { });
+                }
+                if (!isHost && !isMultiplayerActive) {
+                    matchRef.child('guest').remove().catch(() => { });
+                }
+            }
+
+            cleanupFirebaseListeners();
+            matchRef = null;
+
+            document.getElementById('create-match-btn').disabled = false;
+            document.getElementById('join-match-btn').disabled = false;
+            document.getElementById('cancel-search-btn').style.display = 'none';
+            updateMatchmakingStatus('');
+        }
+
+        function startSinglePlayer() {
+            console.log("DEBUG: Starting single player...");
+            hideMatchmakingPanel();
+            resetGame();
+        }
+
+        function recordRoundScore(scoreValue) {
+            const myId = getLocalPlayerId();
+
+            if (!scores[myId]) scores[myId] = [];
+            scores[myId].push(scoreValue);
+
+            updateScoreTable(myId);
+
+            if (isMultiplayerActive && matchRef) {
+                matchRef.child('scores').child(myId).set(scores[myId]).catch((err) => {
+                    console.error('DEBUG: Failed to sync score', err);
+                });
+            }
+
+            updateMultiplayerMatchState();
+
+            if (!isMultiplayerActive) {
+                const msgBox = document.getElementById('msg-box');
+                const replayBtn = document.getElementById('watch-replay-btn');
+                const title = document.getElementById('msg-title');
+                const body = document.getElementById('msg-body');
+                const actionBtn = document.getElementById('action-btn');
+
+                msgBox.style.display = 'block';
+                title.innerText = 'ROUND COMPLETE';
+                body.innerText = 'Watch the replay of your throw or continue to the next round.';
+                replayBtn.style.display = 'block';
+                replayBtn.innerText = "WATCH REPLAY";
+                replayBtn.onclick = startReplay;
+                actionBtn.style.display = 'inline-block';
+                actionBtn.innerText = 'CONTINUE';
+                actionBtn.onclick = () => {
+                    msgBox.style.display = 'none';
+                    resetGame();
+                };
+                document.getElementById('action-cam-container').style.display = 'none';
+            }
         }
 
         function updateMultiplayerMatchState() {
@@ -1164,32 +1342,14 @@
             }
         }
 
-        function resetPlayAgainState() {
-            playAgainRequested = false;
-            playAgainOpponentRequested = false;
-            playAgainCountdownRemaining = 5;
-            if (playAgainCountdownTimer) {
-                clearInterval(playAgainCountdownTimer);
-                playAgainCountdownTimer = null;
-            }
-        }
-
-        function getLocalPlayerId() {
-            return isHost ? 'p1' : 'p2';
-        }
-
-        function getOpponentPlayerId() {
-            return isHost ? 'p2' : 'p1';
-        }
-
         function sendPlayAgainRequest() {
-            if (!isMultiplayerActive || !conn || !conn.open) {
+            if (!isMultiplayerActive || !matchRef) {
                 fullReset();
                 return;
             }
             if (playAgainRequested) return;
             playAgainRequested = true;
-            conn.send({ type: 'playAgainRequest', from: getLocalPlayerId() });
+            sendMatchEvent('playAgainRequest', {});
             startPlayAgainCountdown('Play again confirmed. Restarting in', 'Waiting for opponent...');
 
             if (playAgainOpponentRequested) {
@@ -1293,7 +1453,7 @@
                 btn.style.display = 'inline-block';
                 btn.disabled = false;
                 btn.innerText = 'CONTINUE';
-                btn.onclick = () => { msgBox.style.display = 'none'; };
+                btn.onclick = () => { msgBox.style.display = 'none'; resetGame(); };
             }
         }
 
@@ -1346,70 +1506,67 @@
             }
         }
 
-        function joinGame(targetHostId) {
-            isHost = false;  // I am joining as a guest (Player 2)
-            peer = new Peer();
-            peer.on('open', (myId) => {
-                conn = peer.connect(targetHostId);
-                conn.on('open', () => {
-                    console.log("DEBUG: Connected to Host!");
-                    myPlayerOffset = 15;
-
-                    // Delete old lanes that were created at offset 0 during init()
-                    if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
-                    if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
-                    if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
-                    if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
-                    if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
-                    if (groundBody) world.remove(groundBody);
-                    if (leftWallBody) world.remove(leftWallBody);
-                    if (rightWallBody) world.remove(rightWallBody);
-
-                    // Create new lanes at the correct offset for Player 2
-                    createStreetEnvironment(myPlayerOffset);
-                    createPins(myPlayerOffset);
-
-                    // Update camera to look from Player 2's lane
-                    camera.position.set(myPlayerOffset, 4, 12);
-                    camera.lookAt(myPlayerOffset, 1, 0);
-
-                    // Update ball position to Player 2's lane
-                    if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-                    if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-
-                    activateMultiplayerMode(false);
-                    setupDataListeners();
-                    resetGame();
-                });
-            });
+        function updateOpponentBall(data) {
+            if (!opponentBallMesh || targetPinCount === 100) return;
+            if (data.active) {
+                if (!opponentBallMesh.visible) opponentBallMesh.visible = true;
+                opponentBallMesh.position.set(data.pos.x, data.pos.y, data.pos.z);
+                opponentBallMesh.quaternion.set(data.quat.x, data.quat.y, data.quat.z, data.quat.w);
+            } else {
+                opponentBallMesh.visible = false;
+            }
         }
 
-        function updateOpponentBall(data) {
-            if (!opponentBallMesh) return;
-            if (!opponentBallMesh.visible) opponentBallMesh.visible = true;
-            opponentBallMesh.position.set(data.pos.x, data.pos.y, data.pos.z);
-            opponentBallMesh.quaternion.set(data.quat.x, data.quat.y, data.quat.z, data.quat.w);
+        function handlePinUpdateEvent(snapshot) {
+            const data = snapshot.val();
+            if (!data || data.from === getLocalPlayerId()) return;
+            updateOpponentPins(data);
+        }
+
+        function updateOpponentPins(data) {
+            if (!Array.isArray(data.pins) || opponentGhostPins.length === 0) return;
+            data.pins.forEach((pinData, index) => {
+                const ghostPin = opponentGhostPins[index];
+                if (!ghostPin) return;
+                ghostPin.position.set(pinData.pos.x, pinData.pos.y, pinData.pos.z);
+                ghostPin.quaternion.set(pinData.quat.x, pinData.quat.y, pinData.quat.z, pinData.quat.w);
+                ghostPin.visible = true;
+            });
         }
 
         function activateMultiplayerMode(isHostRole) {
             isMultiplayerActive = true;
+            updateLaneWidth();
             const p2Row = document.getElementById('p2-row');
             if (p2Row) p2Row.style.display = 'table-row';
 
-            const remoteOffset = isHostRole ? 15 : 0;
+            const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
+            const localOffset = isHostRole ? 0 : offsetDistance;
+            const remoteOffset = isHostRole ? offsetDistance : 0;
+            myPlayerOffset = localOffset;
+
+            // Update camera to center between both lanes for visibility
+            camera.position.set(offsetDistance / 2, 4, 20);
+            cameraLookAtTarget.set(offsetDistance / 2, 1, -22);
+            camera.lookAt(cameraLookAtTarget);
+            sunLight.position.set(offsetDistance / 2 + 15, 35, -40);
 
             console.log("DEBUG: Building remote lane at offset " + remoteOffset);
             createStreetEnvironment(remoteOffset);
-            createPins(remoteOffset);
+            if (targetPinCount !== 100) {
+                createGhostPins(remoteOffset);
+            }
 
-            if (opponentBallMesh) opponentBallMesh.visible = true;
+            if (opponentBallMesh) {
+                opponentBallMesh.visible = targetPinCount !== 100;
+            }
 
             if (isHostRole) {
                 ballMesh.material.color.setHex(0x1e90ff);
-                opponentBallMesh.material.color.setHex(0xff0000);
+                if (opponentBallMesh) opponentBallMesh.material.color.setHex(0xff0000);
             } else {
                 ballMesh.material.color.setHex(0xff0000);
-                opponentBallMesh.material.color.setHex(0x1e90ff);
+                if (opponentBallMesh) opponentBallMesh.material.color.setHex(0x1e90ff);
             }
         }
 
@@ -1423,7 +1580,7 @@
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
             const startX = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
-            camera.position.set(startX, 4, 12);
+            camera.position.set(startX, 4, 20);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1589,21 +1746,24 @@
             const modeDeclineBtn = document.getElementById('mode-switch-decline');
             if (modeAcceptBtn) {
                 modeAcceptBtn.addEventListener('click', () => {
-                    if (!conn || !conn.open) return;
-                    conn.send({ type: 'modeSwitchResponse', accepted: true, mode: modeSwitchRequestMode, from: isHost ? 'p1' : 'p2' });
+                    if (!isMultiplayerActive || !matchRef) return;
+                    sendMatchEvent('modeSwitchResponse', { accepted: true, mode: modeSwitchRequestMode });
                     doToggleGameMode(modeSwitchRequestMode);
                     hideModeSwitchModal();
                 });
             }
             if (modeDeclineBtn) {
                 modeDeclineBtn.addEventListener('click', () => {
-                    if (!conn || !conn.open) return;
-                    conn.send({ type: 'modeSwitchResponse', accepted: false, mode: modeSwitchRequestMode, from: isHost ? 'p1' : 'p2' });
+                    if (!isMultiplayerActive || !matchRef) return;
+                    sendMatchEvent('modeSwitchResponse', { accepted: false, mode: modeSwitchRequestMode });
                     hideModeSwitchModal();
+                    // Restore wait message if it was showing before
+                    if (wasShowingWaitMessage) {
+                        showMultiplayerWaitMessage(waitMessageLocalFinished);
+                        wasShowingWaitMessage = false;
+                    }
                 });
             }
-
-            if (typeof initNetworking === 'function') initNetworking();
 
             showMatchmakingPanel();
             animate();
@@ -1636,44 +1796,131 @@
         }
 
         function toggleGameMode() {
-            if (isMultiplayerActive && conn && conn.open) {
+            if (isMultiplayerActive && matchRef) {
                 requestModeSwitch();
                 return;
             }
             doToggleGameMode();
         }
 
+        function adjustMultiplayerLaneOffsets(oldLocalOffset, oldRemoteOffset, newLocalOffset, newRemoteOffset) {
+            if (!scene || !world) return;
+            scene.traverse(obj => {
+                if (!obj.userData || typeof obj.userData.offset === 'undefined') return;
+                let isLocal = obj.userData.offset === oldLocalOffset;
+                let isRemote = obj.userData.offset === oldRemoteOffset;
+                if (!isLocal && !isRemote) return;
+                const newOffset = isLocal ? newLocalOffset : newRemoteOffset;
+                obj.userData.offset = newOffset;
+                if (obj.userData.envType === 'lane') {
+                    obj.position.x = newOffset;
+                } else if (obj.userData.envType === 'gutter') {
+                    obj.position.x = newOffset + (obj.userData.side === 'left' ? -2.5 : 2.5);
+                } else if (obj.userData.envType === 'wall') {
+                    const wallX = (targetPinCount === 100) ? 4.4 : 3.6;
+                    obj.position.x = newOffset + (obj.userData.side === 'left' ? -wallX : wallX);
+                }
+            });
+            world.bodies.forEach(body => {
+                if (!body.userData || typeof body.userData.offset === 'undefined') return;
+                let isLocal = body.userData.offset === oldLocalOffset;
+                let isRemote = body.userData.offset === oldRemoteOffset;
+                if (!isLocal && !isRemote) return;
+                const newOffset = isLocal ? newLocalOffset : newRemoteOffset;
+                body.userData.offset = newOffset;
+                if (body.userData.envType === 'ground') {
+                    body.position.x = newOffset;
+                } else if (body.userData.envType === 'wall') {
+                    const wallX = (targetPinCount === 100) ? 4.4 : 3.6;
+                    body.position.x = newOffset + (body.userData.side === 'left' ? -wallX : wallX);
+                }
+            });
+        }
+
         function doToggleGameMode(newMode) {
+            const previousTargetPinCount = targetPinCount;
             if (typeof newMode === 'undefined') {
                 targetPinCount = (targetPinCount === 10) ? 100 : 10;
             } else {
                 targetPinCount = newMode;
             }
 
+            const oldOffsetDistance = (previousTargetPinCount === 100) ? offsetDistance100 : offsetDistance10;
+            const newOffsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
+            const oldLocalOffset = isHost ? 0 : oldOffsetDistance;
+            const oldRemoteOffset = isHost ? oldOffsetDistance : 0;
+            const newLocalOffset = isHost ? 0 : newOffsetDistance;
+            const newRemoteOffset = isHost ? newOffsetDistance : 0;
+
+            if (isMultiplayerActive) {
+                // Clear existing pins to recreate with new count
+                pins.forEach(pin => {
+                    scene.remove(pin.mesh);
+                    world.removeBody(pin.body);
+                });
+                pins = [];
+                pinCircles.forEach(circle => scene.remove(circle));
+                pinCircles = [];
+            }
+
             document.getElementById('mode-toggle-btn').innerText = (targetPinCount === 10) ? '10 PINS' : '100 PINS';
+            if (isMultiplayerActive) {
+                myPlayerOffset = newLocalOffset;
+                adjustMultiplayerLaneOffsets(oldLocalOffset, oldRemoteOffset, newLocalOffset, newRemoteOffset);
+            }
             updateLaneWidth();
             matchHistory = [];
             scores = { p1: [], p2: [] };
             updateScoreTable('p1');
             updateScoreTable('p2');
             resetGame();
+            if (isMultiplayerActive) {
+                const offsetDistance = newOffsetDistance;
+                camera.position.set(offsetDistance / 2, 4, 20);
+                cameraLookAtTarget.set(offsetDistance / 2, 1, -22);
+                camera.lookAt(cameraLookAtTarget);
+                sunLight.position.set(offsetDistance / 2 + 15, 35, -40);
+                const remoteOffset = isHost ? offsetDistance : 0;
+                // Recreate ghost pins with new count for the opponent lane only
+                opponentGhostPins.forEach(g => scene.remove(g));
+                opponentGhostPins = [];
+                if (targetPinCount !== 100) {
+                    createGhostPins(remoteOffset);
+                } else if (opponentBallMesh) {
+                    opponentBallMesh.visible = false;
+                }
+                if (matchRef) {
+                    matchRef.child('scores').set(scores).catch((err) => {
+                        console.error('DEBUG: Failed to reset multiplayer scores', err);
+                    });
+                }
+            }
             playGameSound('ui_click');
         }
 
         function requestModeSwitch() {
-            if (!conn || !conn.open || modeSwitchRequestPending) return;
+            if (!isMultiplayerActive || modeSwitchRequestPending) return;
             const requestedMode = (targetPinCount === 10) ? 100 : 10;
             modeSwitchRequestPending = true;
             modeSwitchRequestMode = requestedMode;
             modeSwitchRequester = isHost ? 'p1' : 'p2';
             showModeSwitchModal(`You requested to switch to ${requestedMode} pins. Waiting for opponent...`, false);
-            conn.send({ type: 'modeSwitchRequest', mode: requestedMode, from: modeSwitchRequester });
+            sendMatchEvent('modeSwitchRequest', { mode: requestedMode });
         }
 
         function handleModeSwitchRequest(data) {
             if (modeSwitchRequestPending) {
-                conn.send({ type: 'modeSwitchResponse', accepted: false, mode: data.mode, from: isHost ? 'p1' : 'p2' });
+                sendMatchEvent('modeSwitchResponse', { accepted: false, mode: data.mode });
                 return;
+            }
+            // Hide wait message if it's shown so mode switch modal can be visible
+            const msgBox = document.getElementById('msg-box');
+            wasShowingWaitMessage = msgBox && msgBox.style.display === 'block';
+            if (wasShowingWaitMessage) {
+                // Check which wait message was showing
+                const title = document.getElementById('msg-title');
+                waitMessageLocalFinished = (title && title.innerText === 'MATCH COMPLETE');
+                msgBox.style.display = 'none';
             }
             modeSwitchRequestMode = data.mode;
             modeSwitchRequester = data.from || (isHost ? 'p2' : 'p1');
@@ -1724,12 +1971,16 @@
             const laneWidth = is100 ? 7.6 : 4.5;
             const wallX = is100 ? 4.4 : 3.6;
             const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
+            const fullWallHeight = 18;
+            const lowWallHeight = 1.2;
+            console.log("DEBUG updateLaneWidth: isMultiplayerActive =", isMultiplayerActive, "currentOffset =", currentOffset, "targetPinCount =", targetPinCount);
 
             if (scene) {
                 scene.traverse(obj => {
                     if (!obj.userData) return;
                     if (obj.userData.envType === 'lane') {
                         obj.scale.x = laneWidth / 4.5;
+                        obj.position.x = obj.userData.offset;
                     } else if (obj.userData.envType === 'gutter') {
                         if (is100) {
                             obj.visible = false;
@@ -1739,6 +1990,19 @@
                         }
                     } else if (obj.userData.envType === 'wall') {
                         obj.position.x = obj.userData.offset + (obj.userData.side === 'left' ? -wallX : wallX);
+                        // Update wall height
+                        const isPlayer2Lane = (obj.userData.offset !== 0);
+                        let wallHeight;
+                        if (isMultiplayerActive) {
+                            wallHeight = (obj.userData.side === 'left') ?
+                                (isPlayer2Lane ? lowWallHeight : fullWallHeight) :
+                                (isPlayer2Lane ? fullWallHeight : lowWallHeight);
+                        } else {
+                            wallHeight = fullWallHeight;
+                        }
+                        console.log("DEBUG wall update: side =", obj.userData.side, "offset =", obj.userData.offset, "isPlayer2Lane =", isPlayer2Lane, "wallHeight =", wallHeight, "scale.y =", obj.scale.y);
+                        obj.scale.y = wallHeight / fullWallHeight;
+                        obj.position.y = wallHeight / 2;
                     }
                 });
             }
@@ -1756,6 +2020,23 @@
                         body.position.x = body.userData.offset;
                     } else if (body.userData.envType === 'wall') {
                         body.position.x = body.userData.offset + (body.userData.side === 'left' ? -wallX : wallX);
+                        // Update wall height
+                        const isPlayer2Lane = (body.userData.offset !== 0);
+                        let wallHeight;
+                        if (isMultiplayerActive) {
+                            wallHeight = (body.userData.side === 'left') ?
+                                (isPlayer2Lane ? lowWallHeight : fullWallHeight) :
+                                (isPlayer2Lane ? fullWallHeight : lowWallHeight);
+                        } else {
+                            wallHeight = fullWallHeight;
+                        }
+                        const shape = body.shapes[0];
+                        if (shape) {
+                            shape.halfExtents.y = wallHeight / 2;
+                            shape.updateConvexPolyhedronRepresentation();
+                        }
+                        body.updateBoundingRadius();
+                        body.position.y = wallHeight / 2;
                     }
                 });
             }
@@ -1825,19 +2106,33 @@
             scene.add(rightGutter);
 
             // --- VISUAL WALLS ---
-            const wallGeo = new THREE.BoxGeometry(1.2, 18, 100);
-            const wallVisualMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d });
-
+            const fullWallHeight = 18;
+            const lowWallHeight = 1.2;
             const is100 = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
             const wallDist = is100 ? 4.4 : 3.6;
 
-            leftWallMesh = new THREE.Mesh(wallGeo, wallVisualMat);
-            leftWallMesh.position.set(offset - wallDist, 9, -35);
+            const isPlayer2Lane = (offset !== 0);
+            let leftWallHeight, rightWallHeight;
+            if (isMultiplayerActive) {
+                leftWallHeight = isPlayer2Lane ? lowWallHeight : fullWallHeight;
+                rightWallHeight = isPlayer2Lane ? fullWallHeight : lowWallHeight;
+            } else {
+                leftWallHeight = fullWallHeight;
+                rightWallHeight = fullWallHeight;
+            }
+            console.log("DEBUG createStreetEnvironment: isMultiplayerActive =", isMultiplayerActive, "offset =", offset, "isPlayer2Lane =", isPlayer2Lane, "leftWallHeight =", leftWallHeight, "rightWallHeight =", rightWallHeight);
+
+            const leftWallGeo = new THREE.BoxGeometry(1.2, leftWallHeight, 100);
+            const rightWallGeo = new THREE.BoxGeometry(1.2, rightWallHeight, 100);
+            const wallVisualMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d });
+
+            leftWallMesh = new THREE.Mesh(leftWallGeo, wallVisualMat);
+            leftWallMesh.position.set(offset - wallDist, leftWallHeight / 2, -35);
             leftWallMesh.userData = { envType: 'wall', side: 'left', offset };
             scene.add(leftWallMesh);
 
-            rightWallMesh = new THREE.Mesh(wallGeo, wallVisualMat.clone());
-            rightWallMesh.position.set(offset + wallDist, 9, -35);
+            rightWallMesh = new THREE.Mesh(rightWallGeo, wallVisualMat.clone());
+            rightWallMesh.position.set(offset + wallDist, rightWallHeight / 2, -35);
             rightWallMesh.userData = { envType: 'wall', side: 'right', offset };
             scene.add(rightWallMesh);
 
@@ -1849,14 +2144,15 @@
             groundBody.userData = { envType: 'ground', offset };
             world.addBody(groundBody);
 
-            const physicsWallShape = new CANNON.Box(new CANNON.Vec3(0.6, 9, 50));
+            const leftWallShape = new CANNON.Box(new CANNON.Vec3(0.6, leftWallHeight / 2, 50));
+            const rightWallShape = new CANNON.Box(new CANNON.Vec3(0.6, rightWallHeight / 2, 50));
 
             leftWallBody = new CANNON.Body({
                 mass: 0,
                 material: typeof wallMat !== 'undefined' ? wallMat : groundMat
             });
-            leftWallBody.addShape(physicsWallShape);
-            leftWallBody.position.set(offset - wallDist, 9, -35);
+            leftWallBody.addShape(leftWallShape);
+            leftWallBody.position.set(offset - wallDist, leftWallHeight / 2, -35);
             leftWallBody.userData = { envType: 'wall', side: 'left', offset };
             world.addBody(leftWallBody);
 
@@ -1864,8 +2160,8 @@
                 mass: 0,
                 material: typeof wallMat !== 'undefined' ? wallMat : groundMat
             });
-            rightWallBody.addShape(physicsWallShape);
-            rightWallBody.position.set(offset + wallDist, 9, -35);
+            rightWallBody.addShape(rightWallShape);
+            rightWallBody.position.set(offset + wallDist, rightWallHeight / 2, -35);
             rightWallBody.userData = { envType: 'wall', side: 'right', offset };
             world.addBody(rightWallBody);
         }
@@ -1952,7 +2248,8 @@
 
                 scene.add(group);
 
-                const pBody = new CANNON.Body({ mass: 2.5, material: pinMat });
+                const pinMass = (targetPinCount > 50) ? 2.0 : 2.5;
+                const pBody = new CANNON.Body({ mass: pinMass, material: pinMat });
                 const qCyl = new CANNON.Quaternion();
                 qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
 
@@ -1961,8 +2258,8 @@
                 pBody.addShape(new CANNON.Cylinder(0.08, 0.13, 0.3, 12), new CANNON.Vec3(0, 0.05, 0), qCyl);
                 pBody.addShape(new CANNON.Sphere(0.09), new CANNON.Vec3(0, 0.31, 0));
 
-                pBody.linearDamping = targetPinCount > 50 ? 0.45 : 0.2;
-                pBody.angularDamping = targetPinCount > 50 ? 0.5 : 0.3;
+                pBody.linearDamping = targetPinCount > 50 ? 0.30 : 0.2;
+                pBody.angularDamping = targetPinCount > 50 ? 0.35 : 0.3;
                 pBody.type = CANNON.Body.KINEMATIC;
                 pBody.position.set(worldX, LANE_Y + (PIN_HEIGHT / 2), z);
 
@@ -1991,7 +2288,8 @@
 
                         const forceDir = pBody.position.vsub(e.contact.bi.position);
                         forceDir.normalize();
-                        pBody.applyImpulse(forceDir.scale(2), pBody.position);
+                        const impulseStrength = (targetPinCount === 100) ? 2.5 : 2;
+                        pBody.applyImpulse(forceDir.scale(impulseStrength), pBody.position);
                         pBody.velocity.y += 1.2;
 
                         spawnImpact(pBody.position, 0xffffff, 8);
@@ -2008,7 +2306,7 @@
                             }, 3000);
 
                             clearTimeout(resetTimer);
-                            resetTimer = setTimeout(checkPins, 3500);
+                            resetTimer = setTimeout(checkPinsStability, (targetPinCount === 100) ? 9000 : 4000);
                         }
                     }
                 });
@@ -2042,6 +2340,77 @@
             }
         }
 
+        function createGhostPins(offset = 0) {
+            const pinGeo = createPinGeometry();
+            const pinMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.8,
+                metalness: 0.1,
+                transparent: true,
+                opacity: 0.35
+            });
+            const stripeMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.4 });
+            const stripeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 16);
+
+            let ghostPinCount = 0;
+            const maxGhostPins = (targetPinCount === 100) ? 30 : 10;
+
+            const spawnGhostPin = (x, z) => {
+                if (ghostPinCount >= maxGhostPins) return;
+                ghostPinCount++;
+
+                const worldX = x + offset;
+                const group = new THREE.Group();
+
+                const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
+                pMesh.castShadow = true;
+                group.add(pMesh);
+
+                const outlineMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x000000,
+                    side: THREE.BackSide,
+                    transparent: true,
+                    opacity: 0.2
+                });
+                const outlineMesh = new THREE.Mesh(pinGeo, outlineMaterial);
+                outlineMesh.scale.setScalar(1.07);
+                group.add(outlineMesh);
+
+                const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+                stripe.position.set(0, 0.16, 0);
+                group.add(stripe);
+
+                group.position.set(worldX, LANE_Y + (PIN_HEIGHT / 2), z);
+                group.visible = true;
+                scene.add(group);
+                opponentGhostPins.push(group);
+            };
+
+            const startZ = -22;
+            if (targetPinCount === 100) {
+                const spacing = 0.52;
+                for (let r = 0; r < 13 && ghostPinCount < maxGhostPins; r++) {
+                    for (let i = 0; i <= r && ghostPinCount < maxGhostPins; i++) {
+                        const x = (i - r * 0.5) * spacing;
+                        spawnGhostPin(x, startZ - (r * spacing));
+                    }
+                }
+                const row14Count = 9;
+                for (let i = 0; i < row14Count && ghostPinCount < maxGhostPins; i++) {
+                    const x = (i - (row14Count - 1) * 0.5) * spacing;
+                    spawnGhostPin(x, startZ - (13 * spacing));
+                }
+            } else {
+                const spacing = 0.65;
+                for (let r = 0; r < 4; r++) {
+                    for (let i = 0; i <= r; i++) {
+                        const x = (i - r * 0.5) * spacing;
+                        spawnGhostPin(x, startZ - (r * spacing));
+                    }
+                }
+            }
+        }
+
         function initLightTrail() {
             const geometry = new THREE.PlaneGeometry(1, 1, 1, TRAIL_MAX_POINTS - 1);
 
@@ -2065,38 +2434,77 @@
         }
 
         function updateLightTrail() {
+            // 如果不是在投球狀態，隱藏所有拖尾並清空歷史
             if (!isBowling) {
-                trailMesh_P1.visible = false;
-                trailMesh_P2.visible = false;
+                if (typeof trailMesh_P1 !== 'undefined') trailMesh_P1.visible = false;
+                if (typeof trailMesh_P2 !== 'undefined') trailMesh_P2.visible = false;
                 trailHistory = [];
                 return;
             }
 
-            // Use correct trail mesh based on current player
-            const currentTrailMesh = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15) ? trailMesh_P2 : trailMesh_P1;
+            // 1. 根據目前玩家位置 (Offset) 選擇正確的 Mesh
+            const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset !== 0);
+            const currentTrailMesh = isPlayer2 ? trailMesh_P2 : trailMesh_P1;
+
+            // 確保 Mesh 是顯示的
             currentTrailMesh.visible = true;
 
-            trailHistory.push({ x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z });
+            // 2. 動態更改顏色：Player 2 設為紅色，Player 1 保持青色
+            // 這樣即使兩個人並排玩，顏色也會是分開的
+            if (isPlayer2) {
+                currentTrailMesh.material.color.setHex(0xff0000); // 純紅色
+            } else {
+                currentTrailMesh.material.color.setHex(0x00ffff); // 原本的青色
+            }
 
+            // 3. 記錄球的當前位置
+            trailHistory.push({
+                x: ballBody.position.x,
+                y: ballBody.position.y,
+                z: ballBody.position.z
+            });
+
+            // 限制拖尾長度
             if (trailHistory.length > TRAIL_MAX_POINTS) trailHistory.shift();
+
+            // 4. 更新頂點數據 (帶有錐形逐漸變細的效果)
             const posAttr = currentTrailMesh.geometry.attributes.position;
             const baseWidth = 0.12;
+
             for (let i = 0; i < TRAIL_MAX_POINTS; i++) {
+                // 取得歷史記錄中的點，如果還沒記錄到那麼多點，就用球的當前位置填充
                 const pointIndex = Math.min(i, trailHistory.length - 1);
-                const point = trailHistory[pointIndex] || { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z };
+                const point = trailHistory[pointIndex] || {
+                    x: ballBody.position.x,
+                    y: ballBody.position.y,
+                    z: ballBody.position.z
+                };
+
+                // 計算拖尾寬度：越往後（索引越小）越細
                 const taper = (i / TRAIL_MAX_POINTS);
                 const currentWidth = baseWidth * taper;
+
+                // 拖尾高度：稍微高於地面防止閃爍 (Z-fighting)
                 const trailY = point.y - BALL_RADIUS + 0.02;
+
+                // 設定左邊和右邊的頂點，形成帶狀 (Ribbon)
                 posAttr.setXYZ(i * 2, point.x - currentWidth / 2, trailY, point.z);
                 posAttr.setXYZ(i * 2 + 1, point.x + currentWidth / 2, trailY, point.z);
             }
+
+            // 告訴 Three.js 需要重新渲染頂點
             posAttr.needsUpdate = true;
         }
 
         function spawnImpact(pos, color, count, scale = 1.0) {
-            for (let i = 0; i < count; i++) {
+            const reduceFor100Pins = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
+            const mobileClient = isMobileClient();
+            const particleCount = Math.max(2, Math.min(count, reduceFor100Pins || mobileClient ? 4 : count));
+            const geometrySegments = mobileClient ? 3 : 4;
+
+            for (let i = 0; i < particleCount; i++) {
                 const part = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.04 * scale, 4, 4),
+                    new THREE.SphereGeometry(0.04 * scale, geometrySegments, geometrySegments),
                     new THREE.MeshBasicMaterial({ color: color, transparent: true })
                 );
                 part.position.set(pos.x, pos.y, pos.z);
@@ -2127,9 +2535,13 @@
             e.preventDefault();
             isTouching = true;
 
-            touchPathPoints = [];
-            // Use correct touchpath lines based on current player
             const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
+            if (isPlayer2) {
+                touchPathPoints_P2 = [];
+            } else {
+                touchPathPoints_P1 = [];
+            }
+            // Use correct touchpath lines based on current player
             const clearPoint = [new THREE.Vector3(myPlayerOffset, 0, 0)];
             if (isPlayer2) {
                 touchPathLine_P2.geometry.setFromPoints(clearPoint);
@@ -2149,7 +2561,8 @@
             touchStartPos.y = t.clientY;
             lastTouchX = t.clientX;
             touchStartTime = Date.now();
-            ballMesh.material.emissive.setHex(isPlayer2 ? 0xff3333 : 0x00ffff);
+            ballMesh.material.emissive.setHex(isPlayer2 ? 0xff3333 : 0x00ccff);
+            currentPlayerTouchPoints = isPlayer2 ? touchPathPoints_P2 : touchPathPoints_P1;
         }
 
         function onTouchMove(e) {
@@ -2179,31 +2592,32 @@
             const laneLimit = (targetPinCount === 100) ? 3.0 : 1.5;
             pos.x = Math.max(myPlayerOffset - laneLimit, Math.min(myPlayerOffset + laneLimit, pos.x));
 
-            touchPathPoints.push(pos);
-            if (touchPathPoints.length > MAX_PATH_POINTS) touchPathPoints.shift();
+            // Use the current player's touchpath array
+            currentPlayerTouchPoints.push(pos);
+            if (currentPlayerTouchPoints.length > MAX_PATH_POINTS) currentPlayerTouchPoints.shift();
 
             // Create offset point arrays for visual effect
-            const offsetPoints_pos = touchPathPoints.map(p => {
+            const offsetPoints_pos = currentPlayerTouchPoints.map(p => {
                 const offsetPos = p.clone();
                 offsetPos.x += 0.02;
                 return offsetPos;
             });
-            const offsetPoints_neg = touchPathPoints.map(p => {
+            const offsetPoints_neg = currentPlayerTouchPoints.map(p => {
                 const offsetPos = p.clone();
                 offsetPos.x -= 0.02;
                 return offsetPos;
             });
 
             if (isPlayer2) {
-                touchPathLine_P2.geometry.setFromPoints(touchPathPoints);
+                touchPathLine_P2.geometry.setFromPoints(currentPlayerTouchPoints);
                 touchPathLine2_P2.geometry.setFromPoints(offsetPoints_pos);
                 touchPathLine3_P2.geometry.setFromPoints(offsetPoints_neg);
-                if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(touchPathPoints);
+                if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(currentPlayerTouchPoints);
             } else {
-                touchPathLine_P1.geometry.setFromPoints(touchPathPoints);
+                touchPathLine_P1.geometry.setFromPoints(currentPlayerTouchPoints);
                 touchPathLine2_P1.geometry.setFromPoints(offsetPoints_pos);
                 touchPathLine3_P1.geometry.setFromPoints(offsetPoints_neg);
-                if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(touchPathPoints);
+                if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(currentPlayerTouchPoints);
             }
         }
 
@@ -2229,32 +2643,87 @@
                 document.getElementById('hint').style.opacity = '1';
             }
 
-            touchPathPoints = [];
             // Clear appropriate touchpath lines for current player
             const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
             if (isPlayer2) {
+                touchPathPoints_P2 = [];
+                currentPlayerTouchPoints = touchPathPoints_P2;
                 touchPathLine_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine2_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine3_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
             } else {
+                touchPathPoints_P1 = [];
+                currentPlayerTouchPoints = touchPathPoints_P1;
                 touchPathLine_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine2_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
                 touchPathLine3_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
             }
         }
 
+        function arePinsSettled() {
+            const is100 = (targetPinCount === 100);
+            const laneMargin = is100 ? 3.8 : 2.5;
+            const playerPins = pins.filter(p =>
+                Math.abs(p.initialPos.x - myPlayerOffset) < laneMargin
+            );
+            const ballSpeed = ballBody ? ballBody.velocity.length() : 0;
+            const maxPinSpeed = is100 ? 0.08 : 0.14;
+            const maxAngSpeed = is100 ? 0.08 : 0.14;
+            const maxPinHeight = LANE_Y + 0.75;
+
+            if (ballSpeed > (is100 ? 0.08 : 0.15)) return false;
+
+            return playerPins.every(p => {
+                const pinSpeed = p.body.velocity.length();
+                const angSpeed = p.body.angularVelocity.length();
+                const pinHeight = p.body.position.y;
+                return pinSpeed <= maxPinSpeed && angSpeed <= maxAngSpeed && pinHeight <= maxPinHeight;
+            });
+        }
+
+        function checkPinsStability() {
+            const is100 = (targetPinCount === 100);
+            const maxWait = is100 ? 10000 : 5000;
+            const now = performance.now();
+            const settled = arePinsSettled();
+
+            if (settled) {
+                if (!pinSettleStableSince) {
+                    pinSettleStableSince = now;
+                }
+                if (now - pinSettleStableSince >= 1000) {
+                    checkPins();
+                    return;
+                }
+            } else {
+                pinSettleStableSince = 0;
+            }
+
+            if (now - pinSettleStartTime >= maxWait) {
+                checkPins();
+                return;
+            }
+
+            resetTimer = setTimeout(checkPinsStability, 500);
+        }
+
         function throwBall(speed, sideSpeed = 0) {
             isBowling = true;
             document.getElementById('hint').style.opacity = '0';
 
-            ballBody.mass = 500;
+            const ballMass = (targetPinCount === 100) ? 680 : 500;
+            ballBody.mass = ballMass;
             ballBody.type = CANNON.Body.DYNAMIC;
             ballBody.updateMassProperties();
 
-            ballBody.velocity.set(sideSpeed, 0, -speed * 0.9);
-            ballBody.angularVelocity.set(speed * 0.8, randomHookForce * 2, (Math.random() - 0.5) * 15);
+            const forwardFactor = (targetPinCount === 100) ? 1.1 : 0.9;
+            const spinFactor = (targetPinCount === 100) ? 1.0 : 0.8;
+            ballBody.velocity.set(sideSpeed, 0, -speed * forwardFactor);
+            ballBody.angularVelocity.set(speed * spinFactor, randomHookForce * 2, (Math.random() - 0.5) * 15);
 
-            resetTimer = setTimeout(checkPins, 4000);
+            pinSettleStartTime = performance.now();
+            pinSettleStableSince = 0;
+            resetTimer = setTimeout(checkPinsStability, (targetPinCount === 100) ? 9000 : 4000);
             playGameSound('ball_roll');
         }
 
@@ -2460,7 +2929,9 @@
             replayData = [];
             isReplaying = false;
 
-            touchPathPoints = [];
+            touchPathPoints_P1 = [];
+            touchPathPoints_P2 = [];
+            currentPlayerTouchPoints = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15) ? touchPathPoints_P2 : touchPathPoints_P1;
             const clearPoint = [new THREE.Vector3(myPlayerOffset, 0, 0)];
             // Clear appropriate player's touchpath
             const isPlayer2 = (typeof myPlayerOffset !== 'undefined' && myPlayerOffset === 15);
@@ -2534,7 +3005,17 @@
             });
             pinCircles = [];
 
+            opponentGhostPins.forEach(pin => scene.remove(pin));
+            opponentGhostPins = [];
+
             createPins(myPlayerOffset);
+            if (isMultiplayerActive) {
+                const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
+                const remoteOffset = isHost ? offsetDistance : 0;
+                if (targetPinCount !== 100) {
+                    createGhostPins(remoteOffset);
+                }
+            }
 
             if (leftWallMesh) leftWallMesh.visible = true;
             if (rightWallMesh) rightWallMesh.visible = true;
@@ -2573,21 +3054,26 @@
             }
         }
 
+        let audioContextStarted = false;
         function unlockAudio() {
-            if (THREE.AudioContext.getContext().state === 'suspended') {
-                THREE.AudioContext.getContext().resume();
+            if (audioContextStarted) return;
+            const context = THREE.AudioContext.getContext();
+            if (context.state === 'suspended') {
+                context.resume();
             }
-            window.removeEventListener('click', unlockAudio);
-            window.removeEventListener('touchstart', unlockAudio);
+            audioContextStarted = true;
         }
 
         window.addEventListener('click', unlockAudio);
         window.addEventListener('touchstart', unlockAudio);
 
+        let actionCamInitialized = false; // Add this global variable at the top of your script
+
         function updateActionCam() {
             if (!isBowling) {
                 document.getElementById('action-cam-container').style.display = 'none';
                 actionTargetPin = null;
+                actionCamInitialized = false; // Reset for the next throw
                 return;
             }
 
@@ -2596,9 +3082,21 @@
 
             if (!impactOccurred) {
                 const ballPos = ballMesh.position;
-                actionCamera.position.lerp(new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3), 0.1);
-                actionCamera.lookAt(ballPos.x, 0.4, ballPos.z - 2);
+                const targetPos = new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3);
+                const lookAtTarget = new THREE.Vector3(ballPos.x, 0.4, ballPos.z - 2);
+
+                // FIX: If this is the first frame of the throw, snap the camera 
+                // immediately so it doesn't "fly" from the center of the world.
+                if (!actionCamInitialized) {
+                    actionCamera.position.copy(targetPos);
+                    actionCamera.lookAt(lookAtTarget);
+                    actionCamInitialized = true;
+                } else {
+                    actionCamera.position.lerp(targetPos, 0.1);
+                    actionCamera.lookAt(lookAtTarget);
+                }
             } else {
+                // --- Impact Logic ---
                 let bestPin = null;
                 let highestPriority = -1;
                 const is100 = (targetPinCount === 100);
@@ -2620,6 +3118,7 @@
                     }
                 });
 
+                // Clear target if it falls or goes out of bounds
                 if (actionTargetPin) {
                     const targetIsFallen = actionTargetPin.body.position.y < 0.1 ||
                         Math.abs(actionTargetPin.body.position.x - myPlayerOffset) > gutterLimit;
@@ -2628,6 +3127,7 @@
                     }
                 }
 
+                // Switch targets with cooldown
                 if (!actionTargetPin || (currentTime - lastTargetSwitchTime > SWITCH_COOLDOWN)) {
                     if (bestPin && bestPin !== actionTargetPin) {
                         actionTargetPin = bestPin;
@@ -2648,18 +3148,21 @@
                     const safetyMargin = 0.8;
                     const maxX = (currentLaneWidth / 2) - safetyMargin;
 
-                    // Clamp to player's lane bounds, not centered at 0
+                    // Clamp to player's lane bounds
                     targetX = Math.max(myPlayerOffset - maxX, Math.min(myPlayerOffset + maxX, targetX));
 
                     const targetCamPos = new THREE.Vector3(targetX, targetY, targetZ);
                     actionCamera.position.lerp(targetCamPos, 0.04);
                     actionCamera.lookAt(actionTargetPin.mesh.position);
                 } else {
+                    // Fallback view of the deck
                     const fallbackPos = new THREE.Vector3(myPlayerOffset, is100 ? 4 : 2, DECK_CENTER_Z + 5);
                     actionCamera.position.lerp(fallbackPos, 0.02);
                     actionCamera.lookAt(myPlayerOffset, 0, DECK_CENTER_Z);
                 }
             }
+
+            // Ensure the small window renderer actually renders the frame
             actionRenderer.render(scene, actionCamera);
         }
 
@@ -2682,13 +3185,43 @@
                     ballMesh.position.copy(ballBody.position);
                     ballMesh.quaternion.copy(ballBody.quaternion);
 
-                    if (typeof isMultiplayerActive !== 'undefined' && isMultiplayerActive &&
-                        typeof conn !== 'undefined' && conn && conn.open) {
-                        conn.send({
-                            type: 'ballUpdate',
-                            pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
-                            quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w }
-                        });
+                    if (isMultiplayerActive && matchRef) {
+                        ballSyncCounter += 1;
+                        if (ballSyncCounter % 12 === 0) {
+                            const activeBall = isBowling || ballBody.velocity.length() > 0.04;
+                            matchRef.child('ballUpdate').set({
+                                active: activeBall,
+                                pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
+                                quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w },
+                                from: getLocalPlayerId(),
+                                timestamp: Date.now()
+                            }).catch((err) => {
+                                console.error('DEBUG: Failed to sync ball update', err);
+                            });
+                        }
+                        const pinSyncInterval = (targetPinCount === 100) ? 5 : 6;
+                        if (ballSyncCounter % pinSyncInterval === 0 && pins.length > 0) {
+                            const pinPayload = pins.map(p => ({
+                                pos: {
+                                    x: p.body.position.x,
+                                    y: p.body.position.y,
+                                    z: p.body.position.z
+                                },
+                                quat: {
+                                    x: p.body.quaternion.x,
+                                    y: p.body.quaternion.y,
+                                    z: p.body.quaternion.z,
+                                    w: p.body.quaternion.w
+                                }
+                            }));
+                            matchRef.child('pinUpdate').set({
+                                from: getLocalPlayerId(),
+                                timestamp: Date.now(),
+                                pins: pinPayload
+                            }).catch((err) => {
+                                console.error('DEBUG: Failed to sync pin update', err);
+                            });
+                        }
                     }
 
                     if (pins && pins.length > 0) {
@@ -2768,17 +3301,18 @@
 
                     if (typeof isCinematicMode !== 'undefined' && isCinematicMode) {
                         // Cinematic slow-motion view
-                        const yOffset = is100 ? (isPortrait ? 8.5 : 5.5) : (isPortrait ? 5.5 : 3.5);
-                        const zOffset = is100 ? (isPortrait ? 12 : 9) : (isPortrait ? 9 : 6);
+                        const yOffset = is100 ? (isPortrait ? 7.5 : 4.5) : (isPortrait ? 5.5 : 3.5);
+                        const zOffset = is100 ? (isPortrait ? 10 : 7) : (isPortrait ? 9 : 6);
                         const lookZ = is100 ? pinAreaZ - 4 : pinAreaZ;
                         desiredPosition.set(currentOffset, yOffset, pinAreaZ + zOffset);
                         desiredLookAt.set(currentOffset, 0.5, lookZ);
                     }
                     else if (typeof impactOccurred !== 'undefined' && impactOccurred) {
                         // Fixed camera focused on pins after impact
-                        const lookZ = is100 ? -28 : -24;
-                        const camY = is100 ? 6.5 : 5;
-                        desiredPosition.set(currentOffset, camY, -14);
+                        const lookZ = is100 ? -26 : -24;
+                        const camY = is100 ? 6 : 5;
+                        const camZ = is100 ? -12 : -14;
+                        desiredPosition.set(currentOffset, camY, camZ);
                         desiredLookAt.set(currentOffset, 1, lookZ);
                     }
                     else if (ballBody) {
@@ -2836,6 +3370,26 @@
                 }, 1000);
             }
         };
+    </script>
+    <script>
+        // 2. 你的 Firebase 配置 (從你提供的內容整理)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDP8tmDw_8E-oONCIIATHJppOvVCToMB5E",
+            authDomain: "bowling-game-cysyuki.firebaseapp.com",
+            // 這是最重要的連線地址
+            databaseURL: "https://bowling-game-cysyuki-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "bowling-game-cysyuki",
+            storageBucket: "bowling-game-cysyuki.firebasestorage.app",
+            messagingSenderId: "786286743520",
+            appId: "1:786286743520:web:4eb5b6c50e84cae73aa585",
+            measurementId: "G-GG1MG6NZ9K"
+        };
+
+        // 3. 初始化 Firebase 並掛載到全域變數 db
+        firebase.initializeApp(firebaseConfig);
+        window.db = firebase.database();
+
+        console.log("Firebase 雲端同步系統已就緒！");
     </script>
 </body>
 
