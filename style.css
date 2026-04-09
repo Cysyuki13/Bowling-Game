@@ -1,0 +1,637 @@
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #05050a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        canvas {
+            display: block;
+            touch-action: none;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            background: transparent;
+            flex-direction: column;
+            justify-content: space-between;
+            color: white;
+            padding: 15px;
+            box-sizing: border-box;
+            z-index: 1000;
+        }
+
+        #action-cam-container {
+            pointer-events: auto !important;
+            z-index: 100;
+        }
+
+        .top-ui {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+            padding-right: 60px;
+        }
+
+        .score-board {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+            background: rgba(20, 20, 40, 0.85);
+            padding: 12px;
+            border-radius: 12px;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            max-width: fit-content;
+            z-index: 100;
+        }
+
+        .history-table {
+            border-collapse: collapse;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 12px;
+            text-align: center;
+            min-width: 240px;
+        }
+
+        .history-table th,
+        .history-table td {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 6px 4px;
+            width: 35px;
+        }
+
+        .history-table th {
+            background: rgba(230, 126, 34, 0.3);
+            color: #f39c12;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+
+        .total-col {
+            background: rgba(46, 204, 113, 0.2);
+            font-weight: bold;
+            color: #2ecc71;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            background: rgba(231, 76, 60, 0.2);
+            padding: 10px 20px;
+            border-radius: 20px;
+            pointer-events: none;
+            border: 1px solid #e74c3c;
+            width: 70%;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s ease;
+        }
+
+        .btn {
+            background: #e67e22;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            pointer-events: auto;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn:hover {
+            background: #d35400;
+        }
+
+        #msg-box {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 15, 25, 0.8);
+            padding: 20px;
+            border-radius: 24px;
+            text-align: center;
+            pointer-events: auto;
+            display: none;
+            width: 280px;
+            border: 2px solid #e67e22;
+            z-index: 1000;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+        }
+
+        #strike-popup {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            font-size: clamp(40px, 15vw, 150px);
+            font-weight: 900;
+            color: #ffffff;
+            text-shadow:
+                0 0 10px #f1c40f,
+                0 0 20px #f1c40f,
+                0 0 40px #e67e22,
+                0 0 70px #d35400,
+                0 0 100px #ff0000;
+            z-index: 5001;
+            pointer-events: none;
+            opacity: 0;
+            font-style: italic;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            letter-spacing: 5px;
+            text-transform: uppercase;
+        }
+
+        #strike-popup.show {
+            display: block;
+            opacity: 1;
+            animation: strike-thump 0.5s ease-out forwards, strike-glow 0.8s ease-in-out infinite alternate;
+        }
+
+        .menu-container {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            pointer-events: auto;
+            z-index: 1100;
+        }
+
+        .menu-icon-btn {
+            background: rgba(20, 20, 40, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 24px;
+            padding: 10px;
+            border-radius: 50%;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+        }
+
+        .settings-popup {
+            margin-top: 10px;
+            background: rgba(15, 15, 25, 0.95);
+            padding: 15px;
+            border-radius: 15px;
+            border: 1px solid #e67e22;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 160px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+        }
+
+        .settings-popup label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #f1c40f;
+            letter-spacing: 1px;
+        }
+
+        #volume-slider {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #e67e22;
+        }
+
+        #vol-percent {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .settings-btn {
+            background: rgba(230, 126, 34, 0.2);
+            color: white;
+            border: 1px solid #e67e22;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .settings-btn:hover {
+            background: rgba(230, 126, 34, 0.4);
+        }
+
+        #screen-dimmer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 5000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        #screen-dimmer.dimmed {
+            opacity: 1;
+        }
+
+        #action-cam-container.enlarged {
+            width: 90vw !important;
+            height: 50vh !important;
+            bottom: 50% !important;
+            right: 50% !important;
+            transform: translate(50%, 50%);
+            z-index: 1100;
+        }
+
+        #watch-replay-btn {
+            pointer-events: auto;
+            display: none;
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 30px;
+            font-size: 18px;
+            background: rgba(255, 215, 0, 0.9);
+            color: #000;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            z-index: 1100;
+            transition: all 0.3s ease;
+        }
+
+        #watch-replay-btn:hover {
+            background: #fff;
+            transform: translateX(-50%) scale(1.1);
+        }
+
+        /* --- ENHANCED MOBILE SCOREBOARD --- */
+        @media (max-width: 180px) {
+            .score-board {
+                padding: 8px;
+                border-radius: 12px;
+                width: 92vw;
+                /* Use more horizontal space on mobile */
+                max-width: 340px;
+                background: rgba(15, 15, 30, 0.9);
+            }
+
+            #score-text {
+                font-size: 16px !important;
+                margin-bottom: 6px !important;
+                text-align: center;
+                width: 100%;
+            }
+
+            #score-table {
+                table-layout: fixed;
+                /* Prevents column squishing */
+                border-spacing: 2px;
+                font-size: 11px;
+            }
+
+            #score-table th {
+                padding: 4px 2px;
+                font-size: 9px;
+                letter-spacing: 0;
+            }
+
+            #score-table td {
+                padding: 10px 2px;
+                /* Taller tap targets */
+                min-width: 0;
+                font-size: 12px;
+            }
+
+            /* Narrow the "Player" column to give more room to scores */
+            #score-table th:first-child,
+            #score-table td:first-child {
+                width: 55px;
+                font-size: 10px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            /* Make the Total column stand out */
+            .total {
+                background: rgba(241, 196, 15, 0.2) !important;
+                color: #f1c40f !important;
+                font-weight: 900;
+            }
+
+            /* Position the top-ui better on small screens */
+            .top-ui {
+                padding-right: 0;
+                align-items: center;
+                width: 100%;
+            }
+
+            /* Settings and Menu adjustments */
+            .menu-container {
+                top: 10px;
+                right: 10px;
+            }
+        }
+
+        #score-table {
+            pointer-events: auto;
+            border-collapse: separate;
+            border-spacing: 4px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            text-align: center;
+            width: 100%;
+            max-width: 280px;
+            margin: 0;
+        }
+
+        #score-table th {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 6px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 4px;
+        }
+
+        #score-table td {
+            padding: 8px 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            min-width: 25px;
+            font-weight: bold;
+        }
+
+        #p1-row td:first-child {
+            color: #1e90ff;
+            text-shadow: 0 0 8px rgba(30, 144, 255, 0.5);
+            font-size: 12px;
+        }
+
+        #p2-row td:first-child {
+            color: #ff4757;
+            text-shadow: 0 0 8px rgba(255, 71, 87, 0.5);
+            font-size: 12px;
+        }
+
+        #p1-total,
+        #p2-total {
+            background: rgba(255, 255, 255, 0.15);
+            color: #f1c40f;
+        }
+
+        @media screen and (max-width: 600px) {
+            #score-table {
+                width: min(45vw, 180px);
+                font-size: 10px;
+            }
+
+            #score-table th,
+            #score-table td {
+                padding: 3px 2px;
+            }
+        }
+
+        @keyframes strike-thump {
+            0% {
+                transform: translate(-50%, -50%) scale(0);
+                opacity: 0;
+            }
+
+            50% {
+                transform: translate(-50%, -50%) scale(1.2);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes strike-glow {
+            from {
+                text-shadow: 0 0 10px #fff, 0 0 20px #f1c40f;
+            }
+
+            to {
+                text-shadow: 0 0 20px #fff, 0 0 40px #e67e22;
+            }
+        }
+
+        #matchmaking-modal-blocker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 4999;
+            pointer-events: auto;
+            display: none;
+        }
+
+        #matchmaking-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 15, 25, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            border: 2px solid #e67e22;
+            text-align: center;
+            pointer-events: auto;
+            display: none;
+            z-index: 5000;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+            width: 280px;
+            max-width: 90vw;
+        }
+
+        #matchmaking-panel h2 {
+            color: #f39c12;
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+
+        #matchmaking-panel p {
+            color: #ccc;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+
+        .matchmaking-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .matchmaking-buttons button {
+            background: #e67e22;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .matchmaking-buttons button:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+
+        .matchmaking-buttons button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #auto-match-btn {
+            background: #9b59b6;
+        }
+
+        #auto-match-btn:hover:not(:disabled) {
+            background: #8e44ad;
+        }
+
+        .join-panel-buttons {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        #create-match-btn,
+        #auto-match-btn,
+        #join-match-btn,
+        #single-player-btn,
+        #cancel-search-btn {
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        #create-match-btn {
+            background: #e67e22;
+            color: white;
+        }
+
+        #create-match-btn:hover:not(:disabled) {
+            background: #d35400;
+            transform: scale(1.05);
+        }
+
+        #create-match-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        #join-match-btn {
+            background: rgba(100, 100, 150, 0.5);
+            color: white;
+            border: 1px solid #8888ff;
+        }
+
+        #join-match-btn:hover {
+            background: rgba(100, 100, 150, 0.7);
+        }
+
+        #single-player-btn {
+            background: rgba(80, 160, 80, 0.8);
+            color: white;
+            border: 1px solid #66cc66;
+        }
+
+        #single-player-btn:hover {
+            background: rgba(80, 160, 80, 1);
+        }
+
+        #cancel-search-btn {
+            background: rgba(200, 100, 100, 0.5);
+            color: white;
+            border: 1px solid #ff8888;
+        }
+
+        #cancel-search-btn:hover {
+            background: rgba(200, 100, 100, 0.7);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(230, 126, 34, 0.3);
+            border-radius: 50%;
+            border-top-color: #e67e22;
+            animation: spin 1s linear infinite;
+            margin: 10px 0;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        #matchmaking-status {
+            min-height: 20px;
+            color: #f39c12;
+            font-weight: bold;
+        }
