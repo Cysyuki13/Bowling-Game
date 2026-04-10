@@ -116,8 +116,104 @@
             pointer-events: auto;
             cursor: pointer;
             margin-top: 15px;
-            transition: transform 0.2s, background 0.2s;
+            transition: transform 0.2s, background 0.2s, box-shadow 0.3s;
         }
+
+        /* Tiered Event Button Styles */
+        .event-btn.tier-silver {
+            background: linear-gradient(145deg, #c0c0c0, #a8a8a8);
+            box-shadow: 
+                0 0 15px rgba(192, 192, 192, 0.5),
+                inset 0 1px 0 rgba(255,255,255,0.3);
+            animation: silverShine 3s ease-in-out infinite;
+            border: 2px solid #b8b8b8;
+        }
+
+        .event-btn.tier-gold {
+            background: linear-gradient(145deg, #ffd700, #ffed4e, #ffc107);
+            box-shadow: 
+                0 0 30px rgba(255, 215, 0, 0.9),
+                inset 0 1px 0 rgba(255,255,255,0.7),
+                0 0 50px rgba(255, 215, 0, 0.5);
+            animation: goldPulse 1.2s ease-in-out infinite;
+            border: 3px solid #ffed4e;
+            color: #333;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .event-btn.tier-prismatic {
+            background: linear-gradient(45deg, #ff00ff88, #00ffff88, #ffff0088, #ff149388, #00ff7f88, #ff450088);
+            background-size: 400% 400%;
+            box-shadow: 
+                0 0 40px #ff00ff,
+                0 0 80px #00ffff,
+                0 0 120px #ffff00,
+                inset 0 1px 0 rgba(255,255,255,-10);
+            animation: prismaticShift 2s ease infinite, prismaticGlow 0.8s ease-in-out infinite alternate;
+            background-clip: padding-box; /* Prevents border-image bleeding into corners */
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8), 0 0 8px rgba(255,255,255,0.6);
+            position: relative;
+            overflow: hidden;
+            border-radius: 30px;
+        }
+
+
+
+
+        .event-btn.tier-prismatic::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+            animation: sparkle 1.5s linear infinite;
+        }
+
+
+        @keyframes silverShine {
+            0%, 100% { box-shadow: 0 0 15px rgba(192, 192, 192, 0.6); }
+            50% { box-shadow: 0 0 25px rgba(192, 192, 192, 0.9), inset 0 1px 0 rgba(255,255,255,0.6); }
+        }
+
+        @keyframes goldPulse {
+            0%, 100% { 
+                box-shadow: 0 0 25px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.4);
+                transform: scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 35px rgba(255, 215, 0, 1), 0 0 60px rgba(255, 215, 0, 0.6);
+                transform: scale(1.02);
+            }
+        }
+
+        @keyframes prismaticShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes prismaticGlow {
+            0% { 
+                box-shadow: 
+                    0 0 40px #ff00ff,
+                    0 0 80px #00ffff,
+                    0 0 120px #ffff00;
+            }
+            100% { 
+                box-shadow: 
+                    0 0 50px #00ffff,
+                    0 0 100px #ffff00,
+                    0 0 140px #ff1493;
+            }
+        }
+
+        @keyframes sparkle {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            100% { transform: translate(50%, 50%) rotate(180deg); }
+        }
+
 
         .btn:active {
             transform: scale(0.95);
