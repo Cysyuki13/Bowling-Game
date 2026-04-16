@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="Bowling_Icon.png">
+    <title>Bowling 3D</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+        <div id="ui-overlay">
+            <div class="chaos-controls">
+                <button id="chaos-toggle-btn" class="chaos-toggle-btn" onclick="toggleChaosBox()" title="切換能力列表">
+                    <span id="chaos-btn-icon">🎯</span>
+                    <span id="chaos-btn-count" class="chaos-count-badge">0/5</span>
+                </button>
+                <div id="chaos-events-info" class="chaos-events-box" style="display: none;">
+                    <div class="chaos-events-header">活躍能力</div>
+                    <div id="active-events-list" class="events-scroll"></div>
+                </div>
+            </div>
+
+        <div id="action-cam-container" onclick="toggleActionCamSize(event)"
+
+            style="cursor: pointer; position: absolute; bottom: 20px; right: 20px; width: 250px; height: 150px; border: 3px solid #e74c3c; border-radius: 10px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(231, 76, 60, 0.5); background: #000; pointer-events: auto !important;">
+            <div
+                style="position:absolute; top:5px; left:5px; color:#e74c3c; font-weight:bold; font-size:10px; z-index:10; pointer-events: none;">
+                動作鏡頭 (點擊放大)
+            </div>
+            <canvas id="action-canvas" style="pointer-events: none;"></canvas>
+        </div>
+
+        <div class="menu-container" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"
+            ontouchmove="event.stopPropagation()">
+            <button class="menu-icon-btn" onclick="toggleSettingsMenu()">⚙️</button>
+            <div id="settings-menu" class="settings-popup">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e67e22;">設定</h3>
+                <label for="volume-slider">音量</label>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5"
+                    oninput="updateVolume(this.value)">
+                <div id="vol-percent">50%</div>
+                <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
+                <label for="mode-toggle-btn">遊戲模式</label>
+                <button id="mode-toggle-btn" class="settings-btn" onclick="toggleGameMode()">10 瓶</button>
+                <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
+                <label for="language-btn">語言</label>
+                <button id="language-btn" class="settings-btn" onclick="toggleLanguage()">🇺🇸 English</button>
+                <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
+                <button id="home-btn" class="settings-btn" onclick="goHome()"
+                    style="background: rgba(220, 53, 69, 0.3); border: 1px solid #dc3545;">🏠 主頁</button>
+            </div>
+        </div>
+
+        <div class="top-ui">
+            <div class="score-board">
+                <div id="score-text" style="font-size: 20px; font-weight: bold; color: #f39c12; margin-bottom: 8px;">
+                    擊倒: 0
+                </div>
+                <table id="score-table">
+                    <thead>
+                        <tr>
+                            <th id="player-header">玩家</th>
+                            <th id="frame1-header">1</th>
+                            <th id="frame2-header">2</th>
+                            <th id="frame3-header">3</th>
+                            <th id="frame4-header">4</th>
+                            <th id="frame5-header">5</th>
+                            <th id="total-header" class="total-col">總分</th>
+                        </tr>
+                    </thead>
+                    <tbody id="score-body">
+                        <tr id="p1-row">
+                            <td id="p1-name">P1</td>
+                            <td id="p1-m0">-</td>
+                            <td id="p1-m1">-</td>
+                            <td id="p1-m2">-</td>
+                            <td id="p1-m3">-</td>
+                            <td id="p1-m4">-</td>
+                            <td id="p1-total" class="total">0</td>
+                        </tr>
+                        <tr id="p2-row" style="display: none;">
+                            <td id="p2-name">P2</td>
+                            <td id="p2-m0">-</td>
+                            <td id="p2-m1">-</td>
+                            <td id="p2-m2">-</td>
+                            <td id="p2-m3">-</td>
+                            <td id="p2-m4">-</td>
+                            <td id="p2-total" class="total">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="instructions" id="hint">拖曳移動位置 &bull; 向上滑動投球</div>
+        <div id="strike-popup">STRIKE!</div>
+        <div id="msg-box" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+            <h1 id="msg-title">全中！</h1>
+            <p id="msg-body">完美擊球！</p>
+            <button id="action-btn" class="btn" onclick="handleMatchEnd()">下一局</button>
+        </div>
+        <div id="mode-switch-modal"
+            style="display:none; position:absolute; top:35%; left:50%; transform:translate(-50%, -50%); width:320px; padding:24px; background:rgba(15,15,25,0.97); border:2px solid #e67e22; border-radius:20px; z-index:5100; box-shadow:0 0 40px rgba(0,0,0,0.75); text-align:center;">
+            <h2 id="mode-switch-title" style="margin:0 0 12px; color:#f1c40f; font-size:20px;">更改模式請求</h2>
+            <p id="mode-switch-body" style="margin:0 0 18px; color:#ddd; font-size:14px; line-height:1.5;"></p>
+            <div id="mode-switch-actions" style="display:flex; justify-content:space-between; gap:10px;">
+                <button id="mode-switch-accept" class="btn" style="flex:1;">接受</button>
+                <button id="mode-switch-decline" class="btn" style="flex:1; background:#888;">拒絕</button>
+            </div>
+        </div>
+        <button id="watch-replay-btn" class="btn" onclick="startReplay()"
+            style="display: none; position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); pointer-events: auto;">
+            觀看重播
+        </button>
+
+        <div id="matchmaking-panel">
+            <h2>多人連線保齡球</h2>
+            <p>與其他玩家線上對戰</p>
+            <div id="matchmaking-status"></div>
+            <div class="matchmaking-buttons">
+                <button id="create-match-btn" onclick="createMatch()">建立房間</button>
+                <button id="join-match-btn" onclick="showJoinMatchPanel()">加入房間</button>
+                <button id="auto-match-btn" onclick="autoMatch()">自動配對</button>
+                <button id="single-player-btn" onclick="startSinglePlayer()">單人遊戲</button>
+            </div>
+            <div id="join-match-panel" style="display:none; margin-top: 10px; position: relative; width: 100%;">
+                <label for="join-code-input" class="sr-only">Join match code</label>
+                <input id="join-code-input" type="text" maxlength="5" placeholder="輸入代碼"
+                    style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.25); color: white; outline: none; text-align: center;" />
+                <div class="join-panel-buttons">
+                    <button id="join-code-btn" class="btn" onclick="attemptJoinMatch()"
+                        style="flex: 1; padding: 10px 0; min-width: 0; margin-top: 0;">加入</button>
+                    <button id="join-cancel-btn" class="btn" onclick="hideJoinMatchPanel()"
+                        style="flex: 1; padding: 10px 0; background: #888; min-width: 0; margin-top: 0;">返回</button>
+                </div>
+            </div>
+            <button id="cancel-search-btn" onclick="cancelMatchmaking()"
+                style="display: none; margin-top: 10px;">取消配對</button>
+        </div>
+
+        <div id="screen-dimmer"></div>
+        <div id="matchmaking-modal-blocker"></div>
+
+        <div id="mode-select-modal"
+            style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(15,15,25,0.95); padding:30px; border-radius:20px; border:2px solid #e67e22; text-align:center; z-index:5100;">
+            <h2 style="color:#f39c12; margin-top:0;">選擇模式</h2>
+            <div style="display:flex; gap:15px; margin-top:20px;">
+                <button class="btn" style="width: 160px" onclick="startSelectedMode('normal')">一般模式 (Normal)</button>
+                <button class="btn" style="background:#8e44ad; width: 160px" onclick="startSelectedMode('chaos')">大混戰
+                    (Chaos)</button>
+            </div>
+        </div>
+
+        <div id="event-select-modal"
+            style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(15,15,25,0.95); padding:30px; border-radius:20px; border:2px solid #9b59b6; text-align:center; z-index:5100; width: 80%; max-width: 400px;">
+            <h2 style="color:#e056fd; margin-top:0;">選擇特殊能力!</h2>
+            <div id="event-choices-container" style="display:flex; flex-direction:column; gap:10px; margin-top:20px;">
+            </div>
+        </div>
+    </div>
+    <script src="firebase.js"></script>
+    <script src="chaos_events.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
