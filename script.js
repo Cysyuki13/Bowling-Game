@@ -1907,13 +1907,16 @@ function goHome() {
 }
 
 function toggleGameMode() {
+    // Always return to matchmaking after mode change
+    hideMatchmakingPanel();
+    
     const newMode = (targetPinCount === 10) ? 100 : 10;
 
     // --- SINGLE PLAYER MODE ---
     if (!isMultiplayerActive) {
         const modal = document.getElementById('mode-switch-modal');
         document.getElementById('mode-switch-title').innerText = "切換模式";
-        document.getElementById('mode-switch-body').innerText = `是否切換至 ${newMode} 瓶模式？這將重置目前的分數。`;
+        document.getElementById('mode-switch-body').innerText = `是否切換至 ${newMode} 瓶模式？這將重置目前的分數並返回單人選擇。`;
 
         const acceptBtn = document.getElementById('mode-switch-accept');
         const declineBtn = document.getElementById('mode-switch-decline');
@@ -1921,13 +1924,15 @@ function toggleGameMode() {
         modal.style.display = 'block';
 
         acceptBtn.onclick = () => {
-            // Only toggle if they click accept
+            // Only toggle if they click accept, then show single player
             doToggleGameMode();
             modal.style.display = 'none';
+            showMatchmakingPanel();
         };
 
         declineBtn.onclick = () => {
             modal.style.display = 'none';
+            showMatchmakingPanel();
         };
 
         // CRITICAL: Stop the function here so doToggleGameMode() 
@@ -1941,9 +1946,8 @@ function toggleGameMode() {
         return;
     }
 
-    // This line will now only be reached if for some reason 
-    // it's not multiplayer and the logic above didn't trigger.
-    doToggleGameMode();
+    // Always return to matchmaking
+    showMatchmakingPanel();
 }
 
 function adjustMultiplayerLaneOffsets(oldLocalOffset, oldRemoteOffset, newLocalOffset, newRemoteOffset) {
@@ -2434,10 +2438,13 @@ function createPins(offset = 0) {
     });
 
     const spawnSinglePin = (x, z) => {
+        const pinSizeMult = (typeof chaosModifiers !== 'undefined' && chaosModifiers.pinSizeMult) ? chaosModifiers.pinSizeMult : 1.0;
+        const pinMassMult = (typeof chaosModifiers !== 'undefined' && chaosModifiers.pinMassMult) ? chaosModifiers.pinMassMult : 1.0;
         const worldX = x + offset;
 
         const circle = new THREE.Mesh(circleGeo, circleMat.clone());
         circle.rotation.x = -Math.PI / 2;
+        circle.scale.setScalar(pinSizeMult);
         circle.position.set(worldX, LANE_Y + 0.01, z);
         scene.add(circle);
         pinCircles.push(circle);
@@ -2446,6 +2453,7 @@ function createPins(offset = 0) {
 
         const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
         pMesh.castShadow = true;
+        pMesh.scale.setScalar(pinSizeMult);
         group.add(pMesh);
 
         const outlineMaterial = new THREE.MeshBasicMaterial({
@@ -2453,16 +2461,17 @@ function createPins(offset = 0) {
             side: THREE.BackSide
         });
         const outlineMesh = new THREE.Mesh(pinGeo, outlineMaterial);
-        outlineMesh.scale.setScalar(1.07);
+        outlineMesh.scale.setScalar(1.07 * pinSizeMult);
         group.add(outlineMesh);
 
         const stripe = new THREE.Mesh(stripeGeo, stripeMat);
-        stripe.position.set(0, 0.16, 0);
+        stripe.scale.setScalar(pinSizeMult);
+        stripe.position.set(0, 0.16 * pinSizeMult, 0);
         group.add(stripe);
 
         scene.add(group);
 
-        const pinMass = (targetPinCount > 50) ? 2.0 : 2.5;
+        const pinMass = ((targetPinCount > 50) ? 2.0 : 2.5) * pinMassMult;
         const pBody = new CANNON.Body({ mass: pinMass, material: pinMat });
         const qCyl = new CANNON.Quaternion();
         qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
@@ -2475,7 +2484,7 @@ function createPins(offset = 0) {
         pBody.linearDamping = targetPinCount > 50 ? 0.30 : 0.2;
         pBody.angularDamping = targetPinCount > 50 ? 0.35 : 0.3;
         pBody.type = CANNON.Body.KINEMATIC;
-        pBody.position.set(worldX, LANE_Y + (PIN_HEIGHT / 2), z);
+        pBody.position.set(worldX, LANE_Y + (PIN_HEIGHT / 2 * pinSizeMult), z);
 
         pBody.addEventListener('collide', (e) => {
             if (pBody.type === CANNON.Body.KINEMATIC) {
@@ -3296,6 +3305,14 @@ function stopReplay() {
 // Clears scores, match history, and multiplayer flags
 // Updates UI and syncs state with Firebase if in multiplayer mode
 function fullReset() {
+    // Reset chaos mode completely
+    if (typeof window !== 'undefined' && typeof window.isChaosMode !== 'undefined') {
+        window.isChaosMode = false;
+    }
+    if (typeof resetChaosState === 'function') {
+        resetChaosState();
+    }
+    
     matchHistory = [];
     scores = { p1: [], p2: [] };
     hasShownLocalCompleteMessage = false;
@@ -3304,13 +3321,14 @@ function fullReset() {
     const msgBox = document.getElementById('msg-box');
     if (msgBox) {
         msgBox.style.display = 'none';
-        // Only clear the body content, not the entire structure
         const body = document.getElementById('msg-body');
         if (body) body.innerText = '';
     }
     updateScoreTable();
     if (!isMultiplayerActive) {
         resetSinglePlayerUI();
+        // Show singleplayer mode selection
+        startSinglePlayer();
     }
     if (isMultiplayerActive && matchRef) {
         matchRef.child('scores').set(scores).catch((err) => {
