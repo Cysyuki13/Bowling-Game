@@ -327,7 +327,15 @@ function updateScoreTableHeaders() {
     if (totalHeader) totalHeader.innerText = t('total');
 
     const playerHeader = document.getElementById('player-header');
-    if (playerHeader) playerHeader.innerText = t('player1'); // Generic "Player" header
+    if (playerHeader) {
+        // Check if single player mode (p2-row hidden)
+        const p2Row = document.getElementById('p2-row');
+        if (p2Row && p2Row.style.display === 'none') {
+            playerHeader.innerText = '/'; // Single player: show "/"
+        } else {
+            playerHeader.innerText = t('player1'); // Multiplayer: show "玩家 1"/"Player 1"
+        }
+    }
 }
 
 function toggleLanguage() {
@@ -1212,8 +1220,11 @@ function promptEventSelection() {
     choices.forEach(event => {
         const btn = document.createElement('button');
         btn.className = `btn event-btn tier-${event.tier}`;
+        if (event.id.includes('tier_transmute') || event.id === 'tier_chaos_prismatic') {
+            btn.classList.add('transmute-special');
+        }
         btn.dataset.tier = event.tier;
-        
+        btn.dataset.eventId = event.id; // For special effects tracking
 
         btn.style.display = 'flex';
         btn.style.flexDirection = 'column';
@@ -1737,12 +1748,21 @@ function init() {
     world = new CANNON.World();
     world.gravity.set(0, -23, 0);
 
+    // Apply chaos gravity modifier if active
+    if (typeof chaosModifiers !== 'undefined' && chaosModifiers.gravityMult) {
+        world.gravity.y *= chaosModifiers.gravityMult;
+    }
+
     window.ballMat = new CANNON.Material("ballMat");
     window.groundMat = new CANNON.Material("groundMat");
     window.pinMat = new CANNON.Material("pinMat");
     window.wallMat = new CANNON.Material("wallMat");
 
-    const ballGroundContact = new CANNON.ContactMaterial(ballMat, groundMat, { friction: 0.2, restitution: 0.1 });
+    const frictionScale = (typeof chaosModifiers !== 'undefined' && chaosModifiers.frictionMult) ? chaosModifiers.frictionMult : 1.0;
+    const ballGroundContact = new CANNON.ContactMaterial(ballMat, groundMat, {
+        friction: 0.2 * frictionScale,
+        restitution: 0.1
+    });
     const ballPinContact = new CANNON.ContactMaterial(ballMat, pinMat, {
         friction: 0.0,
         restitution: 0.5
@@ -1751,7 +1771,7 @@ function init() {
     const pinGroundContact = new CANNON.ContactMaterial(pinMat, groundMat, { friction: 0.6, restitution: 0.1 });
 
     const ballWallContact = new CANNON.ContactMaterial(ballMat, wallMat, {
-        friction: 0.1,
+        friction: 0.1 * frictionScale,
         restitution: 0.8,
         contactEquationStiffness: 1e8,
         contactEquationRelaxation: 3
@@ -1909,14 +1929,14 @@ function goHome() {
 function toggleGameMode() {
     // Always return to matchmaking after mode change
     hideMatchmakingPanel();
-    
+
     const newMode = (targetPinCount === 10) ? 100 : 10;
 
     // --- SINGLE PLAYER MODE ---
     if (!isMultiplayerActive) {
         const modal = document.getElementById('mode-switch-modal');
         document.getElementById('mode-switch-title').innerText = "切換模式";
-        document.getElementById('mode-switch-body').innerText = `是否切換至 ${newMode} 瓶模式？這將重置目前的分數並返回單人選擇。`;
+        document.getElementById('mode-switch-body').innerText = `是否切換至 ${newMode} 瓶模式？這將重置目前分數。`;
 
         const acceptBtn = document.getElementById('mode-switch-accept');
         const declineBtn = document.getElementById('mode-switch-decline');
@@ -1924,15 +1944,13 @@ function toggleGameMode() {
         modal.style.display = 'block';
 
         acceptBtn.onclick = () => {
-            // Only toggle if they click accept, then show single player
             doToggleGameMode();
             modal.style.display = 'none';
-            showMatchmakingPanel();
+            startSinglePlayer();
         };
 
         declineBtn.onclick = () => {
             modal.style.display = 'none';
-            showMatchmakingPanel();
         };
 
         // CRITICAL: Stop the function here so doToggleGameMode() 
@@ -2036,6 +2054,12 @@ function doToggleGameMode(newMode) {
         adjustMultiplayerLaneOffsets(oldLocalOffset, oldRemoteOffset, newLocalOffset, newRemoteOffset);
     }
     updateLaneWidth();
+    if (typeof resetChaosState === 'function') {
+        resetChaosState();
+    }
+    if (typeof window !== 'undefined' && typeof window.isChaosMode !== 'undefined') {
+        window.isChaosMode = false;
+    }
     matchHistory = [];
     scores = { p1: [], p2: [] };
     updateScoreTable('p1');
@@ -2357,8 +2381,57 @@ function createBall() {
         geometry = new THREE.BoxGeometry(BALL_RADIUS * 2, BALL_RADIUS * 2, BALL_RADIUS * 2);
         material = new THREE.MeshPhongMaterial({ map: texture, shininess: 10 });
     } else {
+        // Ice Lane special material
+        if (isChaosMode && chaosModifiers.isIceLane) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            // Ice crystal background
+            const gradient = ctx.createLinearGradient(0, 0, 128, 128);
+            gradient.addColorStop(0, '#e6f3ff');
+            gradient.addColorStop(0.5, '#b3d9ff');
+            gradient.addColorStop(1, '#87cefa');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 128, 128);
+
+            // Ice cracks
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.lineCap = 'round';
+            for (let i = 0; i < 8; i++) {
+                ctx.beginPath();
+                ctx.moveTo(Math.random() * 128, Math.random() * 128);
+                ctx.lineTo(Math.random() * 128, Math.random() * 128);
+                ctx.stroke();
+            }
+
+            // Frost texture
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            for (let i = 0; i < 20; i++) {
+                ctx.beginPath();
+                ctx.arc(Math.random() * 128, Math.random() * 128, Math.random() * 3 + 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            const iceTexture = new THREE.CanvasTexture(canvas);
+            material = new THREE.MeshPhongMaterial({
+                map: iceTexture,
+                shininess: 350,
+                emissive: 0x87cefa,
+                emissiveIntensity: 0.3,
+                transparent: true,
+                opacity: 0.92
+            });
+        } else {
+            material = new THREE.MeshPhongMaterial({
+                color: (myPlayerId === 2) ? 0xff4757 : 0x00eeff,
+                shininess: 250,
+                emissive: 0x003366
+            });
+        }
         geometry = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
-        material = new THREE.MeshPhongMaterial({ color: 0x00eeff, shininess: 250, emissive: 0x003366 });
     }
 
     ballMesh = new THREE.Mesh(geometry, material);
@@ -2392,14 +2465,20 @@ function createBall() {
 
     // ... (Your existing Cannon.js physics logic)
     const ballShape = new CANNON.Sphere(BALL_RADIUS);
+    const ballFriction = (typeof chaosModifiers !== 'undefined' && chaosModifiers.frictionMult) ? chaosModifiers.frictionMult * 0.1 : 0.1;
+    ballMat.friction = ballFriction;
     ballBody = new CANNON.Body({ mass: 0, shape: ballShape, material: ballMat });
     ballBody.type = CANNON.Body.STATIC;
     ballBody.mass = 0;
     ballBody.updateMassProperties();
     ballBody.allowSleep = false;
     if (typeof ballBody.wakeUp === 'function') ballBody.wakeUp();
-    ballBody.linearDamping = 0.1;
-    ballBody.angularDamping = 0.1;
+    // Apply chaos damping modifiers
+    const dampingScale = (typeof chaosModifiers !== 'undefined' && chaosModifiers.linearDampingMult) ? chaosModifiers.linearDampingMult : 1.0;
+    ballBody.linearDamping = 0.1 * dampingScale;
+    ballBody.angularDamping = 0.1 * dampingScale;
+
+    console.log('Ball damping set to:', ballBody.linearDamping);
 
     const startPos = new CANNON.Vec3(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
     ballBody.position.copy(startPos);
@@ -2442,14 +2521,30 @@ function createPins(offset = 0) {
         const pinMassMult = (typeof chaosModifiers !== 'undefined' && chaosModifiers.pinMassMult) ? chaosModifiers.pinMassMult : 1.0;
         const worldX = x + offset;
 
+        const group = new THREE.Group();
+
         const circle = new THREE.Mesh(circleGeo, circleMat.clone());
         circle.rotation.x = -Math.PI / 2;
         circle.scale.setScalar(pinSizeMult);
-        circle.position.set(worldX, LANE_Y + 0.01, z);
-        scene.add(circle);
-        pinCircles.push(circle);
+        circle.position.set(worldX - offset, LANE_Y + 0.01 - (LANE_Y + (PIN_HEIGHT / 2 * pinSizeMult)), z);  // Relative to group center
+        group.add(circle);
 
-        const group = new THREE.Group();
+        pinCircles.push(circle); // Still track in global array for scoring
+
+        // NEW: Ice block ghost effect for pins during ice_lane
+        if (chaosModifiers.isIceLane) {
+            const iceBlockGeo = new THREE.BoxGeometry(0.35 * pinSizeMult, 1 * pinSizeMult, 0.35 * pinSizeMult);
+            const iceBlockMat = new THREE.MeshPhongMaterial({
+                color: 0xa0d1ff,
+                transparent: true,
+                opacity: 0.6,
+                emissive: 0x87cefa,
+                emissiveIntensity: 0.2
+            });
+            const iceBlock = new THREE.Mesh(iceBlockGeo, iceBlockMat);
+            iceBlock.position.y = 0.01 * pinSizeMult;
+            group.add(iceBlock); // Ghost - no physics collision
+        }
 
         const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
         pMesh.castShadow = true;
@@ -2691,8 +2786,34 @@ function updateLightTrail() {
     const isPlayer2 = getLocalPlayerId() === 'p2';
     const currentTrailMesh = isPlayer2 ? trailMesh_P2 : trailMesh_P1;
 
-    // 確保 Mesh 是顯示的
-    currentTrailMesh.visible = true;
+    // Ice lane trail effect
+    if (isChaosMode && chaosModifiers.isIceLane) {
+        currentTrailMesh.material.color.setHex(0x4fc3f7); // Ice blue trail
+        currentTrailMesh.material.opacity = 0.4;
+        currentTrailMesh.material.transparent = true;
+        currentTrailMesh.visible = true;
+        // Add sparkling ice particles to trail
+        if (!currentTrailMesh.iceSparkles) {
+            const sparkleGeo = new THREE.BufferGeometry();
+            const sparklePos = [];
+            for (let i = 0; i < 20; i++) {
+                sparklePos.push((Math.random() - 0.5) * 0.8, Math.random() * 0.1, (Math.random() - 0.5) * 0.8);
+            }
+            sparkleGeo.setAttribute('position', new THREE.Float32BufferAttribute(sparklePos, 3));
+            const sparkleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.03, transparent: true, opacity: 0.6 });
+            currentTrailMesh.iceSparkles = new THREE.Points(sparkleGeo, sparkleMat);
+            currentTrailMesh.add(currentTrailMesh.iceSparkles);
+        }
+    } else {
+        currentTrailMesh.material.color.setHex(isPlayer2 ? 0xff0000 : 0x00ffff);
+        currentTrailMesh.material.opacity = 0.6;
+        currentTrailMesh.material.transparent = true;
+        if (currentTrailMesh.iceSparkles) {
+            currentTrailMesh.remove(currentTrailMesh.iceSparkles);
+            currentTrailMesh.iceSparkles = null;
+        }
+        currentTrailMesh.visible = true;
+    }
 
     // 2. 動態更改顏色：Player 2 設為紅色，Player 1 保持青色
     // 這樣即使兩個人並排玩，顏色也會是分開的
@@ -2741,6 +2862,34 @@ function updateLightTrail() {
     posAttr.needsUpdate = true;
 }
 
+function spawnIceParticle(pos) {
+    const geometrySegments = isMobileClient() ? 4 : 8;
+    const part = new THREE.Mesh(
+        new THREE.SphereGeometry(0.015, geometrySegments, geometrySegments),
+        new THREE.MeshBasicMaterial({
+            color: 0xdef2ff,
+            transparent: true,
+            opacity: 0.8
+        })
+    );
+    part.position.copy(pos);
+
+    // Ice crystal velocity - trails behind/upward
+    const vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 0.08,
+        Math.random() * 0.12 + 0.05,
+        ballBody.velocity.z * 0.3
+    );
+
+    scene.add(part);
+    impactParticles.push({
+        mesh: part,
+        vel: vel,
+        life: 1.0,
+        isIce: true
+    });
+}
+
 function spawnImpact(pos, color, count, scale = 1.0) {
     const reduceFor100Pins = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
     const mobileClient = isMobileClient();
@@ -2765,11 +2914,23 @@ function updateImpacts() {
     for (let i = impactParticles.length - 1; i >= 0; i--) {
         const p = impactParticles[i];
         p.mesh.position.add(p.vel);
-        p.vel.y -= 0.02; p.life -= 0.04;
-        // For normal impacts: scale down with life
-        p.mesh.scale.setScalar(Math.max(0, p.life));
-        p.mesh.material.opacity = Math.max(0, p.life);
-        if (p.life <= 0) { scene.remove(p.mesh); impactParticles.splice(i, 1); }
+        p.vel.y -= 0.02;
+        p.life -= 0.04;
+
+        // Ice particles fade slower + sparkle
+        if (p.isIce) {
+            p.mesh.material.opacity = Math.max(0, p.life * 1.5);
+            p.mesh.material.emissiveIntensity = Math.sin(Date.now() * 0.02 + i) * 0.3;
+            p.vel.multiplyScalar(0.98); // Gentle trailing
+        } else {
+            p.mesh.scale.setScalar(Math.max(0, p.life));
+            p.mesh.material.opacity = Math.max(0, p.life);
+        }
+
+        if (p.life <= 0) {
+            scene.remove(p.mesh);
+            impactParticles.splice(i, 1);
+        }
     }
 }
 
@@ -3224,7 +3385,8 @@ function showResultMenu() {
                     scores = { p1: [], p2: [] };
                     updateScoreTable();
                     msgBox.style.display = 'none';
-                    promptEventSelection();
+                    // NO promptEventSelection() - freeplay skips event choice
+                    resetGame();
                 };
                 msgBox.appendChild(freeplayBtn);
             }
@@ -3312,7 +3474,7 @@ function fullReset() {
     if (typeof resetChaosState === 'function') {
         resetChaosState();
     }
-    
+
     matchHistory = [];
     scores = { p1: [], p2: [] };
     hasShownLocalCompleteMessage = false;
@@ -3325,14 +3487,11 @@ function fullReset() {
         if (body) body.innerText = '';
     }
     updateScoreTable();
+    resetSinglePlayerUI();
     if (!isMultiplayerActive) {
-        resetSinglePlayerUI();
-        // Show singleplayer mode selection
-        startSinglePlayer();
-    }
-    if (isMultiplayerActive && matchRef) {
-        matchRef.child('scores').set(scores).catch((err) => {
-        });
+        showMatchmakingPanel();
+    } else if (matchRef) {
+        matchRef.child('scores').set(scores).catch((err) => { });
     }
     resetGame();
 }
@@ -3475,23 +3634,18 @@ function resetGame() {
     });
     pins = [];
 
-    // Dispose pin circle outlines
-    pinCircles.forEach(circle => {
-        scene.remove(circle);
-        if (circle.geometry) circle.geometry.dispose();
-        if (circle.material) circle.material.dispose();
-    });
-    pinCircles = [];
+        // Dispose pin circle outlines (now children of groups, handled in pins loop)
+        pinCircles = []; 
 
-    // Dispose opponent ghost pins
-    opponentGhostPins.forEach(pin => {
-        scene.remove(pin);
-        if (pin.geometry) pin.geometry.dispose();
-        if (pin.material) pin.material.dispose();
-    });
-    opponentGhostPins = [];
+        // Dispose opponent ghost pins
+        opponentGhostPins.forEach(pin => {
+            scene.remove(pin);
+            if (pin.geometry) pin.geometry.dispose();
+            if (pin.material) pin.material.dispose();
+        });
+        opponentGhostPins = [];
 
-    createPins(myPlayerOffset);
+        createPins(myPlayerOffset);
     if (isMultiplayerActive) {
         const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
         const remoteOffset = isHost ? offsetDistance : 0;
@@ -3667,9 +3821,24 @@ function updateActionCam() {
 function animate() {
     requestAnimationFrame(animate);
 
+    // FIXED: Dynamic world gravity update EVERY FRAME (prevents low gravity bounce)
+    if (typeof world !== 'undefined' && typeof chaosModifiers !== 'undefined' && typeof chaosModifiers.gravityMult !== 'undefined') {
+        const gravityY = chaosModifiers.gravityMult * -23;
+        world.gravity.y = Math.max(-15, gravityY); // Clamp to prevent extreme instability
+    }
+
+    // REMOVED: No ice timer (persistent effect per user feedback)
+
     if (world && !isReplaying) {
         const currentScale = (typeof timeScale !== 'undefined') ? timeScale : 1;
         world.step(1 / 60 * currentScale);
+
+        // NEW: Dynamic damping update (persists during throw)
+        if (ballBody && typeof chaosModifiers !== 'undefined' && typeof chaosModifiers.linearDampingMult !== 'undefined') {
+            const dampingScale = chaosModifiers.linearDampingMult;
+            ballBody.linearDamping = 0.1 * dampingScale;
+            ballBody.angularDamping = 0.1 * dampingScale;
+        }
     }
 
     const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
@@ -3683,82 +3852,102 @@ function animate() {
             ballMesh.position.copy(ballBody.position);
             ballMesh.quaternion.copy(ballBody.quaternion);
 
-            if (isMultiplayerActive && matchRef) {
-                ballSyncCounter += 1;
-                if (ballSyncCounter % 3 === 0) {
-                    const activeBall = isBowling || ballBody.velocity.length() > 0.04;
-                    matchRef.child('ballUpdate').set({
-                        active: activeBall,
-                        pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
-                        quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w },
-                        from: getLocalPlayerId(),
-                        timestamp: Date.now()
-                    }).catch((err) => {
-                    });
+            // NEW: Dynamic ice visual update (persistent during entire effect)
+            if (typeof chaosModifiers !== 'undefined' && chaosModifiers.isIceLane) {
+                // Ice glow effect - update emissive for sparkling
+                if (ballMesh.material) {
+                    ballMesh.material.emissive.setHex(0x4fc3f7 + Math.floor(Math.random() * 0x202020)); // Sparkle variation
+                    ballMesh.material.emissiveIntensity = 0.4 + Math.sin(Date.now() * 0.01) * 0.1;
                 }
 
-                if (ballSyncCounter % 3 === 0 && pins.length > 0) {
-                    const pinPayload = pins.map(p => ({
-                        pos: {
-                            x: p.body.position.x,
-                            y: p.body.position.y,
-                            z: p.body.position.z
-                        },
-                        quat: {
-                            x: p.body.quaternion.x,
-                            y: p.body.quaternion.y,
-                            z: p.body.quaternion.z,
-                            w: p.body.quaternion.w
-                        }
-                    }));
-                    matchRef.child('pinUpdate').set({
-                        from: getLocalPlayerId(),
-                        timestamp: Date.now(),
-                        pins: pinPayload
-                    }).catch((err) => {
-                    });
+                // Ice particle trail (spawn occasionally)
+                if (Math.random() < 0.3 && chaosModifiers.iceParticlesActive) {
+                    spawnIceParticle(ballBody.position);
                 }
             }
 
-            if (pins && pins.length > 0) {
-                pins.forEach(p => {
-                    if (p.mesh && p.body) {
-                        p.mesh.position.copy(p.body.position);
-                        p.mesh.quaternion.copy(p.body.quaternion);
-                    }
-                });
-            }
-
-            // REPLAY RECORDING: Capture frame data during gameplay
-            if (isBowling && replayData.length < 900) {
-                replayData.push({
-                    ball: {
-                        pos: ballBody.position.clone(),
-                        quat: ballBody.quaternion.clone()
-                    },
-                    pins: pins.map(p => ({
-                        pos: p.body.position.clone(),
-                        quat: p.body.quaternion.clone()
-                    }))
-                });
-            }
-        } else {
-            if (typeof replayFrameIndex !== 'undefined' && replayData && replayFrameIndex < replayData.length) {
-                const frame = replayData[replayFrameIndex];
-                ballMesh.position.copy(frame.ball.pos);
-                ballMesh.quaternion.copy(frame.ball.quat);
-                pins.forEach((p, i) => {
-                    if (frame.pins[i]) {
-                        p.mesh.position.copy(frame.pins[i].pos);
-                        p.mesh.quaternion.copy(frame.pins[i].quat);
-                    }
-                });
-                replayFrameIndex++;
-            } else if (typeof stopReplay === 'function') {
-                stopReplay();
+            // NEW: Update ice lane overlay
+            if (typeof updateIceLaneOverlay === 'function') {
+                updateIceLaneOverlay(myPlayerOffset);
             }
         }
+
+        if (isMultiplayerActive && matchRef) {
+            ballSyncCounter += 1;
+            if (ballSyncCounter % 3 === 0) {
+                const activeBall = isBowling || ballBody.velocity.length() > 0.04;
+                matchRef.child('ballUpdate').set({
+                    active: activeBall,
+                    pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
+                    quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w },
+                    from: getLocalPlayerId(),
+                    timestamp: Date.now()
+                }).catch((err) => {
+                });
+            }
+
+            if (ballSyncCounter % 3 === 0 && pins.length > 0) {
+                const pinPayload = pins.map(p => ({
+                    pos: {
+                        x: p.body.position.x,
+                        y: p.body.position.y,
+                        z: p.body.position.z
+                    },
+                    quat: {
+                        x: p.body.quaternion.x,
+                        y: p.body.quaternion.y,
+                        z: p.body.quaternion.z,
+                        w: p.body.quaternion.w
+                    }
+                }));
+                matchRef.child('pinUpdate').set({
+                    from: getLocalPlayerId(),
+                    timestamp: Date.now(),
+                    pins: pinPayload
+                }).catch((err) => {
+                });
+            }
+        }
+
+        if (pins && pins.length > 0) {
+            pins.forEach(p => {
+                if (p.mesh && p.body) {
+                    p.mesh.position.copy(p.body.position);
+                    p.mesh.quaternion.copy(p.body.quaternion);
+                }
+            });
+        }
+
+        // REPLAY RECORDING: Capture frame data during gameplay
+        if (isBowling && replayData.length < 900) {
+            replayData.push({
+                ball: {
+                    pos: ballBody.position.clone(),
+                    quat: ballBody.quaternion.clone()
+                },
+                pins: pins.map(p => ({
+                    pos: p.body.position.clone(),
+                    quat: p.body.quaternion.clone()
+                }))
+            });
+        }
+    } else {
+        if (typeof replayFrameIndex !== 'undefined' && replayData && replayFrameIndex < replayData.length) {
+            const frame = replayData[replayFrameIndex];
+            ballMesh.position.copy(frame.ball.pos);
+            ballMesh.quaternion.copy(frame.ball.quat);
+            pins.forEach((p, i) => {
+                if (frame.pins[i]) {
+                    p.mesh.position.copy(frame.pins[i].pos);
+                    p.mesh.quaternion.copy(frame.pins[i].quat);
+                }
+            });
+            replayFrameIndex++;
+        } else if (typeof stopReplay === 'function') {
+            stopReplay();
+        }
     }
+
 
     // --- Sound Logic: Play rolling sound only when ball is on lane ---
     if (isBowling && typeof ballPathSound !== 'undefined' && ballPathSound && ballPathSound.buffer) {
@@ -3867,3 +4056,62 @@ window.onload = () => {
         }, 1000);
     }
 };
+
+// NEW: Ice lane overlay mesh (global for reuse)
+let iceLaneOverlay = null;
+
+// Function to toggle ice lane visual overlay
+function updateIceLaneOverlay(offset = 0) {
+    if (chaosModifiers.isIceLane && !iceLaneOverlay) {
+        // Create frosty overlay
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Ice blue base with cracks
+        const gradient = ctx.createLinearGradient(0, 0, 512, 512);
+        gradient.addColorStop(0, '#a5d8ff');
+        gradient.addColorStop(0.5, '#74c0fc');
+        gradient.addColorStop(1, '#4dabf7');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Ice cracks
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (let i = 0; i < 15; i++) {
+            ctx.beginPath();
+            ctx.moveTo(Math.random() * 512, Math.random() * 512);
+            ctx.lineTo(Math.random() * 512, Math.random() * 512);
+            ctx.stroke();
+        }
+
+        const iceTexture = new THREE.CanvasTexture(canvas);
+        const overlayGeo = new THREE.PlaneGeometry(8, 100);
+        const overlayMat = new THREE.MeshBasicMaterial({
+            map: iceTexture,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending
+        });
+
+        iceLaneOverlay = new THREE.Mesh(overlayGeo, overlayMat);
+        iceLaneOverlay.rotation.x = -Math.PI / 2;
+        iceLaneOverlay.position.set(offset, LANE_Y + 0.11, -35);
+        scene.add(iceLaneOverlay);
+
+        console.log('🧊 Ice lane overlay created');
+    } else if (!chaosModifiers.isIceLane && iceLaneOverlay) {
+        scene.remove(iceLaneOverlay);
+        iceLaneOverlay.material.dispose();
+        iceLaneOverlay.geometry.dispose();
+        iceLaneOverlay = null;
+        console.log('🧊 Ice lane overlay removed');
+    } else if (iceLaneOverlay && chaosModifiers.isIceLane) {
+        // Animate existing overlay
+        iceLaneOverlay.material.opacity = 0.3 + Math.sin(Date.now() * 0.005) * 0.1;
+    }
+}

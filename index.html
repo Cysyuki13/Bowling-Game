@@ -15,20 +15,19 @@
 
 <body>
 
-        <div id="ui-overlay">
-            <div class="chaos-controls">
-                <button id="chaos-toggle-btn" class="chaos-toggle-btn" onclick="toggleChaosBox()" title="切換能力列表">
-                    <span id="chaos-btn-icon">🎯</span>
-                    <span id="chaos-btn-count" class="chaos-count-badge">0/5</span>
-                </button>
-                <div id="chaos-events-info" class="chaos-events-box" style="display: none;">
-                    <div class="chaos-events-header">活躍能力</div>
-                    <div id="active-events-list" class="events-scroll"></div>
-                </div>
+    <div id="ui-overlay">
+        <div class="chaos-controls" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+            <button id="chaos-toggle-btn" class="chaos-toggle-btn" onclick="toggleChaosBox()" title="切換能力列表">
+                <span id="chaos-btn-icon">🎯</span>
+                <span id="chaos-btn-count" class="chaos-count-badge">0/5</span>
+            </button>
+            <div id="chaos-events-info" class="chaos-events-box" style="display: none;">
+                <div class="chaos-events-header">活躍能力</div>
+                <div id="active-events-list" class="events-scroll"></div>
             </div>
+        </div>
 
         <div id="action-cam-container" onclick="toggleActionCamSize(event)"
-
             style="cursor: pointer; position: absolute; bottom: 20px; right: 20px; width: 250px; height: 150px; border: 3px solid #e74c3c; border-radius: 10px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(231, 76, 60, 0.5); background: #000; pointer-events: auto !important;">
             <div
                 style="position:absolute; top:5px; left:5px; color:#e74c3c; font-weight:bold; font-size:10px; z-index:10; pointer-events: none;">
@@ -149,7 +148,7 @@
         <div id="matchmaking-modal-blocker"></div>
 
         <div id="mode-select-modal"
-            style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(15,15,25,0.95); padding:30px; border-radius:20px; border:2px solid #e67e22; text-align:center; z-index:5100;">
+            style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(15,15,25,0.95); padding:30px; padding-left: 10px; padding-right: 10px; border-radius:20px; border:2px solid #e67e22; text-align:center; z-index:5100;">
             <h2 style="color:#f39c12; margin-top:0;">選擇模式</h2>
             <div style="display:flex; gap:15px; margin-top:20px;">
                 <button class="btn" style="width: 160px" onclick="startSelectedMode('normal')">一般模式 (Normal)</button>

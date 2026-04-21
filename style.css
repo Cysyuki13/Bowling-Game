@@ -25,6 +25,7 @@
             padding: 15px;
             box-sizing: border-box;
             z-index: 1000;
+            pointer-events: none;
         }
 
         #action-cam-container {
@@ -122,43 +123,41 @@
         /* Tiered Event Button Styles */
         .event-btn.tier-silver {
             background: linear-gradient(145deg, #c0c0c0, #a8a8a8);
-            box-shadow: 
+            box-shadow:
                 0 0 15px rgba(192, 192, 192, 0.5),
-                inset 0 1px 0 rgba(255,255,255,0.3);
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
             animation: silverShine 3s ease-in-out infinite;
             border: 2px solid #b8b8b8;
         }
 
         .event-btn.tier-gold {
             background: linear-gradient(145deg, #ffd700, #ffed4e, #ffc107);
-            box-shadow: 
+            box-shadow:
                 0 0 30px rgba(255, 215, 0, 0.9),
-                inset 0 1px 0 rgba(255,255,255,0.7),
+                inset 0 1px 0 rgba(255, 255, 255, 0.7),
                 0 0 50px rgba(255, 215, 0, 0.5);
             animation: goldPulse 1.2s ease-in-out infinite;
             border: 3px solid #ffed4e;
             color: #333;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
 
         .event-btn.tier-prismatic {
             background: linear-gradient(45deg, #ff00ff88, #00ffff88, #ffff0088, #ff149388, #00ff7f88, #ff450088);
             background-size: 400% 400%;
-            box-shadow: 
+            box-shadow:
                 0 0 40px #ff00ff,
                 0 0 80px #00ffff,
                 0 0 120px #ffff00,
-                inset 0 1px 0 rgba(255,255,255,-10);
+                inset 0 1px 0 rgba(255, 255, 255, -10);
             animation: prismaticShift 2s ease infinite, prismaticGlow 0.8s ease-in-out infinite alternate;
-            background-clip: padding-box; /* Prevents border-image bleeding into corners */
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.8), 0 0 8px rgba(255,255,255,0.6);
+            background-clip: padding-box;
+            /* Prevents border-image bleeding into corners */
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8), 0 0 8px rgba(255, 255, 255, 0.6);
             position: relative;
             overflow: hidden;
             border-radius: 30px;
         }
-
-
-
 
         .event-btn.tier-prismatic::before {
             content: '';
@@ -167,59 +166,191 @@
             left: -50%;
             width: 200%;
             height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
             animation: sparkle 1.5s linear infinite;
+        }
+
+        /* Special transmutation event effects */
+        .event-btn.transmute-special.tier-silver {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .event-btn.transmute-special.tier-silver::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.4), transparent);
+            animation: transmuteShimmer 2s infinite;
+        }
+
+        .event-btn.transmute-special.tier-gold {
+            position: relative;
+            overflow: hidden;
+        }
+        .event-btn.transmute-special.tier-gold::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,0,255,0.5), transparent);
+            animation: transmuteShimmer 2s infinite;
+        }
+
+        .event-btn.transmute-special[id*="tier_chaos_prismatic"] {
+            position: relative;
+            overflow: hidden;
+        }
+        .event-btn.transmute-special[id*="tier_chaos_prismatic"]::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 0, 255, 0.6) 0%, transparent 50%);
+            opacity: 0;
+            animation: chaosPulse 1s ease-in-out infinite alternate;
+            pointer-events: none;
+            z-index: 1;
+        }
+        
+        .event-btn.transmute-special[id*="tier_chaos_prismatic"]::after {
+            content: '✨✨✨';
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 16px;
+            color: #ff00ff;
+            text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff;
+            animation: starBlink 1.5s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        @keyframes starBlink {
+            0%, 100% { opacity: 0; transform: translateX(-50%) scale(0.8) translateY(0px); }
+            50% { opacity: 1; transform: translateX(-50%) scale(1.2) translateY(-5px); }
+        }
+
+        @keyframes transmuteShimmer {
+            0% {
+                left: -100%;
+            }
+
+            100% {
+                left: 100%;
+            }
+        }
+
+        @keyframes chaosPulse {
+            0% {
+                opacity: 0;
+                transform: scale(1);
+            }
+
+            100% {
+                opacity: 0.7;
+                transform: scale(1.1);
+            }
+        }
+
+        .event-btn.transmute-special:hover {
+            animation: transmuteHover 0.5s ease-out;
+        }
+
+        @keyframes transmuteHover {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1.05);
+            }
         }
 
         .event-btn.tier-error {
             background: linear-gradient(145deg, #ff4444, #ff6666, #ff2222);
-            box-shadow: 
-                0 0 30px rgba(255,68,68,0.9),
-                inset 0 1px 0 rgba(255,255,255,0.2),
-                0 0 50px rgba(255,68,68,0.6);
+            box-shadow:
+                0 0 30px rgba(255, 68, 68, 0.9),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2),
+                0 0 50px rgba(255, 68, 68, 0.6);
             animation: errorShine 2s ease-in-out infinite;
             border: 2px solid #ff2222;
             color: white;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.8), 0 0 10px rgba(255,255,255,0.6);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8), 0 0 10px rgba(255, 255, 255, 0.6);
         }
 
         @keyframes errorShine {
-            0%, 100% { box-shadow: 0 0 30px rgba(255,68,68,0.8), 0 0 50px rgba(255,68,68,0.5); }
-            50% { box-shadow: 0 0 40px rgba(255,68,68,1), 0 0 70px rgba(255,68,68,0.7), inset 0 1px 0 rgba(255,255,255,0.4); }
+
+            0%,
+            100% {
+                box-shadow: 0 0 30px rgba(255, 68, 68, 0.8), 0 0 50px rgba(255, 68, 68, 0.5);
+            }
+
+            50% {
+                box-shadow: 0 0 40px rgba(255, 68, 68, 1), 0 0 70px rgba(255, 68, 68, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+            }
         }
 
 
         @keyframes silverShine {
-            0%, 100% { box-shadow: 0 0 15px rgba(192, 192, 192, 0.6); }
-            50% { box-shadow: 0 0 25px rgba(192, 192, 192, 0.9), inset 0 1px 0 rgba(255,255,255,0.6); }
+
+            0%,
+            100% {
+                box-shadow: 0 0 15px rgba(192, 192, 192, 0.6);
+            }
+
+            50% {
+                box-shadow: 0 0 25px rgba(192, 192, 192, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+            }
         }
 
         @keyframes goldPulse {
-            0%, 100% { 
+
+            0%,
+            100% {
                 box-shadow: 0 0 25px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.4);
                 transform: scale(1);
             }
-            50% { 
+
+            50% {
                 box-shadow: 0 0 35px rgba(255, 215, 0, 1), 0 0 60px rgba(255, 215, 0, 0.6);
                 transform: scale(1.02);
             }
         }
 
         @keyframes prismaticShift {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
         }
 
         @keyframes prismaticGlow {
-            0% { 
-                box-shadow: 
+            0% {
+                box-shadow:
                     0 0 40px #ff00ff,
                     0 0 80px #00ffff,
                     0 0 120px #ffff00;
             }
-            100% { 
-                box-shadow: 
+
+            100% {
+                box-shadow:
                     0 0 50px #00ffff,
                     0 0 100px #ffff00,
                     0 0 140px #ff1493;
@@ -227,8 +358,13 @@
         }
 
         @keyframes sparkle {
-            0% { transform: translate(0, 0) rotate(0deg); }
-            100% { transform: translate(50%, 50%) rotate(180deg); }
+            0% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+
+            100% {
+                transform: translate(50%, 50%) rotate(180deg);
+            }
         }
 
 
@@ -242,7 +378,7 @@
 
         #msg-box {
             position: absolute;
-            top: 20%;
+            top: 35%;
             left: 50%;
             transform: translateX(-50%);
             background: rgba(15, 15, 25, 0.8);
@@ -532,7 +668,6 @@
 
         @media screen and (max-width: 600px) {
             #score-table {
-                width: min(45vw, 180px);
                 font-size: 10px;
             }
 
@@ -753,7 +888,7 @@
             text-align: center;
             text-transform: uppercase;
             letter-spacing: 1px;
-            text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
         }
 
         .events-scroll {
@@ -763,7 +898,7 @@
             flex-direction: column;
             gap: 6px;
             scrollbar-width: thin;
-            scrollbar-color: #9b59b6 rgba(20,20,50,0.5);
+            scrollbar-color: #9b59b6 rgba(20, 20, 50, 0.5);
         }
 
         .events-scroll::-webkit-scrollbar {
@@ -771,7 +906,7 @@
         }
 
         .events-scroll::-webkit-scrollbar-track {
-            background: rgba(20,20,50,0.8);
+            background: rgba(20, 20, 50, 0.8);
             border-radius: 2px;
         }
 
@@ -805,6 +940,7 @@
                 opacity: 0;
                 transform: translateY(10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -813,16 +949,15 @@
 
         @media (max-width: 480px) {
             .chaos-events-box {
-                width: calc(100vw - 80px);
                 left: 20px;
-                bottom: 10px;
+                bottom: 50px;
             }
         }
 
         /* Chaos Toggle Button */
         .chaos-controls {
             position: absolute;
-            bottom: 20px;
+            top: 180px;
             left: 20px;
             display: flex;
             flex-direction: column;
@@ -851,17 +986,24 @@
             font-size: 20px;
             cursor: pointer;
             position: relative;
-            box-shadow: 
-                0 4px 15px rgba(0,0,0,0.4),
-                inset 0 1px 0 rgba(255,255,255,0.2);
+            box-shadow:
+                0 4px 15px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             background: linear-gradient(145deg, #666, #555);
             color: white;
         }
 
+        .chaos-toggle-btn,
+        .btn,
+        .chaos-box {
+            pointer-events: auto;
+            /* ...except for these specific UI elements */
+        }
+
         .chaos-toggle-btn:hover {
             transform: scale(1.1) rotate(5deg);
-            box-shadow: 0 6px 25px rgba(0,0,0,0.6);
+            box-shadow: 0 6px 25px rgba(0, 0, 0, 0.6);
         }
 
         .chaos-toggle-btn:active {
@@ -871,13 +1013,13 @@
         /* Tier button backgrounds */
         .chaos-toggle-btn.tier-silver {
             background: linear-gradient(145deg, #c0c0c0, #a8a8a8);
-            box-shadow: 0 0 15px rgba(192,192,192,0.6);
+            box-shadow: 0 0 15px rgba(192, 192, 192, 0.6);
             animation: silverPulse 2s ease-in-out infinite;
         }
 
         .chaos-toggle-btn.tier-gold {
             background: linear-gradient(145deg, #ffd700, #ffed4e);
-            box-shadow: 0 0 25px rgba(255,215,0,0.8);
+            box-shadow: 0 0 25px rgba(255, 215, 0, 0.8);
             animation: goldPulse 1.5s ease-in-out infinite;
             color: #333;
         }
@@ -885,34 +1027,37 @@
         .chaos-toggle-btn.tier-prismatic {
             background: linear-gradient(45deg, #ff00ffaa, #00ffffaa, #ffff00aa, #ff1493aa);
             background-size: 300% 300%;
-            box-shadow: 
+            box-shadow:
                 0 0 20px #ff00ff,
                 0 0 40px #00ffff,
-                inset 0 1px 0 rgba(255,255,255,0.3);
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
             animation: prismaticShift 2s ease infinite, prismaticGlow 1s ease-in-out infinite alternate;
             color: white;
-            text-shadow: 0 0 5px rgba(255,255,255,0.8);
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.8);
         }
 
         .chaos-toggle-btn.tier-error {
             background: linear-gradient(145deg, #ff4444, #ff6666, #ff2222);
-            box-shadow: 
-                0 0 25px rgba(255,68,68,0.9),
-                0 0 40px rgba(255,68,68,0.6),
-                inset 0 1px 0 rgba(255,255,255,0.2);
+            box-shadow:
+                0 0 25px rgba(255, 68, 68, 0.9),
+                0 0 40px rgba(255, 68, 68, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
             animation: errorPulse 1.2s ease-in-out infinite;
             color: white;
-            text-shadow: 0 0 8px rgba(255,255,255,0.8);
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
             border: 2px solid #ff2222;
         }
 
         @keyframes errorPulse {
-            0%, 100% { 
-                box-shadow: 0 0 20px rgba(255,68,68,0.8), 0 0 35px rgba(255,68,68,0.5);
+
+            0%,
+            100% {
+                box-shadow: 0 0 20px rgba(255, 68, 68, 0.8), 0 0 35px rgba(255, 68, 68, 0.5);
                 transform: scale(1);
             }
-            50% { 
-                box-shadow: 0 0 35px rgba(255,68,68,1), 0 0 55px rgba(255,68,68,0.7);
+
+            50% {
+                box-shadow: 0 0 35px rgba(255, 68, 68, 1), 0 0 55px rgba(255, 68, 68, 0.7);
                 transform: scale(1.03);
             }
         }
@@ -921,7 +1066,7 @@
             position: absolute;
             top: -4px;
             right: -4px;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0, 0, 0, 0.8);
             color: #fff;
             font-size: 10px;
             font-weight: bold;
@@ -931,14 +1076,59 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 2px solid rgba(255,255,255,0.9);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
         }
 
-        @keyframes silverPulse { 0%,100%{box-shadow:0 0 15px rgba(192,192,192,0.6);}50%{box-shadow:0 0 25px rgba(192,192,192,0.9);} }
-        @keyframes goldPulse { 0%,100%{transform:scale(1);box-shadow:0 0 20px rgba(255,215,0,0.7);}50%{transform:scale(1.05);box-shadow:0 0 30px rgba(255,215,0,1);} }
-        @keyframes prismaticShift { 0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%} }
-        @keyframes prismaticGlow { 0%{box-shadow:0 0 20px #ff00ff,0 0 40px #00ffff;}100%{box-shadow:0 0 30px #00ffff,0 0 50px #ffff00;} }
+        @keyframes silverPulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 15px rgba(192, 192, 192, 0.6);
+            }
+
+            50% {
+                box-shadow: 0 0 25px rgba(192, 192, 192, 0.9);
+            }
+        }
+
+        @keyframes goldPulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 20px rgba(255, 215, 0, 0.7);
+            }
+
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 30px rgba(255, 215, 0, 1);
+            }
+        }
+
+        @keyframes prismaticShift {
+            0% {
+                background-position: 0% 50%
+            }
+
+            50% {
+                background-position: 100% 50%
+            }
+
+            100% {
+                background-position: 0% 50%
+            }
+        }
+
+        @keyframes prismaticGlow {
+            0% {
+                box-shadow: 0 0 20px #ff00ff, 0 0 40px #00ffff;
+            }
+
+            100% {
+                box-shadow: 0 0 30px #00ffff, 0 0 50px #ffff00;
+            }
+        }
 
 
         .loading-spinner {
@@ -963,4 +1153,3 @@
             color: #f39c12;
             font-weight: bold;
         }
-

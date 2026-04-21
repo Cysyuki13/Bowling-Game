@@ -11,13 +11,44 @@ let chaosModifiers = {
     ballSizeMult: 1,
     ballSpeedMult: 1,
     ballMassMult: 1,
-    isExplosive: false,
-    isRandomSpin: false,
-    pinSizeMult: 1,
-    pinMassMult: 1
+    pinMassMult: 1,
+    frictionMult: 1,
+    gravityMult: 1,
+    linearDampingMult: 1,    // NEW: for ice effect
+    iceTimer: 0,             // NEW: ice duration timer
+    isIceLane: false,
+    iceParticlesActive: false // NEW: particle system flag
 };
 
 const ChaosEventLibrary = [
+{
+        id: 'ice_lane',
+        name: '極寒冰道',  
+        description: '超低摩擦+低阻尼！球如溜冰般滑行，冰晶四濺！(20秒)',
+        tier: 'silver',
+        apply: function(tierMultiplier = 1) {
+            // Enhanced physics: extreme slip + low damping (PERSISTENT)
+            chaosModifiers.frictionMult = 0.001 * tierMultiplier;  // Near-zero friction
+            chaosModifiers.linearDampingMult = 0.02 * tierMultiplier; // Preserve momentum
+            chaosModifiers.isIceLane = true;
+            chaosModifiers.iceParticlesActive = true;
+            // REMOVED: No auto-timer per user feedback - stays active until deselected
+            
+            console.log(`🧊 Ice Lane ACTIVATED! Friction: ${chaosModifiers.frictionMult}, Damping: ${chaosModifiers.linearDampingMult} (Persistent)`);
+            console.log('🔍 Ice lane active - pin circles should now render properly with ice effect');
+            
+            // Visual/audio feedback
+            if (typeof playGameSound === 'function') playGameSound('ice_activate');
+        },
+        cleanup: function() {  // NEW: proper cleanup
+            chaosModifiers.frictionMult = 1;
+            chaosModifiers.linearDampingMult = 1;
+            chaosModifiers.isIceLane = false;
+            chaosModifiers.iceParticlesActive = false;
+            chaosModifiers.iceTimer = 0;
+            console.log('❄️ Ice Lane melted - normal physics restored');
+        }
+    },
     // Base events - tiers will be applied dynamically
     {
         id: 'giant_ball',
@@ -88,33 +119,39 @@ const ChaosEventLibrary = [
         tier: 'error',
         apply: function(tierMultiplier = 1) {
             chaosModifiers.isRandomSpin = true;
+            chaosModifiers.initialForwardSpeed = 30 * tierMultiplier; // Reference speed for bias
+            
             chaosModifiers.randomSpinInterval = setInterval(() => {
                 if (!ballBody || !ballMesh || !chaosModifiers.isRandomSpin) return;
                 
-                // Continuous high-speed self-spin (around multiple axes)
-                const spinForce = 50 * tierMultiplier;
+                // Continuous random spin (controlled chaos)
+                const spinForce = 40 * tierMultiplier;
                 ballBody.angularVelocity.x = (Math.random() - 0.5) * spinForce;
                 ballBody.angularVelocity.y = (Math.random() - 0.5) * spinForce;
                 ballBody.angularVelocity.z = (Math.random() - 0.5) * spinForce;
                 
-                // Random position jitter (small bounces)
-                const jitter = 0.3;
-                ballBody.position.x += (Math.random() - 0.5) * jitter;
-                ballBody.position.z += (Math.random() - 0.5) * jitter;
-                
-                // Random velocity impulses (erratic movement)
+                // Forward-biased impulses (random path but always progresses)
+                const forwardBias = 12 + (chaosModifiers.initialForwardSpeed || 30) * 0.3;
                 const impulse = new CANNON.Vec3(
-                    (Math.random() - 0.5) * 15,
-                    Math.random() * 5,
-                    (Math.random() - 0.5) * 15
+                    (Math.random() - 0.5) * 8,   // Side variation
+                    Math.random() * 3,            // Slight bounce
+                    -(forwardBias + Math.random() * 6)  // Always forward
                 );
                 ballBody.applyImpulse(impulse, ballBody.position);
                 
-                // Visual spin sync
-                ballMesh.rotation.x += 0.3;
-                ballMesh.rotation.y += 0.2;
-                ballMesh.rotation.z += 0.25;
-            }, 100); // Update 10x/sec for chaotic feel
+                // Torque for natural path curving (replaces jitter)
+                const torqueAmount = 25 * tierMultiplier;
+                ballBody.torque.set(
+                    (Math.random() - 0.5) * torqueAmount,
+                    0,
+                    (Math.random() - 0.5) * torqueAmount * 0.7  // Less z-torque to preserve forward
+                );
+                
+                // Visual spin sync (enhanced)
+                ballMesh.rotation.x += 0.25;
+                ballMesh.rotation.y += 0.3;
+                ballMesh.rotation.z += 0.2;
+            }, 200); // Smoother 5x/sec updates
         }
     },
     {
@@ -195,6 +232,15 @@ const ChaosEventLibrary = [
                     tierMultiplier: TIER_CONFIG.prismatic.multiplier
                 }, this.id);
             }
+        }
+    },
+    {
+        id: 'low_gravity',
+        name: '低重力',
+        description: '降低重力常數。球瓶與球撞擊後會飛起並「飄浮」更久。',
+        tier: 'gold',
+        apply: function(tierMultiplier = 1) {
+            chaosModifiers.gravityMult = 0.3 * tierMultiplier;
         }
     },
     {
@@ -297,6 +343,8 @@ const EVENT_ICONS = {
     'tiny_ball': '⚠️',
     'random_spin': '🌀',
     'giant_pins': '🏺',
+    'ice_lane': '🧊',
+    'low_gravity': '🪐',
     default: '🎯'
 };
 
@@ -340,8 +388,8 @@ function computeButtonState() {
         iconRotation.push(EVENT_ICONS[event.id] || EVENT_ICONS.default);
     });
     
-    // Use first event icon or mixed
-    iconEl.textContent = iconRotation[0] || EVENT_ICONS.default;
+    // Use LATEST (last) event icon
+    iconEl.textContent = iconRotation[iconRotation.length - 1] || EVENT_ICONS.default;
     
     // Apply tier class
     btn.className = `chaos-toggle-btn tier-${dominantTier}`;
@@ -424,6 +472,9 @@ function resetChaosState() {
         ballSizeMult: 1, 
         ballSpeedMult: 1, 
         ballMassMult: 1, 
+        frictionMult: 1,
+        gravityMult: 1,
+        isIceLane: false,
         isExplosive: false, 
         isRandomSpin: false,
         pinSizeMult: 1,
@@ -458,4 +509,3 @@ function resetChaosState() {
     
     updateChaosEventsDisplay();
 }
-
