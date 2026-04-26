@@ -5,6 +5,7 @@ let isChaosMode = false;
 let activeChaosEvents = [];
 let usedChaosEventIds = [];
 let isFreeplayMode = false;
+let forcedChaosEventId = null; // Console-forced event ID for next selection
 
 // Multipliers and flags modified by events
 let chaosModifiers = {
@@ -17,7 +18,8 @@ let chaosModifiers = {
     linearDampingMult: 1,    // NEW: for ice effect
     iceTimer: 0,             // NEW: ice duration timer
     isIceLane: false,
-    iceParticlesActive: false // NEW: particle system flag
+    iceParticlesActive: false, // NEW: particle system flag
+    pinTimeScale: 1          // NEW: pin slow-motion factor (1 = normal, <1 = slow)
 };
 
 const ChaosEventLibrary = [
@@ -32,11 +34,9 @@ const ChaosEventLibrary = [
             chaosModifiers.linearDampingMult = 0.02 * tierMultiplier; // Preserve momentum
             chaosModifiers.isIceLane = true;
             chaosModifiers.iceParticlesActive = true;
+            chaosModifiers.pinTimeScale = 0.01; // Pins move in slow motion (10% speed)
             // REMOVED: No auto-timer per user feedback - stays active until deselected
-            
-            console.log(`🧊 Ice Lane ACTIVATED! Friction: ${chaosModifiers.frictionMult}, Damping: ${chaosModifiers.linearDampingMult} (Persistent)`);
-            console.log('🔍 Ice lane active - pin circles should now render properly with ice effect');
-            
+
             // Visual/audio feedback
             if (typeof playGameSound === 'function') playGameSound('ice_activate');
         },
@@ -46,7 +46,7 @@ const ChaosEventLibrary = [
             chaosModifiers.isIceLane = false;
             chaosModifiers.iceParticlesActive = false;
             chaosModifiers.iceTimer = 0;
-            console.log('❄️ Ice Lane melted - normal physics restored');
+            chaosModifiers.pinTimeScale = 1;
         }
     },
     // Base events - tiers will be applied dynamically
@@ -166,12 +166,9 @@ const ChaosEventLibrary = [
             const massMult = this.baseMassMultiplier * tierMultiplier;
             chaosModifiers.pinSizeMult = sizeMult;
             chaosModifiers.pinMassMult = massMult;
-            
-            console.log('Giant pins activated! Size:', chaosModifiers.pinSizeMult, 'Mass:', chaosModifiers.pinMassMult);
-            
+
             // Force pin recreation with new sizes by calling resetGame()
             if (typeof resetGame === 'function') {
-                console.log('Recreating pins with giant sizes...');
                 setTimeout(resetGame, 100); // Small delay to ensure globals available
             }
         }
@@ -250,16 +247,16 @@ const ChaosEventLibrary = [
         tier: 'prismatic',
         apply: function(tierMultiplier = 1) {
             const prismaticEvents = ChaosEventLibrary.filter(e => e.tier === 'prismatic' && !usedChaosEventIds.includes(e.id));
-            if (prismaticEvents.length < 2) return;
-            
-            // Pick 2 random prismatic (or error if none available)
+            const errorEvents = ChaosEventLibrary.filter(e => e.tier === 'error');
             const availablePrismatic = prismaticEvents.slice();
             const selectedEvents = [];
             
             for (let i = 0; i < 2; i++) {
-                if (Math.random() < 0.5 && availablePrismatic.length > 0) {
-                    // 50% per event to be error
-                    const errorEvents = ChaosEventLibrary.filter(e => e.tier === 'error');
+                // 50% chance to pick error event instead of prismatic
+                const pickError = Math.random() < 0.5;
+                
+                if (pickError && errorEvents.length > 0) {
+                    // Pick random error event
                     const randomEvent = errorEvents[Math.floor(Math.random() * errorEvents.length)];
                     selectedEvents.push({
                         ...randomEvent,
@@ -267,6 +264,7 @@ const ChaosEventLibrary = [
                         tierMultiplier: TIER_CONFIG.error.multiplier
                     });
                 } else if (availablePrismatic.length > 0) {
+                    // Pick random prismatic event
                     const randomIndex = Math.floor(Math.random() * availablePrismatic.length);
                     const randomEvent = availablePrismatic[randomIndex];
                     selectedEvents.push({
@@ -275,11 +273,19 @@ const ChaosEventLibrary = [
                         tierMultiplier: TIER_CONFIG.prismatic.multiplier
                     });
                     availablePrismatic.splice(randomIndex, 1);
+                } else if (errorEvents.length > 0) {
+                    // Prismatic exhausted, fallback to error
+                    const randomEvent = errorEvents[Math.floor(Math.random() * errorEvents.length)];
+                    selectedEvents.push({
+                        ...randomEvent,
+                        tierColor: TIER_CONFIG.error.color,
+                        tierMultiplier: TIER_CONFIG.error.multiplier
+                    });
                 }
             }
             
             // Activate both events
-            selectedEvents.forEach(event => activateChaosEvent(event));
+            selectedEvents.forEach(event => activateChaosEvent(event, this.id));
         }
     }
 ];
@@ -295,9 +301,24 @@ const TIER_CONFIG = {
 // Get 3 fixed tier chaos events from library
 function getTieredChaosEvents() {
     const availableEvents = ChaosEventLibrary.filter(e => !usedChaosEventIds.includes(e.id));
-    const shuffled = availableEvents.slice().sort(() => 0.5 - Math.random());
-    const selectedBaseEvents = shuffled.slice(0, 3);
-    
+    let selectedBaseEvents = [];
+
+    // If a console-forced event is set, place it first
+    if (forcedChaosEventId) {
+        const forcedEvent = availableEvents.find(e => e.id === forcedChaosEventId);
+        if (forcedEvent) {
+            selectedBaseEvents.push(forcedEvent);
+        }
+    }
+
+    const shuffled = availableEvents
+        .filter(e => e.id !== forcedChaosEventId)
+        .slice()
+        .sort(() => 0.5 - Math.random());
+
+    const remainingNeeded = 3 - selectedBaseEvents.length;
+    selectedBaseEvents = selectedBaseEvents.concat(shuffled.slice(0, remainingNeeded));
+
     return selectedBaseEvents.map(baseEvent => ({
         ...baseEvent,
         tierColor: TIER_CONFIG[baseEvent.tier].color,
@@ -312,26 +333,54 @@ function getRandomChaosEvents() {
     return getTieredChaosEvents();
 }
 
+// Console function: force a specific chaos event to appear as first choice
+// Usage: forceChaosEvent('explosive_ball')  or  forceChaosEvent('giant_ball')
+window.forceChaosEvent = function(eventId) {
+    const event = ChaosEventLibrary.find(e => e.id === eventId);
+    if (!event) {
+        return false;
+    }
+    forcedChaosEventId = eventId;
+    return true;
+};
+
 // Function to activate an event
 function activateChaosEvent(eventData, sourceEventId = null) {
     // eventData now includes tierMultiplier
     // sourceEventId tracks if activated by transmutation (for "質變" label)
-    if (eventData.apply) {
-        if (eventData.tierMultiplier) {
-            eventData.apply(eventData.tierMultiplier);
-        } else {
-            eventData.apply();
-        }
-        // Add source tracking for transmuted events
-        if (sourceEventId) {
-            eventData.sourceEventId = sourceEventId;
-        }
-        activeChaosEvents.push(eventData);
-        if (!usedChaosEventIds.includes(eventData.id)) {
-            usedChaosEventIds.push(eventData.id);
-        }
-        updateChaosEventsDisplay();
+    if (!eventData.apply) return;
+
+    // Prevent duplicate events in the active list
+    if (activeChaosEvents.some(e => e.id === eventData.id)) {
+        return;
     }
+
+    // ENSURE proper display info for ALL events (especially transmuted ones)
+    if (!eventData.tier || !eventData.displayName) {
+        const tier = eventData.tier || 'silver';
+        eventData.tier = tier;
+        eventData.tierColor = eventData.tierColor || TIER_CONFIG[tier].color;
+        eventData.displayName = `${eventData.name} [${TIER_CONFIG[tier].nameSuffix}]`;
+    }
+
+    // Mark as used BEFORE calling apply() so recursive selections (e.g. tier_chaos_prismatic)
+    // know this event is already active and won't pick itself again
+    if (!usedChaosEventIds.includes(eventData.id)) {
+        usedChaosEventIds.push(eventData.id);
+    }
+
+    if (eventData.tierMultiplier) {
+        eventData.apply(eventData.tierMultiplier);
+    } else {
+        eventData.apply();
+    }
+
+    // Add source tracking for transmuted events
+    if (sourceEventId) {
+        eventData.sourceEventId = sourceEventId;
+    }
+    activeChaosEvents.push(eventData);
+    updateChaosEventsDisplay();
 }
 
 
@@ -400,15 +449,31 @@ function toggleChaosBox() {
     const box = document.getElementById('chaos-events-info');
     const btn = document.getElementById('chaos-toggle-btn');
     if (!box || !btn) return;
-    
+
     isChaosBoxVisible = !isChaosBoxVisible;
     box.style.display = isChaosBoxVisible ? 'block' : 'none';
     btn.style.transform = isChaosBoxVisible ? 'scale(1.15) rotate(180deg)' : 'scale(1)';
-    
+
     // Optional: rotate icon
     const icon = document.getElementById('chaos-btn-icon');
     if (icon) {
         icon.style.transform = isChaosBoxVisible ? 'rotate(180deg)' : 'rotate(0deg)';
+    }
+}
+
+function closeChaosInfoBox() {
+    const box = document.getElementById('chaos-events-info');
+    const btn = document.getElementById('chaos-toggle-btn');
+    if (box) {
+        box.style.display = 'none';
+    }
+    isChaosBoxVisible = false;
+    if (btn) {
+        btn.style.transform = 'scale(1)';
+    }
+    const icon = document.getElementById('chaos-btn-icon');
+    if (icon) {
+        icon.style.transform = 'rotate(0deg)';
     }
 }
 
@@ -430,7 +495,7 @@ function updateChaosEventsDisplay() {
         return;
     }
     
-    activeChaosEvents.forEach((event, index) => {
+        activeChaosEvents.forEach((event, index) => {
         const item = document.createElement('div');
         item.className = 'active-event-item';
         item.style.borderLeftColor = event.tierColor || '#9b59b6';
@@ -443,12 +508,17 @@ function updateChaosEventsDisplay() {
         
         // Check if transmuted (randomly chosen by transmuters)
         const isTransmuted = event.sourceEventId && ['tier_transmute_silver', 'tier_transmute_gold', 'tier_chaos_prismatic'].includes(event.sourceEventId);
-        const transmutedLabel = isTransmuted ? '<span style="background: #ff6b6b; color: white; font-size: 9px; padding: 1px 4px; border-radius: 4px; font-weight: bold;">質變</span>' : '';
+        const transmutedLabel = isTransmuted ? '<span class="transmute-label">質變</span>' : '';
+        
+        // Add tier badge for ALL events
+        const tierBadge = `<span class="tier-badge tier-${event.tier || 'silver'}">${TIER_CONFIG[event.tier || 'silver'].nameSuffix}</span>`;
         
         item.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                 <span style="color: ${event.tierColor || '#9b59b6'}; font-weight: bold; font-size: 14px; min-width: 20px; flex-shrink: 0;">${icon}</span>
-                <span style="font-weight: 600; font-size: 12px;">${event.displayName || event.name}${transmutedLabel}</span>
+                <span style="font-weight: 600; font-size: 12px;">${event.name}</span>
+                ${tierBadge}
+                ${transmutedLabel}
             </div>
             <small style="color: #aaa; font-size: 11px; line-height: 1.2;">${shortDesc}</small>
         `;
@@ -478,7 +548,8 @@ function resetChaosState() {
         isExplosive: false, 
         isRandomSpin: false,
         pinSizeMult: 1,
-        pinMassMult: 1
+        pinMassMult: 1,
+        pinTimeScale: 1
     };
 
     // Reset ball visuals if needed
@@ -506,6 +577,10 @@ function resetChaosState() {
     if (typeof pinCircles !== 'undefined' && Array.isArray(pinCircles)) {
         pinCircles.forEach(circle => circle.scale.setScalar(1));
     }
-    
+
     updateChaosEventsDisplay();
 }
+
+console.log("forceChaosEvent('???')");
+console.log("Available event IDs:");
+ChaosEventLibrary.forEach(e => console.log(`- ${e.id} (${e.name})`));

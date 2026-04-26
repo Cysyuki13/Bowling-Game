@@ -37,7 +37,49 @@ let touchStartPos = { x: 0, y: 0 };     // Initial touch position
 let touchStartTime = 0;         // Time when touch started
 let lastTouchX = 0;             // Last known X coordinate of touch
 let impactParticles = [];       // Particle effects from ball/pin collisions
+let activeExplosions = [];      // Active explosion visual effects (TNT chaos event)
 let trailHistory = [];          // Ball trajectory points for visual trail
+
+// ============================================
+// SHARED EXPLOSION ASSETS (Pre-created to avoid frame spikes)
+// ============================================
+const SHARED_P_GEO = new THREE.SphereGeometry(1, 6, 6); // Base size 1, scaled per particle
+const SHARED_S_GEO = new THREE.SphereGeometry(1, 4, 4); // Simpler geometry for smoke
+const SHARED_FIRE_GEO = new THREE.SphereGeometry(1, 12, 12);
+const SHARED_RING_GEO = new THREE.RingGeometry(0.8, 1, 16);
+
+// Pre-create materials to avoid "new" calls during gameplay
+const PARTICLE_MATS = [0xff4500, 0xff8c00, 0xffd700, 0xff2222, 0xff6600].map(color =>
+    new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending })
+);
+const SMOKE_MAT = new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.5 });
+
+// ============================================
+// SOFT PARTICLE SYSTEM (THREE.Points for burst particles)
+// Reduces draw calls from 30+ meshes to 1 Points object per explosion
+// ============================================
+function createCircleTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(canvas);
+}
+
+const explosionPointMat = new THREE.PointsMaterial({
+    size: 0.15,
+    vertexColors: true,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    opacity: 1.0,
+    map: createCircleTexture(),
+    depthWrite: false
+});
 // trailMesh moved to global declarations above
 let randomHookForce = 0;
 
@@ -468,7 +510,6 @@ function updateMatchmakingStatus(message) {
 
 function getMatchRef(code) {
     if (!window.db || typeof window.db.ref !== 'function') {
-        console.error('Firebase database is not initialized.');
         return null;
     }
     return window.db.ref(`matches/${code}`);
@@ -1211,6 +1252,12 @@ function promptEventSelection() {
     container.innerHTML = ''; // Clear previous
 
     const choices = getTieredChaosEvents();
+
+    // Clear the console-forced event now that it has been consumed
+    if (typeof forcedChaosEventId !== 'undefined' && forcedChaosEventId) {
+        forcedChaosEventId = null;
+    }
+
     if (!choices || choices.length === 0) {
         document.getElementById('event-select-modal').style.display = 'none';
         resetGame();
@@ -2355,7 +2402,6 @@ function createStreetEnvironment(offset = 0) {
 
 function createBall() {
     let geometry, material;
-    console.log("Creating ball with chaos mode:", isChaosMode, "and modifiers:", chaosModifiers);
 
     if (isChaosMode && chaosModifiers.isExplosive) {
         // ... (Your existing TNT Canvas/Texture logic)
@@ -2478,8 +2524,6 @@ function createBall() {
     ballBody.linearDamping = 0.1 * dampingScale;
     ballBody.angularDamping = 0.1 * dampingScale;
 
-    console.log('Ball damping set to:', ballBody.linearDamping);
-
     const startPos = new CANNON.Vec3(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
     ballBody.position.copy(startPos);
     world.addBody(ballBody);
@@ -2526,10 +2570,10 @@ function createPins(offset = 0) {
         const circle = new THREE.Mesh(circleGeo, circleMat.clone());
         circle.rotation.x = -Math.PI / 2;
         circle.scale.setScalar(pinSizeMult);
-        circle.position.set(worldX - offset, LANE_Y + 0.01 - (LANE_Y + (PIN_HEIGHT / 2 * pinSizeMult)), z);  // Relative to group center
-        group.add(circle);
+        circle.position.set(worldX, LANE_Y + 0.05, z);  // Fixed world position above ice overlay
+        scene.add(circle);
 
-        pinCircles.push(circle); // Still track in global array for scoring
+        pinCircles.push(circle); // Track in global array for scoring
 
         // NEW: Ice block ghost effect for pins during ice_lane
         if (chaosModifiers.isIceLane) {
@@ -2571,10 +2615,13 @@ function createPins(offset = 0) {
         const qCyl = new CANNON.Quaternion();
         qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
 
-        pBody.addShape(new CANNON.Cylinder(0.12, 0.12, 0.1, 12), new CANNON.Vec3(0, -0.35, 0), qCyl);
-        pBody.addShape(new CANNON.Sphere(0.16), new CANNON.Vec3(0, -0.18, 0));
-        pBody.addShape(new CANNON.Cylinder(0.08, 0.13, 0.3, 12), new CANNON.Vec3(0, 0.05, 0), qCyl);
-        pBody.addShape(new CANNON.Sphere(0.09), new CANNON.Vec3(0, 0.31, 0));
+        // Scale physics shapes to match visual pinSizeMult
+        const s = pinSizeMult;
+        pBody.addShape(new CANNON.Cylinder(0.12 * s, 0.12 * s, 0.1 * s, 12), new CANNON.Vec3(0, -0.35 * s, 0), qCyl);
+        pBody.addShape(new CANNON.Sphere(0.16 * s), new CANNON.Vec3(0, -0.18 * s, 0));
+        pBody.addShape(new CANNON.Cylinder(0.08 * s, 0.13 * s, 0.3 * s, 12), new CANNON.Vec3(0, 0.05 * s, 0), qCyl);
+        pBody.addShape(new CANNON.Sphere(0.09 * s), new CANNON.Vec3(0, 0.31 * s, 0));
+        pBody.updateBoundingRadius();
 
         pBody.linearDamping = targetPinCount > 50 ? 0.30 : 0.2;
         pBody.angularDamping = targetPinCount > 50 ? 0.35 : 0.3;
@@ -2615,7 +2662,7 @@ function createPins(offset = 0) {
                 const collider = e.contact.bi === pBody ? e.contact.bj : e.contact.bi;
                 if (chaosModifiers.isExplosive && ballBody && collider === ballBody) {
                     const explosionPosition = pBody.position.clone();
-                    spawnExplosionEffect({ x: explosionPosition.x, y: explosionPosition.y, z: explosionPosition.z }, 0xffaa33, 14, 2);
+spawnExplosionEffect({ x: explosionPosition.x, y: explosionPosition.y, z: explosionPosition.z }, 0xffaa33, 14, 1);
                     playGameSound('explosion');
 
                     pins.forEach(pin => {
@@ -2934,12 +2981,88 @@ function updateImpacts() {
     }
 }
 
+// ============================================
+// EXPLOSION VISUAL EFFECT UPDATE
+// ============================================
 
+// Animate active explosion effects each frame
+function updateExplosions() {
+    for (let i = activeExplosions.length - 1; i >= 0; i--) {
+        const exp = activeExplosions[i];
+        exp.life -= 0.025; // Fade over ~40 frames
+
+        if (exp.life <= 0) {
+            // Cleanup all explosion meshes
+            exp.meshes.forEach(m => scene.remove(m.mesh));
+            if (exp.points) scene.remove(exp.points.mesh);
+            exp.smokeParticles.forEach(s => scene.remove(s.mesh));
+            if (exp.light) scene.remove(exp.light);
+            activeExplosions.splice(i, 1);
+            continue;
+        }
+
+        const lifeRatio = exp.life / exp.maxLife;
+
+        // Update fireball core and shockwave
+        exp.meshes.forEach(m => {
+            if (m.type === 'fireball') {
+                const scale = (1.0 + (1.0 - lifeRatio) * 3) * m.scale;
+                m.mesh.scale.setScalar(scale);
+                m.mesh.material.opacity = lifeRatio * 0.9;
+            } else if (m.type === 'shockwave') {
+                const scale = (1.0 + (1.0 - lifeRatio) * 8) * m.scale;
+                m.mesh.scale.setScalar(scale);
+                m.mesh.material.opacity = lifeRatio * 0.7;
+            }
+        });
+
+        // Update Points-based burst particles (SOFT approach)
+        if (exp.points) {
+            const posAttr = exp.points.mesh.geometry.attributes.position;
+            const colorAttr = exp.points.mesh.geometry.attributes.color;
+            const positions = posAttr.array;
+            const colors = colorAttr.array;
+
+            for (let j = 0; j < exp.points.velocities.length; j++) {
+                const vel = exp.points.velocities[j];
+                positions[j * 3] += vel.x;
+                positions[j * 3 + 1] += vel.y;
+                positions[j * 3 + 2] += vel.z;
+                vel.y -= 0.003; // Gravity
+
+                // Fade vertex colors instead of material opacity
+                colors[j * 3] *= 0.985;
+                colors[j * 3 + 1] *= 0.985;
+                colors[j * 3 + 2] *= 0.985;
+            }
+
+            posAttr.needsUpdate = true;
+            colorAttr.needsUpdate = true;
+            exp.points.mesh.material.opacity = lifeRatio;
+        }
+
+        // Update smoke particles
+        exp.smokeParticles.forEach(s => {
+            s.mesh.position.add(s.velocity);
+            s.mesh.material.opacity = lifeRatio * 0.5;
+            const sScale = 1.0 + (1.0 - lifeRatio) * 2;
+            s.mesh.scale.setScalar(sScale);
+        });
+
+        // Update flash light intensity
+        if (exp.light) {
+            const baseIntensity = 5 * (exp.meshes[0]?.scale || 1);
+            exp.light.intensity = lifeRatio * baseIntensity;
+        }
+    }
+}
 
 function spawnExplosionEffect(pos, color, count, scale = 1.0) {
-    // Apply physical force to nearby pins to make them fall
-    const explosionRadius = 5.0 * scale; // Radius of explosion effect
-    const explosionForce = 100.0 * scale; // Strength of the force
+    const isMobile = (typeof isMobileClient !== 'undefined' && isMobileClient());
+
+    // Physical force remains the same
+    const explosionRadius = 5.0 * scale;
+    const explosionForce = 100.0 * scale;
 
     pins.forEach(pin => {
         if (pin.body) {
@@ -2948,29 +3071,112 @@ function spawnExplosionEffect(pos, color, count, scale = 1.0) {
             const dz = pin.body.position.z - pos.z;
             const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (distance < explosionRadius && distance > 0) {
-                // Calculate directional force
                 const factor = explosionForce / distance;
-                const force = new CANNON.Vec3(
-                    (dx / distance) * factor,
-                    (dy / distance) * factor,
-                    (dz / distance) * factor
-                );
+                const force = new CANNON.Vec3((dx / distance) * factor, (dy / distance) * factor, (dz / distance) * factor);
                 pin.body.applyImpulse(force, pin.body.position);
             }
         }
     });
 
+    // Flash dimmer logic
     for (let i = 0; i < 3; i++) {
         setTimeout(() => {
-            triggerDimmer(true); // Turn on
-
-            // Turn off shortly after
-            setTimeout(() => {
-                triggerDimmer(false);
-            }, 150);
-
-        }, i * 50); // Triggers every 300ms
+            triggerDimmer(true);
+            setTimeout(() => triggerDimmer(false), 100);
+        }, i * 50);
     }
+
+    const explosionGroup = {
+        meshes: [],
+        particles: [],
+        smokeParticles: [],
+        light: null,
+        life: 1.0,
+        maxLife: 1.0
+    };
+
+    // 1. Fireball Core (Reusing Geometry)
+    const fireballMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
+    const fireball = new THREE.Mesh(SHARED_FIRE_GEO, fireballMat);
+    fireball.scale.setScalar(0.1 * scale);
+    fireball.position.set(pos.x, pos.y, pos.z);
+    scene.add(fireball);
+    explosionGroup.meshes.push({ mesh: fireball, type: 'fireball', scale: scale });
+
+    // 2. Particle burst - SOFT POINTS APPROACH (1 draw call instead of 30+)
+    const pCount = isMobile ? 15 : 40;
+    const positions = new Float32Array(pCount * 3);
+    const colors = new Float32Array(pCount * 3);
+    const velocities = [];
+    const colorPalette = [new THREE.Color(0xff4500), new THREE.Color(0xff8c00), new THREE.Color(0xffd700), new THREE.Color(0xff2222), new THREE.Color(0xff6600)];
+
+    for (let i = 0; i < pCount; i++) {
+        positions[i * 3] = pos.x + (Math.random() - 0.5) * 0.2 * scale;
+        positions[i * 3 + 1] = pos.y + (Math.random() - 0.5) * 0.2 * scale;
+        positions[i * 3 + 2] = pos.z + (Math.random() - 0.5) * 0.2 * scale;
+
+        const c = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI;
+        const speed = (0.1 + Math.random() * 0.3) * scale;
+        velocities.push(new THREE.Vector3(
+            Math.sin(phi) * Math.cos(theta) * speed,
+            Math.sin(phi) * Math.sin(theta) * speed + 0.1 * scale,
+            Math.cos(phi) * speed
+        ));
+    }
+
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    pGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const points = new THREE.Points(pGeo, explosionPointMat.clone());
+    scene.add(points);
+    explosionGroup.points = { mesh: points, velocities: velocities };
+
+    // 3. Shockwave ring (Reusing Geometry)
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const ring = new THREE.Mesh(SHARED_RING_GEO, ringMat);
+    ring.scale.setScalar(0.2 * scale);
+    ring.position.set(pos.x, LANE_Y + 0.05, pos.z);
+    ring.rotation.x = -Math.PI / 2;
+    scene.add(ring);
+    explosionGroup.meshes.push({ mesh: ring, type: 'shockwave', scale: scale });
+
+    // 4. Point light - PC only (skip on mobile to avoid GPU lighting recalculation)
+    if (!isMobile) {
+        const flashLight = new THREE.PointLight(0xff6600, 5 * scale, 10 * scale);
+        flashLight.position.set(pos.x, pos.y + 0.5 * scale, pos.z);
+        scene.add(flashLight);
+        explosionGroup.light = flashLight;
+    }
+
+    // 5. Smoke particles - OPTIMIZED
+    const smokeCount = isMobile ? 4 : 8;
+    for (let i = 0; i < smokeCount; i++) {
+        const smoke = new THREE.Mesh(SHARED_S_GEO, SMOKE_MAT);
+        const s = (0.05 + Math.random() * 0.05) * scale;
+        smoke.scale.setScalar(s);
+
+        smoke.position.set(
+            pos.x + (Math.random() - 0.5) * 0.3 * scale,
+            pos.y + Math.random() * 0.2 * scale,
+            pos.z + (Math.random() - 0.5) * 0.3 * scale
+        );
+        const sVel = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.02 * scale,
+            0.03 * scale + Math.random() * 0.02 * scale,
+            (Math.random() - 0.5) * 0.02 * scale
+        );
+        scene.add(smoke);
+        explosionGroup.smokeParticles.push({ mesh: smoke, velocity: sVel });
+    }
+
+    activeExplosions.push(explosionGroup);
 }
 
 function onTouchStart(e) {
@@ -3196,6 +3402,11 @@ function checkPinsStability() {
 function throwBall(speed, sideSpeed = 0) {
     isBowling = true;
     document.getElementById('hint').style.opacity = '0';
+
+    // Auto-close chaos events box when ball is launched
+    if (typeof closeChaosInfoBox === 'function') {
+        closeChaosInfoBox();
+    }
 
     const baseMass = (targetPinCount === 100) ? 680 : 500;
     const ballMass = baseMass * (typeof chaosModifiers !== 'undefined' && chaosModifiers.ballMassMult ? chaosModifiers.ballMassMult : 1.0);
@@ -3436,6 +3647,7 @@ function startReplay() {
 
     isReplaying = true;
     replayFrameIndex = 0;
+    actionCamInitialized = false;
 
     document.getElementById('msg-box').style.display = 'none';
 
@@ -3634,8 +3846,13 @@ function resetGame() {
     });
     pins = [];
 
-        // Dispose pin circle outlines (now children of groups, handled in pins loop)
-        pinCircles = []; 
+        // Dispose pin circle outlines (separate from pin groups, dispose explicitly)
+        pinCircles.forEach(circle => {
+            scene.remove(circle);
+            if (circle.geometry) circle.geometry.dispose();
+            if (circle.material) circle.material.dispose();
+        });
+        pinCircles = [];
 
         // Dispose opponent ghost pins
         opponentGhostPins.forEach(pin => {
@@ -3644,6 +3861,15 @@ function resetGame() {
             if (pin.material) pin.material.dispose();
         });
         opponentGhostPins = [];
+
+        // Cleanup any active explosion visual effects
+        activeExplosions.forEach(exp => {
+            exp.meshes.forEach(m => scene.remove(m.mesh));
+            if (exp.points) scene.remove(exp.points.mesh);
+            exp.smokeParticles.forEach(s => scene.remove(s.mesh));
+            if (exp.light) scene.remove(exp.light);
+        });
+        activeExplosions = [];
 
         createPins(myPlayerOffset);
     if (isMultiplayerActive) {
@@ -3716,7 +3942,8 @@ window.addEventListener('touchstart', unlockAudio);
 let actionCamInitialized = false; // Add this global variable at the top of your script
 
 function updateActionCam() {
-    if (!isBowling) {
+    // Show action cam during active bowling OR replay playback
+    if (!isBowling && !isReplaying) {
         document.getElementById('action-cam-container').style.display = 'none';
         actionTargetPin = null;
         actionCamInitialized = false; // Reset for the next throw
@@ -3726,12 +3953,21 @@ function updateActionCam() {
     document.getElementById('action-cam-container').style.display = 'block';
     const currentTime = performance.now();
 
-    if (!impactOccurred) {
+    // Determine if we're in pre-impact or post-impact phase.
+    // During replay, infer impact phase from ball position in replay data.
+    let inImpactPhase = impactOccurred;
+    if (isReplaying && replayData.length > 0) {
+        const frame = replayData[Math.min(replayFrameIndex, replayData.length - 1)];
+        inImpactPhase = frame && frame.ball.pos.z < -15;
+    }
+
+    if (!inImpactPhase) {
+        // Pre-impact: follow the ball
         const ballPos = ballMesh.position;
         const targetPos = new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3);
         const lookAtTarget = new THREE.Vector3(ballPos.x, 0.4, ballPos.z - 2);
 
-        // FIX: If this is the first frame of the throw, snap the camera 
+        // FIX: If this is the first frame of the throw, snap the camera
         // immediately so it doesn't "fly" from the center of the world.
         if (!actionCamInitialized) {
             actionCamera.position.copy(targetPos);
@@ -3749,12 +3985,22 @@ function updateActionCam() {
         const gutterLimit = is100 ? 3.8 : 2.25;
 
         pins.forEach(p => {
-            const v = p.body.velocity.length();
-            const isOnLane = p.body.position.y > 0.1 && Math.abs(p.body.position.x - myPlayerOffset) < gutterLimit;
+            // Use mesh position (already updated from replay data during replay)
+            const pinPos = p.mesh.position;
+            let v;
+            if (isReplaying) {
+                // During replay, estimate activity from displacement
+                const dx = pinPos.x - p.initialPos.x;
+                const dz = pinPos.z - p.initialPos.z;
+                v = Math.sqrt(dx * dx + dz * dz) > 0.05 ? 3.0 : 0;
+            } else {
+                v = p.body.velocity.length();
+            }
+            const isOnLane = pinPos.y > 0.1 && Math.abs(pinPos.x - myPlayerOffset) < gutterLimit;
 
             if (isOnLane && v > 0.8) {
                 const distFromCenter = Math.sqrt(
-                    Math.pow(p.body.position.x - myPlayerOffset, 2) + Math.pow(p.body.position.z - DECK_CENTER_Z, 2)
+                    Math.pow(pinPos.x - myPlayerOffset, 2) + Math.pow(pinPos.z - DECK_CENTER_Z, 2)
                 );
                 const priority = v / (distFromCenter + 1);
                 if (priority > highestPriority) {
@@ -3764,12 +4010,17 @@ function updateActionCam() {
             }
         });
 
-        // Clear target if it falls or goes out of bounds
+        // During replay, don't clear target immediately when pin goes out of lane.
+        // Keep following it for dramatic effect, only clear if it's very far gone.
         if (actionTargetPin) {
-            const targetIsFallen = actionTargetPin.body.position.y < 0.1 ||
-                Math.abs(actionTargetPin.body.position.x - myPlayerOffset) > gutterLimit;
-            if (targetIsFallen) {
-                actionTargetPin = null;
+            const pinPos = actionTargetPin.mesh.position;
+            if (isReplaying) {
+                const targetIsFarGone = pinPos.y < -2 || Math.abs(pinPos.x - myPlayerOffset) > gutterLimit + 3;
+                if (targetIsFarGone) actionTargetPin = null;
+            } else {
+                const targetIsFallen = actionTargetPin.body.position.y < 0.1 ||
+                    Math.abs(actionTargetPin.body.position.x - myPlayerOffset) > gutterLimit;
+                if (targetIsFallen) actionTargetPin = null;
             }
         }
 
@@ -3782,13 +4033,14 @@ function updateActionCam() {
         }
 
         if (actionTargetPin) {
+            const pinPos = actionTargetPin.mesh.position;
             const offsetX = is100 ? 3.2 : 1.8;
             const offsetY = is100 ? 2.5 : 1.3;
             const offsetZ = is100 ? 5.5 : 2.5;
 
-            let targetX = actionTargetPin.mesh.position.x + offsetX;
+            let targetX = pinPos.x + offsetX;
             const targetY = offsetY;
-            const targetZ = actionTargetPin.mesh.position.z + offsetZ;
+            const targetZ = pinPos.z + offsetZ;
 
             const currentLaneWidth = is100 ? 7.6 : 4.5;
             const safetyMargin = 0.8;
@@ -3799,12 +4051,17 @@ function updateActionCam() {
 
             const targetCamPos = new THREE.Vector3(targetX, targetY, targetZ);
             actionCamera.position.lerp(targetCamPos, 0.04);
-            actionCamera.lookAt(actionTargetPin.mesh.position);
+            actionCamera.lookAt(pinPos);
         } else {
-            // Fallback view of the deck
-            const fallbackPos = new THREE.Vector3(myPlayerOffset, is100 ? 4 : 2, DECK_CENTER_Z + 5);
-            actionCamera.position.lerp(fallbackPos, 0.02);
-            actionCamera.lookAt(myPlayerOffset, 0, DECK_CENTER_Z);
+            // Smooth fallback: follow the ball instead of snapping to fixed deck view
+            const ballPos = ballMesh.position;
+            const fallbackPos = new THREE.Vector3(
+                ballPos.x + (is100 ? 2.0 : 1.0),
+                is100 ? 3.0 : 2.0,
+                ballPos.z + (is100 ? 5.0 : 3.0)
+            );
+            actionCamera.position.lerp(fallbackPos, 0.03);
+            actionCamera.lookAt(ballPos.x, 0.5, ballPos.z - 2);
         }
     }
 
@@ -3829,9 +4086,37 @@ function animate() {
 
     // REMOVED: No ice timer (persistent effect per user feedback)
 
+    // Save pin velocities before physics step (for ice lane pin slow motion)
+    const pinPreStepVelocities = [];
+    const pinPreStepAngularVelocities = [];
+    if (typeof chaosModifiers !== 'undefined' && chaosModifiers.isIceLane && chaosModifiers.pinTimeScale < 1 && pins.length > 0) {
+        pins.forEach(pin => {
+            pinPreStepVelocities.push(pin.body.velocity.clone());
+            pinPreStepAngularVelocities.push(pin.body.angularVelocity.clone());
+        });
+    }
+
     if (world && !isReplaying) {
         const currentScale = (typeof timeScale !== 'undefined') ? timeScale : 1;
         world.step(1 / 60 * currentScale);
+
+        // Apply pin slow motion after physics step (ice lane effect - pins only, not ball)
+        if (typeof chaosModifiers !== 'undefined' && chaosModifiers.isIceLane && chaosModifiers.pinTimeScale < 1 && pins.length > 0) {
+            const s = chaosModifiers.pinTimeScale;
+            pins.forEach((pin, i) => {
+                const v0 = pinPreStepVelocities[i];
+                const v1 = pin.body.velocity;
+                v1.x = v0.x * (1 - s) + v1.x * s;
+                v1.y = v0.y * (1 - s) + v1.y * s;
+                v1.z = v0.z * (1 - s) + v1.z * s;
+
+                const av0 = pinPreStepAngularVelocities[i];
+                const av1 = pin.body.angularVelocity;
+                av1.x = av0.x * (1 - s) + av1.x * s;
+                av1.y = av0.y * (1 - s) + av1.y * s;
+                av1.z = av0.z * (1 - s) + av1.z * s;
+            });
+        }
 
         // NEW: Dynamic damping update (persists during throw)
         if (ballBody && typeof chaosModifiers !== 'undefined' && typeof chaosModifiers.linearDampingMult !== 'undefined') {
@@ -3848,7 +4133,24 @@ function animate() {
     }
 
     if (ballMesh && ballBody) {
-        if (!isReplaying) {
+        if (isReplaying && replayData.length > 0) {
+            // REPLAY PLAYBACK
+            if (typeof replayFrameIndex !== 'undefined' && replayFrameIndex < replayData.length) {
+                const frame = replayData[replayFrameIndex];
+                ballMesh.position.copy(frame.ball.pos);
+                ballMesh.quaternion.copy(frame.ball.quat);
+                pins.forEach((p, i) => {
+                    if (frame.pins[i]) {
+                        p.mesh.position.copy(frame.pins[i].pos);
+                        p.mesh.quaternion.copy(frame.pins[i].quat);
+                    }
+                });
+                replayFrameIndex++;
+            } else if (typeof stopReplay === 'function') {
+                stopReplay();
+            }
+        } else {
+            // NORMAL GAMEPLAY
             ballMesh.position.copy(ballBody.position);
             ballMesh.quaternion.copy(ballBody.quaternion);
 
@@ -3870,81 +4172,66 @@ function animate() {
             if (typeof updateIceLaneOverlay === 'function') {
                 updateIceLaneOverlay(myPlayerOffset);
             }
-        }
 
-        if (isMultiplayerActive && matchRef) {
-            ballSyncCounter += 1;
-            if (ballSyncCounter % 3 === 0) {
-                const activeBall = isBowling || ballBody.velocity.length() > 0.04;
-                matchRef.child('ballUpdate').set({
-                    active: activeBall,
-                    pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
-                    quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w },
-                    from: getLocalPlayerId(),
-                    timestamp: Date.now()
-                }).catch((err) => {
-                });
+            if (isMultiplayerActive && matchRef) {
+                ballSyncCounter += 1;
+                if (ballSyncCounter % 3 === 0) {
+                    const activeBall = isBowling || ballBody.velocity.length() > 0.04;
+                    matchRef.child('ballUpdate').set({
+                        active: activeBall,
+                        pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
+                        quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w },
+                        from: getLocalPlayerId(),
+                        timestamp: Date.now()
+                    }).catch((err) => {
+                    });
+                }
+
+                if (ballSyncCounter % 3 === 0 && pins.length > 0) {
+                    const pinPayload = pins.map(p => ({
+                        pos: {
+                            x: p.body.position.x,
+                            y: p.body.position.y,
+                            z: p.body.position.z
+                        },
+                        quat: {
+                            x: p.body.quaternion.x,
+                            y: p.body.quaternion.y,
+                            z: p.body.quaternion.z,
+                            w: p.body.quaternion.w
+                        }
+                    }));
+                    matchRef.child('pinUpdate').set({
+                        from: getLocalPlayerId(),
+                        timestamp: Date.now(),
+                        pins: pinPayload
+                    }).catch((err) => {
+                    });
+                }
             }
 
-            if (ballSyncCounter % 3 === 0 && pins.length > 0) {
-                const pinPayload = pins.map(p => ({
-                    pos: {
-                        x: p.body.position.x,
-                        y: p.body.position.y,
-                        z: p.body.position.z
-                    },
-                    quat: {
-                        x: p.body.quaternion.x,
-                        y: p.body.quaternion.y,
-                        z: p.body.quaternion.z,
-                        w: p.body.quaternion.w
+            if (pins && pins.length > 0) {
+                pins.forEach(p => {
+                    if (p.mesh && p.body) {
+                        p.mesh.position.copy(p.body.position);
+                        p.mesh.quaternion.copy(p.body.quaternion);
                     }
-                }));
-                matchRef.child('pinUpdate').set({
-                    from: getLocalPlayerId(),
-                    timestamp: Date.now(),
-                    pins: pinPayload
-                }).catch((err) => {
                 });
             }
-        }
 
-        if (pins && pins.length > 0) {
-            pins.forEach(p => {
-                if (p.mesh && p.body) {
-                    p.mesh.position.copy(p.body.position);
-                    p.mesh.quaternion.copy(p.body.quaternion);
-                }
-            });
-        }
-
-        // REPLAY RECORDING: Capture frame data during gameplay
-        if (isBowling && replayData.length < 900) {
-            replayData.push({
-                ball: {
-                    pos: ballBody.position.clone(),
-                    quat: ballBody.quaternion.clone()
-                },
-                pins: pins.map(p => ({
-                    pos: p.body.position.clone(),
-                    quat: p.body.quaternion.clone()
-                }))
-            });
-        }
-    } else {
-        if (typeof replayFrameIndex !== 'undefined' && replayData && replayFrameIndex < replayData.length) {
-            const frame = replayData[replayFrameIndex];
-            ballMesh.position.copy(frame.ball.pos);
-            ballMesh.quaternion.copy(frame.ball.quat);
-            pins.forEach((p, i) => {
-                if (frame.pins[i]) {
-                    p.mesh.position.copy(frame.pins[i].pos);
-                    p.mesh.quaternion.copy(frame.pins[i].quat);
-                }
-            });
-            replayFrameIndex++;
-        } else if (typeof stopReplay === 'function') {
-            stopReplay();
+            // REPLAY RECORDING: Capture frame data during gameplay
+            if (isBowling && replayData.length < 900) {
+                replayData.push({
+                    ball: {
+                        pos: ballBody.position.clone(),
+                        quat: ballBody.quaternion.clone()
+                    },
+                    pins: pins.map(p => ({
+                        pos: p.body.position.clone(),
+                        quat: p.body.quaternion.clone()
+                    }))
+                });
+            }
         }
     }
 
@@ -4031,6 +4318,7 @@ function animate() {
     if (typeof updateActionCam === 'function') updateActionCam();
     if (typeof updateLightTrail === 'function') updateLightTrail();
     if (typeof updateImpacts === 'function') updateImpacts();
+    if (typeof updateExplosions === 'function') updateExplosions();
 
     if (renderer && scene && camera) {
         renderer.render(scene, camera);
@@ -4095,21 +4383,19 @@ function updateIceLaneOverlay(offset = 0) {
             map: iceTexture,
             transparent: true,
             opacity: 0.4,
-            blending: THREE.AdditiveBlending
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
         });
 
         iceLaneOverlay = new THREE.Mesh(overlayGeo, overlayMat);
         iceLaneOverlay.rotation.x = -Math.PI / 2;
         iceLaneOverlay.position.set(offset, LANE_Y + 0.11, -35);
         scene.add(iceLaneOverlay);
-
-        console.log('🧊 Ice lane overlay created');
     } else if (!chaosModifiers.isIceLane && iceLaneOverlay) {
         scene.remove(iceLaneOverlay);
         iceLaneOverlay.material.dispose();
         iceLaneOverlay.geometry.dispose();
         iceLaneOverlay = null;
-        console.log('🧊 Ice lane overlay removed');
     } else if (iceLaneOverlay && chaosModifiers.isIceLane) {
         // Animate existing overlay
         iceLaneOverlay.material.opacity = 0.3 + Math.sin(Date.now() * 0.005) * 0.1;

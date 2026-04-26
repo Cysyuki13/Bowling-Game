@@ -968,6 +968,66 @@
             transition: opacity 0.4s ease;
         }
 
+        /* Tier Badges for Active Events */
+        .tier-badge {
+            font-size: 9px !important;
+            padding: 1px 5px !important;
+            border-radius: 3px !important;
+            font-weight: bold !important;
+            border: 1px solid currentColor;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .tier-badge.tier-silver {
+            background: rgba(192, 192, 192, 0.2);
+            color: #c0c0c0;
+            border-color: rgba(192, 192, 192, 0.5);
+        }
+
+        .tier-badge.tier-gold {
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+            border-color: rgba(255, 215, 0, 0.5);
+        }
+
+        .tier-badge.tier-prismatic {
+            background: rgba(255, 0, 255, 0.2);
+            color: #ff00ff;
+            border-color: rgba(255, 0, 255, 0.5);
+        }
+
+        .tier-badge.tier-error {
+            background: rgba(255, 68, 68, 0.3);
+            color: #ff4444;
+            border-color: rgba(255, 68, 68, 0.6);
+        }
+
+        /* Transmute Label */
+        .transmute-label {
+            background: linear-gradient(45deg, #ff6b6b, #ff8e8e) !important;
+            color: white !important;
+            font-size: 9px !important;
+            padding: 1px 6px !important;
+            border-radius: 10px !important;
+            font-weight: bold !important;
+            box-shadow: 0 1px 4px rgba(255, 107, 107, 0.5) !important;
+            white-space: nowrap;
+            flex-shrink: 0;
+            animation: transmutePulse 2s ease-in-out infinite;
+        }
+
+        @keyframes transmutePulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 1px 4px rgba(255, 107, 107, 0.5);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 2px 8px rgba(255, 107, 107, 0.8);
+            }
+        }
+
 
         .chaos-controls.chaos-visible {
             opacity: 1;
