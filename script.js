@@ -1921,12 +1921,13 @@ function init() {
     if (opponentBallMesh) opponentBallMesh.visible = false;
     // -------------------------------
 
-    // Initialize language system
+// Initialize language system
     document.documentElement.lang = currentLanguage;
     updateAllUIText();
 
     showMatchmakingPanel();
     unlockAudio();
+    loginAnonymously();
     animate();
 }
 function toggleActionCamSize(event) {
@@ -1959,6 +1960,26 @@ function closeSettingsMenu() {
     const menu = document.getElementById('settings-menu');
     if (menu) menu.style.display = 'none';
 }
+
+// ============================================
+// FIREBASE ANONYMOUS AUTHENTICATION
+// ============================================
+
+function loginAnonymously() {
+    window.auth.signInAnonymously()
+        .then(() => {
+            console.log("Logged in as anonymous user");
+            // You can now safely call createMatch() or joinGame()
+        })
+        .catch((error) => {
+            console.error("Auth Error:", error.code, error.message);
+            updateMatchmakingStatus('Authentication failed.');
+        });
+}
+
+// ============================================
+// HOME AND NAVIGATION
+// ============================================
 
 function goHome() {
     playGameSound('ui_click');
