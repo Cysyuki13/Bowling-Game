@@ -14,6 +14,6 @@ const firebaseConfig = {
 // 3. Initialize Firebase and mount it to the global variable database
 firebase.initializeApp(firebaseConfig);
 
-// Initialize Firebase Authentication services
-window.auth = firebase.auth();
+// Auth is intentionally disabled in this build to avoid API_KEY_HTTP_REFERRER_BLOCKED (403).
 window.db = firebase.database();
+

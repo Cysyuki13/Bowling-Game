@@ -1121,6 +1121,21 @@ function startSinglePlayer() {
 }
 
 function startSelectedMode(mode) {
+    // === 新增：在此處解鎖並恢復音效 ===
+    // 檢查並恢復 THREE.js 的音效環境
+    if (typeof THREE !== 'undefined' && THREE.AudioContext) {
+        const audioCtx = THREE.AudioContext.getContext();
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }
+
+    // 如果你有額外使用 Tone.js 或其他 Web Audio API，也可以一併在這裡喚醒
+    if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
+        Tone.context.resume();
+    }
+    // ===================================
+
     document.getElementById('mode-select-modal').style.display = 'none';
     isChaosMode = (mode === 'chaos');
     resetChaosState();
@@ -1921,15 +1936,18 @@ function init() {
     if (opponentBallMesh) opponentBallMesh.visible = false;
     // -------------------------------
 
-// Initialize language system
+    // Initialize language system
     document.documentElement.lang = currentLanguage;
     updateAllUIText();
 
+    // Multiplayer requires Firebase auth; keep anonymous login disabled.
+    // Keep the menu visible so the player starts from the menu page.
     showMatchmakingPanel();
     unlockAudio();
-    loginAnonymously();
     animate();
 }
+
+
 function toggleActionCamSize(event) {
     if (event) event.stopPropagation();
     playGameSound('ui_click');
@@ -1966,16 +1984,11 @@ function closeSettingsMenu() {
 // ============================================
 
 function loginAnonymously() {
-    window.auth.signInAnonymously()
-        .then(() => {
-            console.log("Logged in as anonymous user");
-            // You can now safely call createMatch() or joinGame()
-        })
-        .catch((error) => {
-            console.error("Auth Error:", error.code, error.message);
-            updateMatchmakingStatus('Authentication failed.');
-        });
+    // Firebase Auth is disabled to avoid API_KEY_HTTP_REFERRER_BLOCKED (403).
+    // Multiplayer features requiring authentication are not supported in this build.
+    return Promise.resolve();
 }
+
 
 // ============================================
 // HOME AND NAVIGATION
@@ -2683,7 +2696,7 @@ function createPins(offset = 0) {
                 const collider = e.contact.bi === pBody ? e.contact.bj : e.contact.bi;
                 if (chaosModifiers.isExplosive && ballBody && collider === ballBody) {
                     const explosionPosition = pBody.position.clone();
-spawnExplosionEffect({ x: explosionPosition.x, y: explosionPosition.y, z: explosionPosition.z }, 0xffaa33, 14, 1);
+                    spawnExplosionEffect({ x: explosionPosition.x, y: explosionPosition.y, z: explosionPosition.z }, 0xffaa33, 14, 1);
                     playGameSound('explosion');
 
                     pins.forEach(pin => {
@@ -3867,32 +3880,32 @@ function resetGame() {
     });
     pins = [];
 
-        // Dispose pin circle outlines (separate from pin groups, dispose explicitly)
-        pinCircles.forEach(circle => {
-            scene.remove(circle);
-            if (circle.geometry) circle.geometry.dispose();
-            if (circle.material) circle.material.dispose();
-        });
-        pinCircles = [];
+    // Dispose pin circle outlines (separate from pin groups, dispose explicitly)
+    pinCircles.forEach(circle => {
+        scene.remove(circle);
+        if (circle.geometry) circle.geometry.dispose();
+        if (circle.material) circle.material.dispose();
+    });
+    pinCircles = [];
 
-        // Dispose opponent ghost pins
-        opponentGhostPins.forEach(pin => {
-            scene.remove(pin);
-            if (pin.geometry) pin.geometry.dispose();
-            if (pin.material) pin.material.dispose();
-        });
-        opponentGhostPins = [];
+    // Dispose opponent ghost pins
+    opponentGhostPins.forEach(pin => {
+        scene.remove(pin);
+        if (pin.geometry) pin.geometry.dispose();
+        if (pin.material) pin.material.dispose();
+    });
+    opponentGhostPins = [];
 
-        // Cleanup any active explosion visual effects
-        activeExplosions.forEach(exp => {
-            exp.meshes.forEach(m => scene.remove(m.mesh));
-            if (exp.points) scene.remove(exp.points.mesh);
-            exp.smokeParticles.forEach(s => scene.remove(s.mesh));
-            if (exp.light) scene.remove(exp.light);
-        });
-        activeExplosions = [];
+    // Cleanup any active explosion visual effects
+    activeExplosions.forEach(exp => {
+        exp.meshes.forEach(m => scene.remove(m.mesh));
+        if (exp.points) scene.remove(exp.points.mesh);
+        exp.smokeParticles.forEach(s => scene.remove(s.mesh));
+        if (exp.light) scene.remove(exp.light);
+    });
+    activeExplosions = [];
 
-        createPins(myPlayerOffset);
+    createPins(myPlayerOffset);
     if (isMultiplayerActive) {
         const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
         const remoteOffset = isHost ? offsetDistance : 0;
