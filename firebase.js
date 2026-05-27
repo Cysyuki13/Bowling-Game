@@ -17,4 +17,3 @@ firebase.initializeApp(firebaseConfig);
 // Initialize Firebase Authentication services
 window.auth = firebase.auth();
 window.db = firebase.database();
-window.db.goOffline();
