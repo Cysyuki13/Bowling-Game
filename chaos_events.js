@@ -334,15 +334,65 @@ function getRandomChaosEvents() {
 }
 
 // Console function: force a specific chaos event to appear as first choice
-// Usage: forceChaosEvent('explosive_ball')  or  forceChaosEvent('giant_ball')
-window.forceChaosEvent = function(eventId) {
-    const event = ChaosEventLibrary.find(e => e.id === eventId);
-    if (!event) {
+// Usage examples:
+//   forceChaosEvent('explosive_ball')
+//   forceChaosEvent(2)            // by index number (0-based)
+//   forceChaosEvent('2')
+//   forceChaosEvent('ice_lane')
+//   forceChaosEvent('極寒冰道')   // by id name (case-insensitive)
+window.forceChaosEvent = function(input) {
+    if (input === undefined || input === null || input === '') {
+        console.error('[forceChaosEvent] Invalid input:', input);
         return false;
     }
-    forcedChaosEventId = eventId;
-    return true;
+
+    // 1) numeric index (0-based)
+    if (typeof input === 'number' && Number.isFinite(input)) {
+        const idx = input;
+        const event = ChaosEventLibrary[idx];
+        if (!event) {
+            console.error('[forceChaosEvent] No event at index:', idx);
+            return false;
+        }
+        forcedChaosEventId = event.id;
+        return true;
+    }
+
+    const raw = String(input).trim();
+
+    // 2) numeric string index
+    if (/^\d+$/.test(raw)) {
+        const idx = parseInt(raw, 10);
+        const event = ChaosEventLibrary[idx];
+        if (!event) {
+            console.error('[forceChaosEvent] No event at index:', idx);
+            return false;
+        }
+        forcedChaosEventId = event.id;
+        return true;
+    }
+
+    const lower = raw.toLowerCase();
+
+    // 3) id exact match
+    let event = ChaosEventLibrary.find(e => String(e.id).toLowerCase() === lower);
+    if (event) {
+        forcedChaosEventId = event.id;
+        return true;
+    }
+
+    // 4) id name match (case-insensitive; also supports Chinese/other exact string)
+    event = ChaosEventLibrary.find(e => String(e.name).toLowerCase() === lower || String(e.name) === raw);
+    if (event) {
+        forcedChaosEventId = event.id;
+        return true;
+    }
+
+    console.error('[forceChaosEvent] Unknown event input:', input);
+    console.log('Use forceChaosEvent(<index>) or forceChaosEvent(<id>) or forceChaosEvent(<name>).');
+    return false;
 };
+
 
 // Function to activate an event
 function activateChaosEvent(eventData, sourceEventId = null) {
@@ -581,6 +631,7 @@ function resetChaosState() {
     updateChaosEventsDisplay();
 }
 
-console.log("forceChaosEvent('???')");
+console.log("forceChaosEvent('_')");
 console.log("Available event IDs:");
-ChaosEventLibrary.forEach(e => console.log(`- ${e.id} (${e.name})`));
+ChaosEventLibrary.forEach((e, idx) => console.log(`- [${idx}] ${e.id} (${e.name})`));
+
