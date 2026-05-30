@@ -246,7 +246,6 @@ const translations = {
         multiplayerDesc: 'Play online with others',
         createRoom: 'Create Room',
         joinRoom: 'Join Room',
-        autoMatch: 'Auto Match',
         singlePlayer: 'Single Player',
         cancelMatch: 'Cancel Match',
         roomCode: 'Room Code: ',
@@ -310,7 +309,6 @@ const translations = {
         multiplayerDesc: '與其他玩家線上對戰',
         createRoom: '建立房間',
         joinRoom: '加入房間',
-        autoMatch: '自動配對',
         singlePlayer: '單人遊戲',
         cancelMatch: '取消配對',
         roomCode: '房間代碼: ',
@@ -429,7 +427,7 @@ function updateAllUIText() {
     const matchmakingDesc = document.querySelector('#matchmaking-panel p');
     if (matchmakingDesc) matchmakingDesc.innerText = t('multiplayerDesc');
 
-    // Update button texts if matchmaking panel exists
+    // Locate this block in updateAllUIText() and remove 'auto-match-btn' and its case:
     ['create-match-btn', 'join-match-btn', 'auto-match-btn', 'single-player-btn',
         'cancel-search-btn', 'join-code-btn', 'join-cancel-btn'].forEach(id => {
             const btn = document.getElementById(id);
@@ -437,6 +435,7 @@ function updateAllUIText() {
                 switch (id) {
                     case 'create-match-btn': btn.innerText = t('createRoom'); break;
                     case 'join-match-btn': btn.innerText = t('joinRoom'); break;
+                    // DELETE THIS LINE:
                     case 'auto-match-btn': btn.innerText = t('autoMatch'); break;
                     case 'single-player-btn': btn.innerText = t('singlePlayer'); break;
                     case 'cancel-search-btn': btn.innerText = t('cancelMatch'); break;
@@ -627,7 +626,6 @@ function handleOpponentDisconnect() {
     // Reset all buttons and UI state
     document.getElementById('create-match-btn').disabled = false;
     document.getElementById('join-match-btn').disabled = false;
-    document.getElementById('auto-match-btn').disabled = false;
     document.getElementById('single-player-btn').disabled = false;
     document.getElementById('cancel-search-btn').style.display = 'none';
     updateMatchmakingStatus(''); // Clear any status messages
@@ -756,7 +754,6 @@ function createMatch() {
 
     document.getElementById('create-match-btn').disabled = true;
     document.getElementById('join-match-btn').disabled = true;
-    document.getElementById('auto-match-btn').disabled = true;
     document.getElementById('single-player-btn').disabled = true;
     document.getElementById('cancel-search-btn').style.display = 'block';
 
@@ -909,7 +906,6 @@ function attemptJoinMatch() {
     isCreatingMatch = false;
     document.getElementById('create-match-btn').disabled = true;
     document.getElementById('join-match-btn').disabled = true;
-    document.getElementById('auto-match-btn').disabled = true;
     document.getElementById('single-player-btn').disabled = true;
     document.getElementById('cancel-search-btn').style.display = 'block';
     updateMatchmakingStatus('正在加入代碼: ' + code + ' ...');
@@ -946,166 +942,9 @@ function cancelMatchmaking() {
 
     document.getElementById('create-match-btn').disabled = false;
     document.getElementById('join-match-btn').disabled = false;
-    document.getElementById('auto-match-btn').disabled = false;
     document.getElementById('single-player-btn').disabled = false;
     document.getElementById('cancel-search-btn').style.display = 'none';
     updateMatchmakingStatus('');
-}
-
-// Initiate automatic matchmaking with time-slot based code generation
-function autoMatch() {
-    unlockAudio();
-    if (!window.db) {
-        updateMatchmakingStatus('Firebase 未初始化。');
-        return;
-    }
-    window.db.goOnline();
-
-    isSearchingForMatch = true;
-    document.getElementById('create-match-btn').disabled = true;
-    document.getElementById('join-match-btn').disabled = true;
-    document.getElementById('auto-match-btn').disabled = true;
-    document.getElementById('single-player-btn').disabled = true;
-    document.getElementById('cancel-search-btn').style.display = 'block';
-
-    updateMatchmakingStatus('searching');
-
-    // Generate a match code based on current time slot (every 10 seconds)
-    // This increases chance two players will use the same code
-    const timeSlot = Math.floor(Date.now() / 10000);
-    const autoMatchCode = String(10000 + (timeSlot % 90000)).slice(1);
-
-    matchRef = getMatchRef(autoMatchCode);
-    if (!matchRef) {
-        updateMatchmakingStatus('Firebase 未初始化。');
-        cancelMatchmaking();
-        return;
-    }
-
-    // Try to join an existing match first
-    matchRef.once('value').then((snapshot) => {
-        const data = snapshot.val();
-
-        if (data && data.host && !data.guest) {
-            // Validate: Don't join your own match
-            if (data.host.sessionId === sessionId) {
-                cancelMatchmaking();
-                updateMatchmakingStatus('無法與自己配對，重試中...');
-                setTimeout(() => autoMatch(), 1000);
-                return;
-            }
-
-            // Validate: Only join if host was created in same time slot (within last 10 seconds)
-            const hostJoinTime = data.host.joinedAt || 0;
-            const currentTimeSlot = Math.floor(Date.now() / 10000);
-            const hostTimeSlot = Math.floor(hostJoinTime / 10000);
-
-            if (currentTimeSlot !== hostTimeSlot) {
-                cancelMatchmaking();
-                updateMatchmakingStatus('不在同一搜尋區間，重試中...');
-                setTimeout(() => autoMatch(), 1000);
-                return;
-            }
-
-            // Match exists with host waiting - join as guest
-            isHost = false;
-            matchCode = autoMatchCode;
-            const offsetDistance = (data.host.mode || 10) === 100 ? offsetDistance100 : offsetDistance10;
-            myPlayerOffset = offsetDistance;
-            targetPinCount = data.host.mode || 10;
-
-            document.getElementById('mode-toggle-btn').innerText = (targetPinCount === 10) ? '10 瓶' : '100 瓶';
-            updateLaneWidth();
-
-            matchRef.child('guest').set({
-                connected: true,
-                joinedAt: firebase.database.ServerValue.TIMESTAMP
-            }).then(() => {
-                matchRef.child('guest').onDisconnect().remove();
-                setupFirebaseListeners();
-                updateMatchmakingStatus('found');
-                hideMatchmakingPanel();
-                document.getElementById('cancel-search-btn').style.display = 'none';
-
-                if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
-                if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
-                if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
-                if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
-                if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
-
-                if (groundBody) world.removeBody(groundBody);
-                if (leftWallBody) world.removeBody(leftWallBody);
-                if (rightWallBody) world.removeBody(rightWallBody);
-
-                createStreetEnvironment(myPlayerOffset);
-                createPins(myPlayerOffset);
-
-                camera.position.set(myPlayerOffset, 4, 12);
-                camera.lookAt(myPlayerOffset, 1, 0);
-
-                if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-                if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-
-                activateMultiplayerMode(false);
-                resetGame();
-            }).catch((err) => {
-
-                updateMatchmakingStatus('探索失敗。請重試。');
-                cancelMatchmaking();
-            });
-        } else if (!data || !data.host) {
-            // No match exists - create one as host
-
-            isHost = true;
-            myPlayerOffset = 0;
-            matchCode = autoMatchCode;
-            setMatchCodeUI(autoMatchCode);
-
-            matchRef.set({
-                host: { connected: true, mode: targetPinCount, joinedAt: firebase.database.ServerValue.TIMESTAMP, sessionId: sessionId },
-                guest: null,
-                scores: { p1: [], p2: [] },
-                ballUpdate: null,
-                events: {},
-                mode: targetPinCount
-            }).then(() => {
-                const hostRef = matchRef.child('host');
-                hostRef.onDisconnect().remove();
-                setupFirebaseListeners();
-                updateMatchmakingStatus('hosting'); // Show loading while waiting for guest
-
-                // After 2 seconds, show "Host is ready" message
-                setTimeout(() => {
-                    if (isSearchingForMatch && !isMultiplayerActive) {
-                        updateMatchmakingStatus('host_ready');
-                    }
-                }, 2000);
-
-                // Auto-cancel if guest doesn't join within 30 seconds
-                matchmakingTimeout = setTimeout(() => {
-                    if (!isMultiplayerActive) {
-
-                        cancelMatchmaking();
-                        updateMatchmakingStatus('找不到玩家。請重試。');
-                    }
-                }, 30000);
-            }).catch((err) => {
-
-                updateMatchmakingStatus('建立房間失敗。請重試。');
-                cancelMatchmaking();
-            });
-        } else {
-            // Match full
-
-            cancelMatchmaking();
-            updateMatchmakingStatus('Match full. Retrying...');
-            setTimeout(() => autoMatch(), 1000);
-        }
-    }).catch((err) => {
-
-        updateMatchmakingStatus('連線失敗。請重試。');
-        cancelMatchmaking();
-    });
 }
 
 // ============================================

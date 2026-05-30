@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="Bowling_Icon.png">
     <title>Bowling 3D</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
 
@@ -127,7 +127,6 @@
             <div class="matchmaking-buttons">
                 <button id="create-match-btn" onclick="createMatch()">建立房間</button>
                 <button id="join-match-btn" onclick="showJoinMatchPanel()">加入房間</button>
-                <button id="auto-match-btn" onclick="autoMatch()">自動配對</button>
                 <button id="single-player-btn" onclick="startSinglePlayer()">單人遊戲</button>
             </div>
             <div id="join-match-panel" style="display:none; margin-top: 10px; position: relative; width: 100%;">
@@ -165,7 +164,9 @@
             </div>
         </div>
     </div>
-    <script src="firebase.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="peerjs_network.js"></script>
+    <script src="connection_debug.js"></script>
     <script src="chaos_events.js"></script>
     <script src="script.js"></script>
 </body>
