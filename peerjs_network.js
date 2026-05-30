@@ -22,11 +22,21 @@
   });
   window.firebase.database.ServerValue = ServerValue;
 
+  // 修正 1：加入 ICE STUN Servers 穿透外網防火牆與手機 4G 網路
   const PEER_SERVER = {
     host: '0.peerjs.com',
     port: 443,
     secure: true,
-    debug: 1
+    debug: 1,
+    config: {
+      'iceServers': [
+        { 'urls': 'stun:stun.l.google.com:19302' },
+        { 'urls': 'stun:stun1.l.google.com:19302' },
+        { 'urls': 'stun:stun2.l.google.com:19302' },
+        { 'urls': 'stun:stun3.l.google.com:19302' },
+        { 'urls': 'stun:stun4.l.google.com:19302' }
+      ]
+    }
   };
 
   let activePeer = null;
@@ -47,8 +57,9 @@
 
   const listeners = new Map();
 
+  // 修正 2：加上全網唯一的專屬前綴，防止在 PeerJS 公用伺服器上與他人撞房號
   function formatRoomPeerId(code) {
-    return `host-${code}`;
+    return `bowling_game_2026_host-${code}`;
   }
 
   // --- Recursive State Tree Traversal Helpers ---
@@ -259,7 +270,8 @@
         
         if (!isHostRole && (!activeConn || !activeConn.open)) {
           await initializeGuest(roomCode);
-          await new Promise(res => setTimeout(res, 1200));
+          // 給予更寬裕的穿透等待時間（配合外網穿透所需的時間）
+          await new Promise(res => setTimeout(res, 2000));
         }
         
         const data = getNestedValue(matchState, normalizedPath);
