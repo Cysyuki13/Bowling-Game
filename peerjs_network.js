@@ -17,8 +17,8 @@
   const ServerValue = { TIMESTAMP: Date.now() };
   window.firebase = window.firebase || {};
   window.firebase.database = () => ({
-    goOnline() {},
-    goOffline() {}
+    goOnline() { },
+    goOffline() { }
   });
   window.firebase.database.ServerValue = ServerValue;
 
@@ -76,7 +76,7 @@
   function setNestedValue(obj, path, value) {
     const parts = String(path).split('/').filter(Boolean);
     if (parts.length === 0) return value;
-    
+
     let current = obj;
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
@@ -93,7 +93,7 @@
     listeners.forEach((callbacks, listenPath) => {
       if (changedPath.startsWith(listenPath) || listenPath.startsWith(changedPath) || listenPath === "") {
         callbacks.forEach(cb => {
-          cb({ 
+          cb({
             val: () => getNestedValue(matchState, listenPath),
             exists: () => getNestedValue(matchState, listenPath) !== undefined
           });
@@ -107,6 +107,12 @@
     if (typeof window.__onPeerDisconnected === 'function') {
       window.__onPeerDisconnected();
     }
+
+    // 核心修正：當斷線發生時，立即把斷線 UI 對話框顯示出來
+    const disconnectModal = document.getElementById('disconnect-modal');
+    if (disconnectModal) {
+      disconnectModal.style.display = 'block';
+    }
   }
 
   // --- Network Connections Init Engine ---
@@ -116,7 +122,7 @@
 
     clearTimeout(retryTimer);
     if (activePeer) {
-      try { activePeer.destroy(); } catch(e){}
+      try { activePeer.destroy(); } catch (e) { }
     }
 
     activePeer = new Peer(formatRoomPeerId(code), PEER_SERVER);
@@ -146,7 +152,7 @@
     // Create the primary client session ONLY if it doesn't exist or was explicitly killed
     if (!activePeer || activePeer.destroyed) {
       activePeer = new Peer(undefined, PEER_SERVER);
-      
+
       activePeer.on('open', () => {
         attemptChannelConnection(code, retryCount);
       });
@@ -169,11 +175,11 @@
   function attemptChannelConnection(code, retryCount) {
     const targetId = formatRoomPeerId(code);
     console.log(`[PeerJS Network] 👥 Guest checking host room availability: ${targetId} (Attempt ${retryCount + 1})`);
-    
+
     if (activeConn) {
-      try { activeConn.close(); } catch(e){}
+      try { activeConn.close(); } catch (e) { }
     }
-    
+
     const conn = activePeer.connect(targetId, { reliable: true });
     activeConn = conn;
     setupConnectionBindings(conn);
@@ -194,8 +200,8 @@
   function setupConnectionBindings(conn) {
     conn.on('open', () => {
       console.log('[PeerJS Network] 🤝 P2P Transmission Channel Open and Synchronized.');
-      clearTimeout(retryTimer); 
-      
+      clearTimeout(retryTimer);
+
       if (isHostRole) {
         conn.send({ type: 'SNAPSHOT', data: matchState });
       }
@@ -207,25 +213,55 @@
       if (packet.type === 'SNAPSHOT') {
         matchState = packet.data;
         listeners.forEach((callbacks, listenPath) => {
-          callbacks.forEach(cb => cb({ 
+          callbacks.forEach(cb => cb({
             val: () => getNestedValue(matchState, listenPath),
             exists: () => getNestedValue(matchState, listenPath) !== undefined
           }));
         });
-      } 
+      }
       else if (packet.type === 'UPDATE') {
+        // 修正死循環：檢查新數值是否真的與當前記憶體數值不同，相同就不重複觸發
+        const currentValue = getNestedValue(matchState, packet.path);
+        if (JSON.stringify(currentValue) === JSON.stringify(packet.value)) {
+          return; // 數值完全一樣，跳過，防止 Host/Guest 來回無限互相發送
+        }
+
         setNestedValue(matchState, packet.path, packet.value);
         triggerMatchingListeners(packet.path);
 
+        // 只有當 Host 收到且本地資料真的有變更時，才轉發（目前一對一 P2P 理論上不需要轉發給發送者本人）
+        // 如果是一對一，這段甚至可以直接註解掉。若保留，前面的 JSON.stringify 檢查也能確保它不會死循環。
         if (isHostRole && activeConn && activeConn.open) {
-          activeConn.send({ type: 'UPDATE', path: packet.path, value: packet.value });
+          // activeConn.send({ type: 'UPDATE', path: packet.path, value: packet.value });
         }
       }
     });
 
+    // 當其中一方關閉網頁、斷網或主動離開時觸發
     conn.on('close', () => {
       console.warn('[PeerJS Network] Connection terminated by remote peer.');
+
+      // 1. 呼叫原本的清除防漏邏輯
       cleanUpConnection();
+
+      // 2. 關鍵修正：立即通知 UI 彈出斷線 Box 讓玩家可以點擊返回主選單
+      const disconnectModal = document.getElementById('disconnect-modal');
+      if (disconnectModal) {
+        disconnectModal.style.display = 'block';
+      } else {
+        // 備用方案：如果找不到自訂 Modal，就用彈窗提示並自動重整
+        alert('與對手的連線已中斷！將返回主畫面。');
+        location.reload();
+      }
+    });
+
+    // 額外保險：捕捉網路通道出錯導致的異常斷開
+    conn.on('error', (err) => {
+      console.error('[PeerJS Network] Connection error occurred:', err);
+      const disconnectModal = document.getElementById('disconnect-modal');
+      if (disconnectModal) {
+        disconnectModal.style.display = 'block';
+      }
     });
   }
 
@@ -236,11 +272,19 @@
 
     return {
       child: (subPath) => createFirebaseRef(`${pathString}/${subPath}`),
-      
+
       set: async (value) => {
+        // 如果是在開房建立初始房間
         if (pathString.startsWith('matches/') && normalizedPath === "") {
           await initializeHost(roomCode, value);
           return;
+        }
+
+        // 核心修正：如果重啟遊戲時傳入的數據清空了 guest，但此時 guest 其實還連線著，我們要手動保留它
+        if (normalizedPath === "" && value && typeof value === 'object') {
+          if (!value.guest && matchState.guest) {
+            value.guest = matchState.guest; // 保留第二個玩家，防止他從計分板消失
+          }
         }
 
         setNestedValue(matchState, normalizedPath, value);
@@ -267,15 +311,15 @@
 
       once: async (type) => {
         if (type !== 'value') return { val: () => null, exists: () => false };
-        
+
         if (!isHostRole && (!activeConn || !activeConn.open)) {
           await initializeGuest(roomCode);
           // 給予更寬裕的穿透等待時間（配合外網穿透所需的時間）
           await new Promise(res => setTimeout(res, 2000));
         }
-        
+
         const data = getNestedValue(matchState, normalizedPath);
-        return { 
+        return {
           val: () => data,
           exists: () => data !== undefined && data !== null
         };
@@ -287,8 +331,8 @@
           listeners.set(normalizedPath, new Set());
         }
         listeners.get(normalizedPath).add(callback);
-        
-        callback({ 
+
+        callback({
           val: () => getNestedValue(matchState, normalizedPath),
           exists: () => getNestedValue(matchState, normalizedPath) !== undefined
         });
@@ -300,19 +344,19 @@
 
       remove: async () => {
         clearTimeout(retryTimer);
-        if (activeConn) try { activeConn.close(); } catch(e){}
-        if (activePeer) try { activePeer.destroy(); } catch(e){}
+        if (activeConn) try { activeConn.close(); } catch (e) { }
+        if (activePeer) try { activePeer.destroy(); } catch (e) { }
         matchState = {};
       },
 
-      onDisconnect: () => ({ remove() {} })
+      onDisconnect: () => ({ remove() { } })
     };
   }
 
   window.db = {
     ref: (path) => createFirebaseRef(path),
-    goOnline() {},
-    goOffline() {}
+    goOnline() { },
+    goOffline() { }
   };
 
 })();
