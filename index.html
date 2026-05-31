@@ -165,12 +165,16 @@
         </div>
 
         <div id="disconnect-modal"
-            style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(20, 15, 25, 0.98); padding:35px 25px; border-radius:20px; border:3px solid #e74c3c; text-align:center; z-index:9999; box-shadow: 0 0 35px rgba(231, 76, 60, 0.4); width: 85%; max-width: 380px; color: white; pointer-events: auto;">
-            <h2 style="color:#e74c3c; margin-top:0; font-size: 24px; letter-spacing: 1px;">⚠️ 對手已斷開連線</h2>
-            <p style="margin: 20px 0; color: #ccc; font-size: 15px; line-height: 1.6;">與對方的網絡通道已關閉，無法繼續進行當前的多人對局。</p>
-            <button class="btn"
-                style="background:#c0392b; border:none; width: 100%; max-width: 220px; padding: 12px; font-weight: bold; font-size: 16px; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); color: white;"
-                onclick="location.reload()">返回主選單</button>
+            style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 9999; pointer-events: auto;">
+            <div
+                style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(20, 15, 25, 0.98); padding: 35px 25px; border-radius: 20px; border: 3px solid rgb(231, 76, 60); text-align: center; box-shadow: rgba(231, 76, 60, 0.4) 0px 0px 35px; width: 85%; max-width: 380px; color: white; pointer-events: auto;">
+                <h2 style="color:#e74c3c; margin-top:0; font-size: 24px; letter-spacing: 1px;">⚠️ 對手已斷開連線</h2>
+                <p style="margin: 20px 0; color: #ccc; font-size: 15px; line-height: 1.6;">與對方的網絡通道已關閉，無法繼續進行當前的多人對局。
+                </p>
+                <button class="btn"
+                    style="background:#c0392b; border:none; width: 100%; max-width: 220px; padding: 12px; font-weight: bold; font-size: 16px; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); color: white;"
+                    onclick="location.reload()">返回主選單</button>
+            </div>
         </div>
     </div>
 

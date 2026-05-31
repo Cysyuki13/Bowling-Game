@@ -568,7 +568,22 @@ function getOpponentRole() {
 
 function setMatchCodeUI(code) {
     matchCode = code;
-    updateMatchmakingStatus(code ? `房間代碼: ${code} - 等待玩家...` : '');
+    if (code) {
+        updateMatchmakingStatus(`房間代碼: ${code} - 等待玩家...`);
+
+        // 核心修正：自動複製產生的代碼到使用者的剪貼簿
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code)
+                .then(() => {
+                    console.log(`[Copy] 成功自動複製房間代碼: ${code}`);
+                })
+                .catch(err => {
+                    console.error('[Copy] 自動複製失敗:', err);
+                });
+        }
+    } else {
+        updateMatchmakingStatus('');
+    }
 }
 
 // Handle guest join/leave events from Firebase
@@ -3492,14 +3507,41 @@ function showResultMenu() {
 }
 
 
+// ============================================
+// GAME OVER & NEXT FRAME HANDLING
+// ============================================
 function handleMatchEnd() {
-    // Safety check: prevent execution if button is disabled
+    // 安全檢查：若按鈕被禁用則不執行
     const actionBtn = document.getElementById('action-btn');
     if (actionBtn && actionBtn.disabled) return;
 
     if (matchHistory.length >= MAX_MATCHES) {
-        fullReset();
+        // 核心修正：如果是多人連線模式結束，直接完整重置並回到主選單
+        if (isMultiplayerActive) {
+            console.log('[Multiplayer] 5局結束，玩家請求返回主選單，正在中斷連線並重置...');
+
+            // 如果有建立好的資料庫參考或連線，將其移除以主動斷開房間
+            if (matchRef) {
+                try {
+                    matchRef.remove(); // 讓這間房間在網路上失效
+                } catch (e) {
+                    console.error('[Multiplayer] 移除房間節點失敗:', e);
+                }
+            }
+
+            // 關閉結算彈窗與遮罩
+            const msgBox = document.getElementById('msg-box');
+            if (msgBox) msgBox.style.display = 'none';
+            triggerDimmer(false);
+
+            // 執行完整重置（回到主選單、重置所有 UI、關閉多人狀態、清除球與保齡球瓶）
+            fullReset();
+        } else {
+            // 單人模式局數結束：同樣回到主畫面
+            fullReset();
+        }
     } else {
+        // 未滿 5 局，正常進入下一局
         recordAndReset();
     }
 }
