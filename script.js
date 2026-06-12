@@ -1,4318 +1,3584 @@
-// ============================================
-// GAME CONSTANTS - Physics and Gameplay Parameters
-// ============================================
-const LANE_Y = 0.1;             // Y position of the bowling lane
-const BALL_RADIUS = 0.35;       // Radius of the bowling ball (physics and render)
-const PIN_HEIGHT = 0.8;         // Height of bowling pins
-const TRAIL_MAX_POINTS = 60;    // Maximum points in ball trail visualization
-const MAX_MATCHES = 5;          // Number of frames/matches to complete
+// ============================================================================
+//  SOUND & UI
+// ============================================================================
 
-// ============================================
-// GAME STATE - Core gameplay variables
-// ============================================
-let pins = [];                  // Array of pin objects (mesh + physics body)
-let pinCircles = [];            // Visual circles under pins
-let targetPinCount = 10;        // Current game mode: 10 or 100 pins
-let offsetDistance10 = 7.2;     // Lane offset for 10-pin mode
-let offsetDistance100 = 8.8;    // Lane offset for 100-pin mode
-let lastPinSoundTime = 0;       // Throttle pin collision sounds
-let hasShownLocalCompleteMessage = false;       // Prevent duplicate "player complete" message
-let hasShownOpponentCompleteMessage = false;    // Prevent duplicate opponent message
-let hasRecordedScoreInCurrentGame = false;      // Guard flag to prevent premature final result
-
-// ============================================
-// THREE.JS RENDERING - Scene, Camera, Renderer
-// ============================================
-let scene, camera, renderer, world, sunLight, raycaster;
-let ballBody, ballMesh;         // Physics body and 3D mesh for player's ball
-let laneMesh;                   // The bowling lane mesh
-let groundBody;                 // Physics body for lane ground
-
-// ============================================
-// GAMEPLAY STATE - Ball and interaction tracking
-// ============================================
-let isBowling = false;          // Flag: is the ball currently in flight?
-let isTouching = false;         // Flag: is player touching screen?
-let touchStartPos = { x: 0, y: 0 };     // Initial touch position
-let touchStartTime = 0;         // Time when touch started
-let lastTouchX = 0;             // Last known X coordinate of touch
-let impactParticles = [];       // Particle effects from ball/pin collisions
-let activeExplosions = [];      // Active explosion visual effects (TNT chaos event)
-let trailHistory = [];          // Ball trajectory points for visual trail
-
-// ============================================
-// SHARED EXPLOSION ASSETS (Pre-created to avoid frame spikes)
-// ============================================
-const SHARED_P_GEO = new THREE.SphereGeometry(1, 6, 6); // Base size 1, scaled per particle
-const SHARED_S_GEO = new THREE.SphereGeometry(1, 4, 4); // Simpler geometry for smoke
-const SHARED_FIRE_GEO = new THREE.SphereGeometry(1, 12, 12);
-const SHARED_RING_GEO = new THREE.RingGeometry(0.8, 1, 16);
-
-// Pre-create materials to avoid "new" calls during gameplay
-const PARTICLE_MATS = [0xff4500, 0xff8c00, 0xffd700, 0xff2222, 0xff6600].map(color =>
-    new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending })
-);
-const SMOKE_MAT = new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.5 });
-
-// ============================================
-// SOFT PARTICLE SYSTEM (THREE.Points for burst particles)
-// Reduces draw calls from 30+ meshes to 1 Points object per explosion
-// ============================================
-function createCircleTexture() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gradient.addColorStop(0, 'rgba(255,255,255,1)');
-    gradient.addColorStop(0.5, 'rgba(255,255,255,0.5)');
-    gradient.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 64, 64);
-    return new THREE.CanvasTexture(canvas);
-}
-
-const explosionPointMat = new THREE.PointsMaterial({
-    size: 0.15,
-    vertexColors: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 1.0,
-    map: createCircleTexture(),
-    depthWrite: false
+const synth = new Tone.PolySynth(Tone.Synth, { maxPolyphony: 16 }).toDestination();
+synth.set({
+    oscillator: { type: "square8" },
+    envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.1 }
 });
-// trailMesh moved to global declarations above
-let randomHookForce = 0;
 
-let matchHistory = [];
-let currentFallenPins = 0;
+let pistolSound = null;
+function loadPistolSound() {
+    pistolSound = new Audio('assets/sounds/pistol_fire.mp3');
+    pistolSound.preload = 'auto';
+}
+loadPistolSound();
 
-let impactOccurred = false;
-let resetTimer = null;
-let pinSettleStartTime = 0;
-let pinSettleStableSince = 0;
+let emptyPistolSound = null;
+function loadEmptyPistolSound() {
+    emptyPistolSound = new Audio('assets/sounds/pistol_empty.mp3');
+    emptyPistolSound.preload = 'auto';
+}
+loadEmptyPistolSound();
 
-let timeScale = 1.0;
-let isCinematicMode = false;
-let cinematicTargetPin = null;
-
-// ============================================
-// AUDIO SYSTEM - Sound management
-// ============================================
-let audioListener, audioLoader;
-let ballPathSound, pinKnockSound;
-let gameSounds = {};
-
-// ============================================
-// CINEMATIC AND REPLAY SYSTEM - Ball tracking and playback
-// ============================================
-let actionCamera, actionRenderer, actionCanvas;    // Secondary camera for action replay view
-let actionTargetPin = null;                         // Pin being focused by action camera
-let lastTargetSwitchTime = 0;                      // Throttle camera target switches
-const SWITCH_COOLDOWN = 1000;                      // Cooldown between target switches (ms)
-
-const DECK_CENTER_Z = -22;                          // Center point of the bowling lane
-
-let isReplaying = false;        // Flag: is replay mode active?
-let replayData = [];            // Recorded ball/pin states for replay
-let replayFrameIndex = 0;       // Current frame in replay
-
-let modeSwitchRequestPending = false;
-let modeSwitchRequestMode = null;
-let modeSwitchRequester = null;
-let wasShowingWaitMessage = false;
-let waitMessageLocalFinished = false;
-let lastScoreUpdateTimestamp = {};
-
-let cameraLookAtTarget = new THREE.Vector3(0, 1, -22);
-
-// Player 1 & 2 Touchpaths (different colors)
-let touchPathLine_P1, touchPathLine2_P1, touchPathLine3_P1;
-let outerGlowLine_P1;
-let touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2;
-let outerGlowLine_P2;
-let touchPathPoints_P1 = [];
-let touchPathPoints_P2 = [];
-let currentPlayerTouchPoints = touchPathPoints_P1;
-
-// Player 1 & 2 Trail meshes (different colors)
-let trailMesh_P1, trailMesh_P2;
-
-const groundMat = new CANNON.Material();
-const ballMat = new CANNON.Material();
-const pinMat = new CANNON.Material();
-
-let leftGutter, rightGutter;
-let leftWallJoint, rightWallJoint;
-
-let sounds = {};
-
-let leftWallMesh, rightWallMesh;
-let leftWallBody, rightWallBody;
-
-let currentPinVolume = 0.7;
-let lastPinHitTime = 0;
-
-function isMobileClient() {
-    return typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent);
+function playPistolSound() {
+    if (!pistolSound) return;
+    if (Tone.context.state !== 'running') return;
+    pistolSound.currentTime = 0;
+    pistolSound.play().catch(e => console.warn("Pistol sound play failed:", e));
 }
 
-// --- MULTIPLAYER VARIABLES ---
-// ============================================
-// MULTIPLAYER SYSTEM - Firebase real-time networking
-// ============================================
-let isHost = true;              // Role: true=host(p1), false=guest(p2)
-let myPlayerId = 1;             // Current player ID (1 or 2)
-let myPlayerOffset = 0;         // X position of player's lane on shared court
-let isMultiplayerActive = false;        // Flag: is multiplayer game in progress?
-let matchRef = null;            // Firebase reference to current match
-let matchListeners = [];        // Array of Firebase listeners to clean up
-let opponentBallMesh;           // Ghost ball showing opponent's position
-let sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9); // Unique session ID to prevent self-joining
-let opponentGhostPins = [];     // Ghost pins showing opponent's lane
-let matchCode = null;           // 5-digit code for match identification
-let isCreatingMatch = false;    // Flag: currently creating a match?
-let isJoiningMatch = false;     // Flag: currently joining a match?
+let robotHandSound = null;
 
-// ============================================
-// PLAY AGAIN SYSTEM - Rematch coordination
-// ============================================
-let playAgainRequested = false;                 // Player requested rematch
-let playAgainOpponentRequested = false;         // Opponent requested rematch
-let playAgainCountdownTimer = null;             // Timer for auto-restart countdown
-let playAgainCountdownRemaining = 5;            // Seconds remaining in countdown
+function loadRobotHandSound() {
+    robotHandSound = new Audio('assets/sounds/robot_hand.mp3');
+    robotHandSound.preload = 'auto';
+}
+loadRobotHandSound();
 
-// ============================================
-// EVENT TIMESTAMPS - Prevent duplicate event processing
-// ============================================
-let lastEventTimestamps = {
-    playAgainRequest: 0,        // Timestamp of last play-again request received
-    playAgainResponse: 0,       // Timestamp of last play-again response received
-    modeSwitchRequest: 0,       // Timestamp of last mode-switch request received
-    modeSwitchResponse: 0       // Timestamp of last mode-switch response received
-};
-let ballSyncCounter = 0;        // Counter for ball synchronization updates
+function playRobotHandSound() {
+    if (!robotHandSound) return;
+    if (Tone.context.state !== 'running') return;
+    robotHandSound.currentTime = 0;
+    robotHandSound.play().catch(e => console.warn("Robot hand sound play failed:", e));
+}
 
-// ============================================
-// SCORE TRACKING AND UI RENDERING
-// ============================================
-let scores = {
-    p1: [],     // Array of scores for player 1
-    p2: []      // Array of scores for player 2
-};
+function playSound(type) {
+    try {
+        if (Tone.context.state !== "running") return;
+        if (type === 'jump') synth.triggerAttackRelease("D4", "16n", undefined, 0.3);
+        else if (type === 'gem') synth.triggerAttackRelease("B5", "16n", undefined, 0.4);
+        else if (type === 'spike') synth.triggerAttackRelease("F2", "8n", undefined, 0.5);
+        else if (type === 'door') {
+            synth.triggerAttackRelease("A4", "16n", undefined, 0.4);
+            synth.triggerAttackRelease("E5", "16n", "+0.08", 0.4);
+        }
+    } catch (e) { console.warn(e); }
+}
 
-// ============================================
-// MATCHMAKING STATE - Player search for opponents
-// ============================================
-let isSearchingForMatch = false;     // Player is actively searching for opponent
-let matchmakingTimeout = null;       // Timeout for auto-cancel if no opponent found
+window.addEventListener('click', () => {
+    if (Tone.context.state !== 'running') Tone.start();
+});
 
-// ============================================
-// LANGUAGE SYSTEM - Multi-language support
-// ============================================
-let currentLanguage = localStorage.getItem('bowlingLang') || 'zh-TW';
-
-const translations = {
-    'en': {
-        settingsTitle: 'Settings',
-        volumeLabel: 'Volume',
-        gameModeLabel: 'Game Mode',
-        languageLabel: 'Language',
-        homeBtn: '🏠 Home',
-        tenPins: '10 Pins',
-        hundredPins: '100 Pins',
-        hint: 'Drag to move • Swipe up to bowl',
-        scoreText: 'Pins: ',
-        pinsLabel: 'Bowling Pins: ',
-        actionCam: 'Action Cam (Tap to enlarge)',
-        watchReplay: 'Watch Replay',
-        strike: 'STRIKE!',
-        msgTitleStrike: 'Perfect Strike!',
-        msgBodyStrike: 'Perfect bowl!',
-        msgTitleEnd: 'Frame End',
-        msgBodyEnd: 'Watch your replay or continue.',
-        nextFrame: 'Next Frame',
-        finalScore: 'Final Score',
-        result: 'Result',
-        knocked: 'Knocked {0}/{1} pins.',
-        player1: 'Player 1',
-        player2: 'Player 2',
-        match1: '1',
-        match2: '2',
-        match3: '3',
-        match4: '4',
-        match5: '5',
-        total: 'TOT',
-        multiplayerTitle: 'Multiplayer Bowling',
-        multiplayerDesc: 'Play online with others',
-        createRoom: 'Create Room',
-        joinRoom: 'Join Room',
-        singlePlayer: 'Single Player',
-        cancelMatch: 'Cancel Match',
-        roomCode: 'Room Code: ',
-        searching: 'Searching for players...',
-        hosting: 'Waiting for player...',
-        found: 'Match found!',
-        enterCode: 'Enter code',
-        join: 'Join',
-        back: 'Back',
-        modeSwitchTitle: 'Mode Change Request',
-        modeSwitchBodyAccept: 'Switch to {0} pin mode? This will reset scores.',
-        modeSwitchBodyRequest: 'You requested {0} pin mode. Waiting for opponent...',
-        modeSwitchBodyOpponent: 'Opponent requested {0} pin mode. Accept?',
-        accept: 'Accept',
-        decline: 'Decline',
-        playAgain: 'Play Again',
-        opponentReady: 'Opponent Ready',
-        waitOpponent: 'Waiting for opponent...',
-        autoRestart: 'Auto restart countdown',
-        playerLeft: 'Player Left',
-        opponentDisconnected: 'Opponent disconnected. Return to single player...',
-        ok: 'OK',
-        completeLocal: 'Frame complete. Waiting for opponent...',
-        completeOpponent: 'Opponent completed. Finish your remaining frames.',
-        finalResult: 'Final Result',
-        draw: 'Draw',
-        p1Wins: 'Player 1 Wins!',
-        p2Wins: 'Player 2 Wins!'
-    },
-    'zh-TW': {
-        settingsTitle: '設定',
-        volumeLabel: '音量',
-        gameModeLabel: '遊戲模式',
-        languageLabel: '語言',
-        homeBtn: '🏠 主頁',
-        tenPins: '10 瓶',
-        hundredPins: '100 瓶',
-        hint: '拖曳移動位置 • 向上滑動投球',
-        scoreText: '擊倒: ',
-        pinsLabel: '保齡球瓶: ',
-        actionCam: '動作鏡頭 (點擊放大)',
-        watchReplay: '觀看重播',
-        strike: 'STRIKE!',
-        msgTitleStrike: '全中！',
-        msgBodyStrike: '完美擊球！',
-        msgTitleEnd: '回合結束',
-        msgBodyEnd: '觀看重播或繼續下一局。',
-        nextFrame: '下一局',
-        finalScore: '最終分數',
-        result: '結果',
-        knocked: '已擊倒 {0}/{1} 瓶。',
-        player1: '玩家 1',
-        player2: '玩家 2',
-        match1: '1',
-        match2: '2',
-        match3: '3',
-        match4: '4',
-        match5: '5',
-        total: '總分',
-        multiplayerTitle: '多人連線保齡球',
-        multiplayerDesc: '與其他玩家線上對戰',
-        createRoom: '建立房間',
-        joinRoom: '加入房間',
-        singlePlayer: '單人遊戲',
-        cancelMatch: '取消配對',
-        roomCode: '房間代碼: ',
-        searching: '正在尋找玩家...',
-        hosting: '等待玩家加入...',
-        found: '找到對手！',
-        enterCode: '輸入代碼',
-        join: '加入',
-        back: '返回',
-        modeSwitchTitle: '更改模式請求',
-        modeSwitchBodyAccept: '是否切換至 {0} 瓶模式？這將重置目前分數。',
-        modeSwitchBodyRequest: '您請求切換至 {0} 瓶模式。等待對手回應...',
-        modeSwitchBodyOpponent: '對手請求切換至 {0} 瓶模式。是否接受？',
-        accept: '接受',
-        decline: '拒絕',
-        playAgain: '再玩一次',
-        opponentReady: '對手已準備',
-        waitOpponent: '等待對手...',
-        autoRestart: '自動重啟倒數',
-        playerLeft: '玩家已離開',
-        opponentDisconnected: '對手已斷線。返回單人遊戲...',
-        ok: '確定',
-        completeLocal: '您已完成 5 局。等待對手完成他們的 5 局...',
-        completeOpponent: '對手已完成 5 局。請繼續完成您的剩餘局數。',
-        finalResult: '最終結果',
-        draw: '平手',
-        p1Wins: '玩家 1 獲勝！',
-        p2Wins: '玩家 2 獲勝！'
-    }
-};
-
-function t(key, ...args) {
-    let text = translations[currentLanguage][key] || key;
-    args.forEach((arg, i) => {
-        text = text.replace(new RegExp(`\\{${i}\\}`, 'g'), arg);
+function switchPanel(panelId) {
+    ['panel-main', 'panel-play', 'panel-settings', 'panel-status'].forEach(id => {
+        document.getElementById(id).classList.add('hidden');
     });
-    return text;
+    document.getElementById(panelId).classList.remove('hidden');
 }
 
-function updateScoreTableHeaders() {
-    // Player names - preserve CSS colors (P1 blue #1e90ff, P2 red #ff4757)
-    const p1Name = document.getElementById('p1-name');
-    if (p1Name) p1Name.innerText = t('player1');
+// ============================================================================
+//  SHOOT & THROW ACTIONS (reusable for mouse/keyboard and mobile)
+// ============================================================================
 
-    const p2Name = document.getElementById('p2-name');
-    if (p2Name) p2Name.innerText = t('player2');
+function performShoot() {
+    if (!localPlayerItem) return;
+    if (players[localPlayerId]?.eliminated) return;
 
-    // Frame headers 1-5
-    for (let i = 1; i <= 5; i++) {
-        const frameHeader = document.getElementById(`frame${i}-header`);
-        if (frameHeader) frameHeader.innerText = t(`match${i}`);
-    }
-
-    // Total and player headers
-    const totalHeader = document.getElementById('total-header');
-    if (totalHeader) totalHeader.innerText = t('total');
-
-    const playerHeader = document.getElementById('player-header');
-    if (playerHeader) {
-        // Check if single player mode (p2-row hidden)
-        const p2Row = document.getElementById('p2-row');
-        if (p2Row && p2Row.style.display === 'none') {
-            playerHeader.innerText = '/'; // Single player: show "/"
-        } else {
-            playerHeader.innerText = t('player1'); // Multiplayer: show "玩家 1"/"Player 1"
-        }
-    }
-}
-
-function toggleLanguage() {
-    currentLanguage = currentLanguage === 'en' ? 'zh-TW' : 'en';
-    localStorage.setItem('bowlingLang', currentLanguage);
-    document.documentElement.lang = currentLanguage;
-    document.getElementById('language-btn').innerText =
-        currentLanguage === 'en' ? 'HK 繁中' : '🇺🇸 English';
-
-    // Update all UI elements
-    updateAllUIText();
-    playGameSound('ui_click');
-}
-
-function updateAllUIText() {
-    // Settings menu
-    const settingsTitle = document.querySelector('#settings-menu h3');
-    if (settingsTitle) settingsTitle.innerText = t('settingsTitle');
-
-    const volLabel = document.querySelector('label[for="volume-slider"]');
-    if (volLabel) volLabel.innerText = t('volumeLabel');
-
-    const modeLabel = document.querySelector('label[for="mode-toggle-btn"]');
-    if (modeLabel) modeLabel.innerText = t('gameModeLabel');
-
-    const langLabel = document.querySelector('label[for="language-btn"]');
-    if (langLabel) langLabel.innerText = t('languageLabel');
-
-    const homeBtn = document.getElementById('home-btn');
-    if (homeBtn) homeBtn.innerText = t('homeBtn');
-
-    // Update mode button text
-    const modeBtn = document.getElementById('mode-toggle-btn');
-    if (modeBtn) {
-        modeBtn.innerText = targetPinCount === 10 ? t('tenPins') : t('hundredPins');
-    }
-
-    // Score UI
-    document.getElementById('hint').innerText = t('hint');
-
-    // Action cam label
-    const actionLabel = document.querySelector('#action-cam-container div');
-    if (actionLabel) actionLabel.innerText = t('actionCam');
-
-    // Matchmaking panel (only if visible)
-    const matchmakingTitle = document.querySelector('#matchmaking-panel h2');
-    if (matchmakingTitle) matchmakingTitle.innerText = t('multiplayerTitle');
-
-    const matchmakingDesc = document.querySelector('#matchmaking-panel p');
-    if (matchmakingDesc) matchmakingDesc.innerText = t('multiplayerDesc');
-
-    // Locate this block in updateAllUIText() and remove 'auto-match-btn' and its case:
-    ['create-match-btn', 'join-match-btn', 'auto-match-btn', 'single-player-btn',
-        'cancel-search-btn', 'join-code-btn', 'join-cancel-btn'].forEach(id => {
-            const btn = document.getElementById(id);
-            if (btn) {
-                switch (id) {
-                    case 'create-match-btn': btn.innerText = t('createRoom'); break;
-                    case 'join-match-btn': btn.innerText = t('joinRoom'); break;
-                    // DELETE THIS LINE:
-                    case 'auto-match-btn': btn.innerText = t('autoMatch'); break;
-                    case 'single-player-btn': btn.innerText = t('singlePlayer'); break;
-                    case 'cancel-search-btn': btn.innerText = t('cancelMatch'); break;
-                    case 'join-code-btn': btn.innerText = t('join'); break;
-                    case 'join-cancel-btn': btn.innerText = t('back'); break;
-                }
-            }
-        });
-
-    // Mode switch modal
-    const modeTitle = document.getElementById('mode-switch-title');
-    if (modeTitle) modeTitle.innerText = t('modeSwitchTitle');
-
-    const modeAccept = document.getElementById('mode-switch-accept');
-    if (modeAccept) modeAccept.innerText = t('accept');
-
-    const modeDecline = document.getElementById('mode-switch-decline');
-    if (modeDecline) modeDecline.innerText = t('decline');
-
-    // Watch replay button
-    const replayBtn = document.getElementById('watch-replay-btn');
-    if (replayBtn) replayBtn.innerText = t('watchReplay');
-
-    // Strike popup
-    document.getElementById('strike-popup').innerText = t('strike');
-
-    // Update score table headers (Step 5)
-    updateScoreTableHeaders();
-}
-
-
-// ============================================
-// MULTIPLAYER UI FUNCTIONS
-// ============================================
-
-// Display the matchmaking panel (where players search for opponents)
-function showMatchmakingPanel() {
-    const panel = document.getElementById('matchmaking-panel');
-    const blocker = document.getElementById('matchmaking-modal-blocker');
-    if (panel) panel.style.display = 'block';
-    if (blocker) blocker.style.display = 'block';
-}
-
-function hideMatchmakingPanel() {
-    const panel = document.getElementById('matchmaking-panel');
-    const blocker = document.getElementById('matchmaking-modal-blocker');
-    if (panel) panel.style.display = 'none';
-    if (blocker) blocker.style.display = 'none';
-}
-
-// Display matchmaking status message (searching, found, waiting, etc)
-function updateMatchmakingStatus(message) {
-    const status = document.getElementById('matchmaking-status');
-    if (status) {
-        if (message === 'searching') {
-            status.innerHTML = '<div class="loading-spinner"></div><p>正在尋找玩家...</p>';
-        } else if (message === 'found') {
-            const roleMessage = isHost ? '建立遊戲中...' : '加入遊戲中...';
-            status.innerHTML = `<p style="color: #2ecc71;">✓ ${roleMessage}</p>`;
-        } else if (message === 'hosting') {
-            status.innerHTML = '<div class="loading-spinner"></div><p>等待玩家加入...</p>';
-        } else if (message === 'host_ready') {
-            status.innerHTML = '<p style="color: #2ecc71;">✓ 房主已準備就緒，等待玩家...</p>';
-        } else if (message === 'timeout') {
-            status.innerHTML = '<p style="color: #f39c12;">找不到玩家。作爲房主開始遊戲...</p>';
-        } else {
-            status.innerHTML = `<p>${message}</p>`;
-        }
-    }
-}
-
-function getMatchRef(code) {
-    if (!window.db || typeof window.db.ref !== 'function') {
-        return null;
-    }
-    return window.db.ref(`matches/${code}`);
-}
-
-function cleanupFirebaseListeners() {
-    matchListeners.forEach((ref) => ref.off());
-    matchListeners = [];
-}
-
-// Setup Firebase real-time listeners for multiplayer synchronization
-function setupFirebaseListeners() {
-    if (!matchRef) {
+    // Prevent using robot hand again if an active grab already exists
+    if (localPlayerItem.name === 'robot_hand' && activeRobotHands.some(g => g.holderId === localPlayerId)) {
+        console.warn("[RobotHand] Already have an active grab, cannot shoot again.");
         return;
     }
 
-    cleanupFirebaseListeners();
-
-    const guestRef = matchRef.child('guest');
-    const hostRef = matchRef.child('host');
-    const ballRef = matchRef.child('ballUpdate');
-    const pinRef = matchRef.child('pinUpdate');
-    const scoresRef = matchRef.child('scores');
-    const eventsRef = matchRef.child('events');
-
-    guestRef.on('value', handleGuestUpdate);
-    hostRef.on('value', handleHostUpdate);
-    ballRef.on('value', handleBallUpdateEvent);
-    pinRef.on('value', handlePinUpdateEvent);
-    scoresRef.on('value', handleScoresUpdate);
-    eventsRef.on('value', handleEventsUpdate);
-
-    matchListeners.push(guestRef, hostRef, ballRef, pinRef, scoresRef, eventsRef);
-}
-
-function getLocalPlayerId() {
-    return isHost ? 'p1' : 'p2';
-}
-
-function getOpponentPlayerId() {
-    return isHost ? 'p2' : 'p1';
-}
-
-// Check if player has completed all required matches (MAX_MATCHES)
-function isPlayerComplete(playerId) {
-    const result = Array.isArray(scores[playerId]) && scores[playerId].length >= MAX_MATCHES;
-    return result;
-}
-
-function getLocalRole() {
-    return isHost ? 'host' : 'guest';
-}
-
-function getOpponentRole() {
-    return isHost ? 'guest' : 'host';
-}
-
-function setMatchCodeUI(code) {
-    matchCode = code;
-    if (code) {
-        updateMatchmakingStatus(`房間代碼: ${code} - 等待玩家...`);
-
-        // 核心修正：自動複製產生的代碼到使用者的剪貼簿
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(code)
-                .then(() => {
-                    console.log(`[Copy] 成功自動複製房間代碼: ${code}`);
-                })
-                .catch(err => {
-                    console.error('[Copy] 自動複製失敗:', err);
-                });
+    // Pistol: check ammo
+    if (localPlayerItem.name === 'pistol' && localPlayerItem.ammo !== undefined && localPlayerItem.ammo <= 0) {
+        if (emptyPistolSound) {
+            emptyPistolSound.currentTime = 0;
+            emptyPistolSound.play().catch(e => console.warn("Empty pistol sound play failed:", e));
         }
-    } else {
-        updateMatchmakingStatus('');
+        return;
     }
-}
 
-// Handle guest join/leave events from Firebase
-function handleGuestUpdate(snapshot) {
-    if (!matchRef) return;
-    const guestData = snapshot.val();
+    if (!localPlayerItem.canUse()) return;
+
+    // --- CLIENT-SIDE ANGLE VALIDATION FOR ROBOT HAND ---
+    if (!isHost && localPlayerItem.name === 'robot_hand') {
+        const angle = calculateHandAngle(players[localPlayerId]);
+        const facingAngle = players[localPlayerId].facingRight ? 0 : Math.PI;
+        let diff = angle - facingAngle;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        const MAX_ANGLE_OFFSET = (60 * Math.PI) / 180;
+        if (Math.abs(diff) > MAX_ANGLE_OFFSET) {
+            console.warn(`[RobotHand] Client blocked shoot: angle ${angle.toFixed(2)} out of range.`);
+            if (emptyPistolSound) {
+                emptyPistolSound.currentTime = 0;
+                emptyPistolSound.play().catch(e => console.warn("Wrong direction sound play failed:", e));
+            }
+            return;
+        }
+    }
+
     if (isHost) {
-        if (guestData && !isMultiplayerActive) {
-            updateMatchmakingStatus('玩家已加入！比賽開始...');
-            hideMatchmakingPanel();
-            document.getElementById('cancel-search-btn').style.display = 'none';
-            activateMultiplayerMode(true);
-            resetGame();
-        } else if (!guestData && isMultiplayerActive) {
-            handleOpponentDisconnect();
-        }
-    }
-}
-
-// Handle host connection status from Firebase
-function handleHostUpdate(snapshot) {
-    if (!matchRef) return;
-    const hostData = snapshot.val();
-    if (!isHost) {
-        if (hostData && !isMultiplayerActive) {
-            updateMatchmakingStatus('Connected! Setting up lane...');
-            hideMatchmakingPanel();
-            document.getElementById('cancel-search-btn').style.display = 'none';
-            activateMultiplayerMode(false);
-            resetGame();
-        } else if (!hostData && isMultiplayerActive) {
-            handleOpponentDisconnect();
-        }
-    }
-}
-
-// Handle opponent disconnection - reset to main menu
-function handleOpponentDisconnect() {
-    isMultiplayerActive = false;
-    isHost = true;
-    isCreatingMatch = false;
-    isJoiningMatch = false;
-    isSearchingForMatch = false;
-    myPlayerOffset = 0;
-    matchCode = null;
-
-    camera.position.set(0, 4, 20);
-    cameraLookAtTarget.set(0, 1, -22);
-    camera.lookAt(cameraLookAtTarget);
-    sunLight.position.set(15, 35, -40);
-    updateLaneWidth();
-    if (opponentBallMesh) opponentBallMesh.visible = false;
-    resetSinglePlayerUI();
-
-    // Reset all buttons and UI state
-    document.getElementById('create-match-btn').disabled = false;
-    document.getElementById('join-match-btn').disabled = false;
-    document.getElementById('single-player-btn').disabled = false;
-    document.getElementById('cancel-search-btn').style.display = 'none';
-    updateMatchmakingStatus(''); // Clear any status messages
-
-    const msgTitle = document.getElementById('msg-title');
-    if (msgTitle) {
-        msgTitle.innerText = t('playerLeft');
-        document.getElementById('msg-box').style.display = 'block';
-        document.getElementById('msg-body').innerText = "對手已斷線。返回單人遊戲...";
-        document.getElementById('action-btn').innerHTML = "確定";
-        document.getElementById('action-btn').onclick = () => {
-            document.getElementById('msg-box').style.display = 'none';
-            fullReset();
-            showMatchmakingPanel();
+        const gameState = {
+            projectiles,
+            activeRobotHands,
+            mouseWorld: getMouseWorldPos()
         };
-    }
-    cleanupFirebaseListeners();
-    matchRef = null;
+        const used = localPlayerItem.onUse(players[localPlayerId], gameState);
 
-    if (window.db && typeof window.db.goOffline === 'function') {
-        window.db.goOffline();
-    }
-
-    setTimeout(() => {
-        if (!isMultiplayerActive) {
-            fullReset();
-            showMatchmakingPanel();
-        }
-    }, 2200);
-}
-
-function resetSinglePlayerUI() {
-    const p2Row = document.getElementById('p2-row');
-    if (p2Row) p2Row.style.display = 'none';
-    if (ballMesh && ballMesh.material) ballMesh.material.color.setHex(0x00eeff);
-    if (opponentBallMesh) opponentBallMesh.visible = false;
-}
-
-function handleBallUpdateEvent(snapshot) {
-    const data = snapshot.val();
-    if (!data || data.from === getLocalPlayerId()) return;
-    updateOpponentBall(data);
-}
-
-function areScoreArraysEqual(a, b) {
-    if (!Array.isArray(a) || !Array.isArray(b)) return false;
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-        if (a[i] !== b[i]) return false;
-    }
-    return true;
-}
-
-function handleScoresUpdate(snapshot) {
-    const allScores = snapshot.val() || {};
-    const opponentId = getOpponentPlayerId();
-    if (Array.isArray(allScores[opponentId])) {
-        const incomingScores = allScores[opponentId];
-        const currentScores = scores[opponentId] || [];
-        if (!areScoreArraysEqual(incomingScores, currentScores)) {
-            scores[opponentId] = incomingScores;
-            updateScoreTable(opponentId);
-            updateMultiplayerMatchState();
-        }
-    }
-}
-
-function processMatchEvent(key, event) {
-    if (!event || typeof event.timestamp !== 'number') return;
-    if (event.from === getLocalPlayerId()) return;
-    if (event.timestamp <= lastEventTimestamps[key]) return;
-
-    lastEventTimestamps[key] = event.timestamp;
-
-    switch (key) {
-        case 'playAgainRequest':
-            receivePlayAgainRequest(event);
-            break;
-        case 'playAgainResponse':
-            if (playAgainRequested && event.accepted) {
-                beginPlayAgain();
+        if (used) {
+            // Play appropriate sound based on item type
+            if (localPlayerItem.name === 'pistol') {
+                playPistolSound();
+            } else if (localPlayerItem.name === 'robot_hand') {
+                playRobotHandSound();
             }
-            break;
-        case 'modeSwitchRequest':
-            handleModeSwitchRequest(event);
-            break;
-        case 'modeSwitchResponse':
-            handleModeSwitchResponse(event);
-            break;
-    }
-}
 
-function handleEventsUpdate(snapshot) {
-    const events = snapshot.val() || {};
-    processMatchEvent('playAgainRequest', events.playAgainRequest);
-    processMatchEvent('playAgainResponse', events.playAgainResponse);
-    processMatchEvent('modeSwitchRequest', events.modeSwitchRequest);
-    processMatchEvent('modeSwitchResponse', events.modeSwitchResponse);
-}
+            if (players[localPlayerId].item) {
+                players[localPlayerId].ammo = players[localPlayerId].item.ammo;
+            }
 
-function sendMatchEvent(type, payload = {}) {
-    if (!isMultiplayerActive || !matchRef) return;
-    const event = {
-        ...payload,
-        type,
-        from: getLocalPlayerId(),
-        timestamp: Date.now()
-    };
-    matchRef.child(`events/${type}`).set(event).catch((err) => {
-    });
-}
+            broadcastToRoom('sync_players', { allPlayers: players });
 
-// Create a new multiplayer match as host
-function createMatch() {
-    unlockAudio();
-    if (!window.db) {
-        updateMatchmakingStatus('Firebase 未初始化。');
-        return;
-    }
-    window.db.goOnline();
+            if (!players[localPlayerId].item) {
+                localPlayerItem = null;
+            }
 
-    isCreatingMatch = true;
-    isJoiningMatch = false;
-    isSearchingForMatch = false;
-    hideJoinMatchPanel();
-
-    document.getElementById('create-match-btn').disabled = true;
-    document.getElementById('join-match-btn').disabled = true;
-    document.getElementById('single-player-btn').disabled = true;
-    document.getElementById('cancel-search-btn').style.display = 'block';
-
-    cancelMatchmaking();
-
-    const code = Math.floor(10000 + Math.random() * 90000).toString();
-    isHost = true;
-    myPlayerOffset = 0;
-    setMatchCodeUI(code);
-
-    matchRef = getMatchRef(code);
-    if (!matchRef) {
-        updateMatchmakingStatus('Firebase 未初始化。');
-        cancelMatchmaking();
-        return;
-    }
-    const hostRef = matchRef.child('host');
-    matchRef.set({
-        host: { connected: true, joinedAt: firebase.database.ServerValue.TIMESTAMP, sessionId: sessionId },
-        guest: null,
-        scores: { p1: [], p2: [] },
-        ballUpdate: null,
-        events: {},
-        mode: targetPinCount
-    }).then(() => {
-        hostRef.onDisconnect().remove();
-        setupFirebaseListeners();
-        updateMatchmakingStatus('房間代碼: ' + code + ' - 等待玩家...');
-    }).catch((err) => {
-        updateMatchmakingStatus('Unable to create match.');
-        cancelMatchmaking();
-    });
-}
-
-
-// ============================================
-// MULTIPLAYER MATCH JOINING
-// ============================================
-
-// Join an existing multiplayer match as a guest player
-// Validates match existence, sets up player offset, and initializes multiplayer mode
-function joinGame(targetHostId) {
-    unlockAudio();
-
-    isHost = false;
-    matchCode = targetHostId;
-    myPlayerOffset = 15;
-
-    document.getElementById('create-match-btn').disabled = true;
-    document.getElementById('join-match-btn').disabled = true;
-    document.getElementById('cancel-search-btn').style.display = 'block';
-
-    cancelMatchmaking();
-
-    matchRef = getMatchRef(targetHostId);
-    matchRef.once('value').then((snapshot) => {
-        const data = snapshot.val();
-        if (!data || !data.host) {
-            updateMatchmakingStatus('找不到房間。');
-            cancelMatchmaking();
-            return;
+        } else if (emptyPistolSound) {
+            emptyPistolSound.currentTime = 0;
+            emptyPistolSound.play().catch(e => console.warn("Empty pistol sound play failed:", e));
         }
-        const mode = data.host.mode || 10;
-        targetPinCount = mode;
-        document.getElementById('mode-toggle-btn').innerText = (targetPinCount === 10) ? '10 瓶' : '100 瓶';
-        updateLaneWidth();
-        const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
-        myPlayerOffset = offsetDistance;
-        if (data.guest && data.guest.connected) {
-            updateMatchmakingStatus('房間已滵滿。');
-            cancelMatchmaking();
-            return;
+    } else {
+        // --- Client prediction branch ---
+        const isRobotHand = (localPlayerItem.name === 'robot_hand');
+        const isPistol = (localPlayerItem.name === 'pistol');
+
+        if (isPistol && localPlayerItem.ammo !== undefined) {
+            localPlayerItem.ammo--;
+            players[localPlayerId].ammo = localPlayerItem.ammo;
+        } else if (isRobotHand) {
+            players[localPlayerId].item = null;
+            players[localPlayerId].itemType = null;
+            players[localPlayerId].ammo = 0;
+            localPlayerItem = null;
         }
 
-        const guestRef = matchRef.child('guest');
-        matchRef.child('guest').set({
-            connected: true,
-            joinedAt: firebase.database.ServerValue.TIMESTAMP
-        }).then(() => {
-            guestRef.onDisconnect().remove();
-            setupFirebaseListeners();
-            updateMatchmakingStatus('Connected! Setting up lane...');
-            hideMatchmakingPanel();
-            document.getElementById('cancel-search-btn').style.display = 'none';
-
-            if (laneMesh) { scene.remove(laneMesh); laneMesh.geometry.dispose(); laneMesh.material.dispose(); }
-            if (leftGutter) { scene.remove(leftGutter); leftGutter.geometry.dispose(); leftGutter.material.dispose(); }
-            if (rightGutter) { scene.remove(rightGutter); rightGutter.geometry.dispose(); rightGutter.material.dispose(); }
-            if (leftWallMesh) { scene.remove(leftWallMesh); leftWallMesh.geometry.dispose(); leftWallMesh.material.dispose(); }
-            if (rightWallMesh) { scene.remove(rightWallMesh); rightWallMesh.geometry.dispose(); rightWallMesh.material.dispose(); }
-
-            if (groundBody) world.removeBody(groundBody);
-            if (leftWallBody) world.removeBody(leftWallBody);
-            if (rightWallBody) world.removeBody(rightWallBody);
-
-            createStreetEnvironment(myPlayerOffset);
-            createPins(myPlayerOffset);
-
-            camera.position.set(myPlayerOffset, 4, 12);
-            camera.lookAt(myPlayerOffset, 1, 0);
-
-            if (ballBody) ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-            if (ballMesh) ballMesh.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-
-            activateMultiplayerMode(false);
-            resetGame();
-        }).catch((err) => {
-            updateMatchmakingStatus('Unable to join match.');
-            cancelMatchmaking();
+        const angle = calculateHandAngle(players[localPlayerId]);
+        hostConnection.send({
+            type: 'client_shoot',
+            senderId: localPlayerId,
+            payload: {
+                handAngle: angle,
+                ammo: isRobotHand ? 0 : (localPlayerItem?.ammo ?? 0),
+                mouseWorld: getMouseWorldPos()
+            }
         });
-    }).catch((err) => {
 
-        updateMatchmakingStatus('Unable to join match.');
-        cancelMatchmaking();
-    });
-}
-
-function startMatchmaking() {
-    createMatch();
-}
-
-function showJoinMatchPanel() {
-    document.getElementById('join-match-panel').style.display = 'flex';
-    document.getElementById('join-code-input').value = '';
-    document.getElementById('join-code-input').focus();
-}
-
-function hideJoinMatchPanel() {
-    const panel = document.getElementById('join-match-panel');
-    if (panel) panel.style.display = 'none';
-}
-
-function attemptJoinMatch() {
-    const input = document.getElementById('join-code-input');
-    if (!input) return;
-    const code = input.value.trim();
-    if (!/^[0-9]{5}$/.test(code)) {
-        updateMatchmakingStatus('請輸入有效的 5 位數代碼。');
-        return;
-    }
-
-    if (!window.db) {
-        updateMatchmakingStatus('Firebase 未初始化。');
-        return;
-    }
-    window.db.goOnline();
-
-    hideJoinMatchPanel();
-    isJoiningMatch = true;
-    isCreatingMatch = false;
-    document.getElementById('create-match-btn').disabled = true;
-    document.getElementById('join-match-btn').disabled = true;
-    document.getElementById('single-player-btn').disabled = true;
-    document.getElementById('cancel-search-btn').style.display = 'block';
-    updateMatchmakingStatus('正在加入代碼: ' + code + ' ...');
-    joinGame(code);
-}
-
-// Cancel current matchmaking process
-function cancelMatchmaking() {
-    isSearchingForMatch = false;
-    isCreatingMatch = false;
-    isJoiningMatch = false;
-    matchCode = null;
-    hideJoinMatchPanel();
-    if (matchmakingTimeout) {
-        clearTimeout(matchmakingTimeout);
-        matchmakingTimeout = null;
-    }
-
-    if (matchRef) {
-        if (isHost && !isMultiplayerActive) {
-            matchRef.remove().catch(() => { });
+        if (localPlayerItem) {
+            localPlayerItem.cooldown = localPlayerItem.cooldownMax;
         }
-        if (!isHost && !isMultiplayerActive) {
-            matchRef.child('guest').remove().catch(() => { });
+
+        // Play appropriate sound based on item type
+        if (isRobotHand) {
+            playRobotHandSound();
+        } else if (isPistol) {
+            playPistolSound();
         }
     }
+}
 
-    cleanupFirebaseListeners();
-    matchRef = null;
-
-    if (window.db && typeof window.db.goOffline === 'function') {
-        window.db.goOffline();
+function performThrow() {
+    if (!players[localPlayerId] || !players[localPlayerId].item) return;
+    if (players[localPlayerId].eliminated) return;
+    const angle = calculateHandAngle(players[localPlayerId]);
+    if (!isHost && hostConnection?.open) {
+        hostConnection.send({ type: 'request_throw_item', senderId: localPlayerId, payload: { angle } });
+    } else if (isHost) {
+        hostThrowItem(localPlayerId, angle);
     }
-
-    document.getElementById('create-match-btn').disabled = false;
-    document.getElementById('join-match-btn').disabled = false;
-    document.getElementById('single-player-btn').disabled = false;
-    document.getElementById('cancel-search-btn').style.display = 'none';
-    updateMatchmakingStatus('');
 }
 
-// ============================================
-// SINGLE PLAYER MODE
-// ============================================
+// ============================================================================
+//  GLOBALS & CONSTANTS
+// ============================================================================
 
-// Initialize single-player game mode
-// Hides matchmaking UI and resets game state
-function startSinglePlayer() {
-    hideMatchmakingPanel();
-    document.getElementById('mode-select-modal').style.display = 'block';
-    triggerDimmer(true);
+let itemManager = null;
+let localPlayerItem = null;
+let projectiles = [];
+let activeRobotHands = [];      // Robot hand grab data
+let lastRobotHandSnapshot = null;
+const THROWABLE_GRAVITY = 0.35;
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Canvas render size (fixed)
+const BASE_WIDTH = 1280;
+const BASE_HEIGHT = 720;
+canvas.width = BASE_WIDTH;
+canvas.height = BASE_HEIGHT;
+
+// World size (matches map_creator's virtual size)
+const WORLD_WIDTH = 3840;
+const WORLD_HEIGHT = 2160;
+
+// Camera bounds (per map)
+let cameraBounds = { minX: 0, minY: 0, maxX: WORLD_WIDTH, maxY: WORLD_HEIGHT };
+
+// Void threshold (per map) – default 2000 to avoid immediate death
+let voidYThreshold = 2000;
+
+const GRAVITY = 0.35;
+const FRICTION = 0.85;
+const MAX_FALL_SPEED = 10;
+const MOVE_SPEED = 3;
+const DASH_SPEED = 14;
+const BREAK_BOUNDS_OFFSET = 300;
+
+const PISTOL_PROJECTILE_SPEED = 36;
+window.PISTOL_PROJECTILE_SPEED = PISTOL_PROJECTILE_SPEED;
+
+let currentEngineMode = 'MENU';
+let isHost = false;
+let roomCodeString = "";
+let timerVal = 60;
+let gameTimer = null;
+
+let lobbyCountdownVal = -1;
+let lobbyTimerId = null;
+let isReturningToLobby = false;
+
+let raceStarted = false;
+let firstPlayerFinishTime = -1;
+let raceCountdownVal = -1;
+let raceTimerId = null;
+let finishPositions = [];
+
+let localPlayerId = "";
+let players = {};
+let readyPlayers = {};
+const MAX_PLAYERS = 6;
+const playerSlots = Array(MAX_PLAYERS).fill(null);
+
+let throwables = [];
+let lastThrowableSnapshot = null;
+let wasDropPressed = false;
+
+let platforms = [];
+let hazards = [];
+let gems = [];
+let spawnPoints = [];
+
+// Spectator mode
+let spectatorMode = false;
+let spectatorTargetId = null;
+let spectatorCycleButtonsAdded = false;
+
+// Match ending flag to prevent duplicate endings
+let matchEndingInProgress = false;
+
+function getAlivePlayers() {
+    return Object.values(players).filter(p => !p.eliminated);
 }
 
-function startSelectedMode(mode) {
-    // === 新增：在此處解鎖並恢復音效 ===
-    // 檢查並恢復 THREE.js 的音效環境
-    if (typeof THREE !== 'undefined' && THREE.AudioContext) {
-        const audioCtx = THREE.AudioContext.getContext();
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
+// Helper to end match if no players left alive
+function checkAllPlayersEliminatedAndEndMatch() {
+    if (!isHost || currentEngineMode !== 'GAME') return false;
+    if (matchEndingInProgress) return false;
+
+    const alive = getAlivePlayers();
+    if (alive.length === 0) {
+        matchEndingInProgress = true;
+        console.log("[MATCH END] All players eliminated. Ending match.");
+
+        // Stop any running timers immediately
+        if (gameTimer) {
+            clearInterval(gameTimer);
+            gameTimer = null;
         }
-    }
-
-    // 如果你有額外使用 Tone.js 或其他 Web Audio API，也可以一併在這裡喚醒
-    if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
-        Tone.context.resume();
-    }
-    // ===================================
-
-    document.getElementById('mode-select-modal').style.display = 'none';
-    isChaosMode = (mode === 'chaos');
-    resetChaosState();
-    window.db.goOffline();
-
-    // Recreate ball with new appearance if mode changed
-    if (ballMesh) {
-        scene.remove(ballMesh);
-    }
-    createBall();
-    scene.add(ballMesh);
-    ballMesh.position.set(myPlayerOffset, BALL_RADIUS, 0);
-
-    if (isChaosMode) {
-        promptEventSelection();
-    } else {
-        resetGame();
-    }
-}
-
-function createTNTMaterial() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-
-    // 1. Draw Red Background
-    ctx.fillStyle = '#cc0000';
-    ctx.fillRect(0, 0, 256, 256);
-
-    // 2. Draw White Stripe
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 80, 256, 96);
-
-    // 3. Draw TNT Text
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 80px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('TNT', 128, 128);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    return new THREE.MeshPhongMaterial({ map: texture });
-}
-
-function refreshBallVisuals() {
-    if (!ballMesh || !ballBody) return;
-
-    // Remove the old visual mesh from the scene
-    scene.remove(ballMesh);
-
-    // Clean up memory
-    if (ballMesh.geometry) ballMesh.geometry.dispose();
-    if (ballMesh.material) ballMesh.material.dispose();
-    // Also dispose of the old outline if it exists
-    ballMesh.children.forEach(child => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
-    });
-
-    const currentSizeMult = isChaosMode ? chaosModifiers.ballSizeMult : 1.0;
-    const currentRadius = BALL_RADIUS * currentSizeMult;
-    const size = currentRadius * 2;
-
-    // 1. CHOOSE VISUAL GEOMETRY
-    let geometry;
-    if (isChaosMode && chaosModifiers.isExplosive) {
-        geometry = new THREE.BoxGeometry(size, size, size);
-        ballBody.material.restitution = 0.8;
-    } else {
-        geometry = new THREE.SphereGeometry(currentRadius, 32, 32);
-        ballBody.material.restitution = 0.2;
-    }
-
-    // 2. CHOOSE MATERIAL
-    let material;
-    if (isChaosMode && chaosModifiers.isExplosive) {
-        material = createTNTMaterial();
-    } else {
-        material = new THREE.MeshPhongMaterial({
-            color: (myPlayerId === 2) ? 0xff4757 : 0x00eeff,
-            shininess: 100
-        });
-    }
-
-    // 3. APPLY NEW MESH
-    ballMesh = new THREE.Mesh(geometry, material);
-    ballMesh.castShadow = true;
-
-    // --- ADD OUTLINE EFFECT START ---
-    const outlineThickness = 0.03; // Matches the pin outline style
-    let outlineGeo;
-
-    if (isChaosMode && chaosModifiers.isExplosive) {
-        const outlineSize = size + outlineThickness;
-        outlineGeo = new THREE.BoxGeometry(outlineSize, outlineSize, outlineSize);
-    } else {
-        outlineGeo = new THREE.SphereGeometry(currentRadius + outlineThickness, 32, 32);
-    }
-
-    const outlineMat = new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        side: THREE.BackSide
-    });
-    const ballOutline = new THREE.Mesh(outlineGeo, outlineMat);
-
-    // Add it as a child so it inherits position/rotation automatically
-    ballMesh.add(ballOutline);
-    // --- ADD OUTLINE EFFECT END ---
-
-    scene.add(ballMesh);
-
-    // 4. THE PHYSICS TRICK
-    ballBody.shapes[0] = new CANNON.Sphere(currentRadius);
-    ballBody.updateBoundingRadius();
-    ballBody.updateMassProperties();
-}
-
-function onChaosEventSelected(eventData) {
-    refreshBallVisuals();
-}
-
-// ============================================
-// Event Selection
-// ============================================
-function promptEventSelection() {
-    triggerDimmer(true);
-    const container = document.getElementById('event-choices-container');
-    container.innerHTML = ''; // Clear previous
-
-    const choices = getTieredChaosEvents();
-
-    // Clear the console-forced event now that it has been consumed
-    if (typeof forcedChaosEventId !== 'undefined' && forcedChaosEventId) {
-        forcedChaosEventId = null;
-    }
-
-    if (!choices || choices.length === 0) {
-        document.getElementById('event-select-modal').style.display = 'none';
-        resetGame();
-        return;
-    }
-
-    choices.forEach(event => {
-        const btn = document.createElement('button');
-        btn.className = `btn event-btn tier-${event.tier}`;
-        if (event.id.includes('tier_transmute') || event.id === 'tier_chaos_prismatic') {
-            btn.classList.add('transmute-special');
+        if (raceTimerId) {
+            clearInterval(raceTimerId);
+            raceTimerId = null;
         }
-        btn.dataset.tier = event.tier;
-        btn.dataset.eventId = event.id; // For special effects tracking
 
-        btn.style.display = 'flex';
-        btn.style.flexDirection = 'column';
-        btn.innerHTML = `<span style="font-size:18px; font-weight:bold;">${event.displayName}</span><span style="font-size:12px; font-weight:normal; margin-top:4px;">${event.displayDescription}</span>`;
-
-        btn.onclick = () => {
-            activateChaosEvent(event);
-            refreshBallVisuals();  // Update ball visuals immediately after event activation
-            document.getElementById('event-select-modal').style.display = 'none';
-            resetGame(); // Start the round
-        };
-        container.appendChild(btn);
-    });
-
-    document.getElementById('event-select-modal').style.display = 'block';
-}
-
-
-// ============================================
-// SCORE RECORDING
-// ============================================
-
-// Record a completed frame score and update game state
-// Syncs scores with Firebase in multiplayer mode and updates UI
-function recordRoundScore(scoreValue) {
-    const myId = getLocalPlayerId();
-
-    if (!scores[myId]) scores[myId] = [];
-    if (!isFreeplayMode) {
-        scores[myId].push(scoreValue);
-        hasRecordedScoreInCurrentGame = true;
-
-        if (isMultiplayerActive && matchRef) {
-            matchRef.child('scores').child(myId).set(scores[myId]).catch((err) => {
+        // Build results with current scores
+        let results = [];
+        for (let id in players) {
+            results.push({
+                id,
+                nameTag: players[id].nameTag,
+                score: players[id].score
             });
         }
+        broadcastToRoom('match_over', { summary: results });
+        executeMatchEndingSequence(results);
+        return true;
     }
+    return false;
+}
 
-    updateScoreTable(myId);
+function cycleSpectator(direction) {
+    if (!spectatorMode || currentEngineMode !== 'GAME') return;
+    const alive = getAlivePlayers();
+    if (alive.length === 0) return;
+    let currentIndex = alive.findIndex(p => p.id === spectatorTargetId);
+    if (currentIndex === -1) currentIndex = 0;
+    let newIndex = (currentIndex + direction + alive.length) % alive.length;
+    spectatorTargetId = alive[newIndex].id;
+    // Update camera immediately
+    updateCameraToTarget();
+}
 
-    updateMultiplayerMatchState();
+function updateCameraToTarget() {
+    if (!spectatorMode || !spectatorTargetId) return;
+    const target = players[spectatorTargetId];
+    if (!target) return;
+    let targetCamX = (target.x + target.width / 2) - (BASE_WIDTH / 2) / camera.zoom;
+    let targetCamY = (target.y + target.height / 2) - (BASE_HEIGHT / 2) / camera.zoom;
+    let maxX = cameraBounds.maxX - BASE_WIDTH / camera.zoom;
+    let maxY = cameraBounds.maxY - BASE_HEIGHT / camera.zoom;
+    let minX = cameraBounds.minX;
+    let minY = cameraBounds.minY;
+    targetCamX = Math.max(minX, Math.min(targetCamX, maxX));
+    targetCamY = Math.max(minY, Math.min(targetCamY, maxY));
+    camera.x = targetCamX;
+    camera.y = targetCamY;
+}
 
-    if (!isMultiplayerActive) {
-        const msgBox = document.getElementById('msg-box');
-        const replayBtn = document.getElementById('watch-replay-btn');
-        const title = document.getElementById('msg-title');
-        const body = document.getElementById('msg-body');
-        const actionBtn = document.getElementById('action-btn');
-
-        msgBox.style.display = 'block';
-        title.innerText = t('msgTitleEnd');
-        body.innerText = t('msgBodyEnd');
-        replayBtn.style.display = 'block';
-        replayBtn.innerText = "觀看重播";
-        replayBtn.onclick = startReplay;
-        actionBtn.style.display = 'inline-block';
-        actionBtn.innerText = '繼續';
-        actionBtn.onclick = () => {
-            msgBox.style.display = 'none';
-            resetGame();
-        };
-        document.getElementById('action-cam-container').style.display = 'none';
+function repositionAllPlayersToSpawnPoints() {
+    if (spawnPoints.length === 0) return;
+    // Use the first spawn point for all players
+    const sp = spawnPoints[0];
+    for (let id in players) {
+        players[id].x = sp.x;
+        players[id].y = sp.y;
+        players[id].vx = 0;
+        players[id].vy = 0;
+        players[id].isGrounded = true;
+        players[id].jumpsLeft = 2;
+        players[id].dashCooldown = 0;
+        players[id].dashTimer = 0;
+        players[id].isDashing = false;
+        players[id].dashPushedBy = null;
+        players[id].eliminated = false;
+        players[id].deathReason = null;
+        players[id].knockbackTimer = 0;
+        players[id].knockbackVx = 0;
+        players[id].knockbackVy = 0;
+        players[id].grabbedBy = null;
     }
 }
 
-// Check if both players have completed all matches and show final result if so
-function updateMultiplayerMatchState() {
-    if (!isMultiplayerActive) return;
+let particles = [];
+let bulletImage = new Image();
+bulletImage.src = 'assets/items/pistol_bullet.svg';
 
-    const localDone = isPlayerComplete(getLocalPlayerId());
-    const opponentDone = isPlayerComplete(getOpponentPlayerId());
+let faceImageCache = {};
+let lastTime = 0;
 
-    // Only show final result if at least one score has been recorded in this game
-    // This prevents stale Firebase data from triggering final result immediately after reset
-    if (localDone && opponentDone && hasRecordedScoreInCurrentGame) {
-        showMultiplayerFinalResult();
-    } else if (localDone && !hasShownLocalCompleteMessage) {
-        showMultiplayerWaitMessage(true);
-    } else if (opponentDone && !hasShownOpponentCompleteMessage) {
-        showMultiplayerWaitMessage(false);
+let camera = {
+    x: 0, y: 0, zoom: 1.0, targetZoom: 1.0,
+    minZoom: 1.0, maxZoom: 2.5
+};
+
+let skinDoor = { x: 220, y: 390, w: 70, h: 110, color: '#ff007f' };
+let lobbyDoor = { x: 1150, y: 530, w: 70, h: 110, color: '#ffcc00' };
+let finishLine = { x: 1150, y: 550, w: 70, h: 80, color: '#00ff66' };
+
+const PLAYER_COLORS = [
+    '#FF0000', '#0000FF', '#000000', '#ffffff', '#FF69B4', '#00FFFF',
+    '#8B4513', '#FFC0CB', '#800080', '#FFA500', '#808080', '#63c363'
+];
+
+const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ShiftLeft: false, Interact: false, Drop: false };
+const touchState = { left: false, right: false, jump: false };
+
+let mousePos = { x: 0, y: 0 };
+window.addEventListener('mousemove', (e) => {
+    mousePos.x = e.clientX;
+    mousePos.y = e.clientY;
+});
+
+function getMouseWorldPos() {
+    const rect = canvas.getBoundingClientRect();
+    const canvasX = (mousePos.x - rect.left) * (canvas.width / rect.width);
+    const canvasY = (mousePos.y - rect.top) * (canvas.height / rect.height);
+    return {
+        x: canvasX / camera.zoom + camera.x,
+        y: canvasY / camera.zoom + camera.y
+    };
+}
+
+// ------------------------------------------------------------------
+// TOUCH AIMING (mobile)
+// ------------------------------------------------------------------
+function getTouchWorldPos(touch) {
+    const rect = canvas.getBoundingClientRect();
+    const canvasX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+    const canvasY = (touch.clientY - rect.top) * (canvas.height / rect.height);
+    return {
+        x: canvasX / camera.zoom + camera.x,
+        y: canvasY / camera.zoom + camera.y
+    };
+}
+
+function handleTouchAim(e) {
+    if (!players[localPlayerId]) return;
+    if (players[localPlayerId].eliminated) return;
+    e.preventDefault();
+    if (e.touches.length === 0) return;
+    const touch = e.touches[0];
+    const worldPos = getTouchWorldPos(touch);
+    const handX = players[localPlayerId].x + players[localPlayerId].width / 2;
+    const handY = players[localPlayerId].y + 32;
+    const angle = Math.atan2(worldPos.y - handY, worldPos.x - handX);
+    players[localPlayerId].handAngle = angle;
+}
+canvas.addEventListener('touchstart', handleTouchAim);
+canvas.addEventListener('touchmove', handleTouchAim);
+canvas.addEventListener('touchend', (e) => {
+    if (players[localPlayerId] && !players[localPlayerId].eliminated) {
+        players[localPlayerId].handAngle = players[localPlayerId].facingRight ? 0 : Math.PI;
+    }
+});
+
+function getNextAvailableColor() {
+    for (let color of PLAYER_COLORS) {
+        let taken = false;
+        for (let id in players) if (players[id].color === color) { taken = true; break; }
+        if (!taken) return color;
+    }
+    return PLAYER_COLORS[0];
+}
+
+function claimSlot(peerId) {
+    for (let i = 0; i < MAX_PLAYERS; i++) if (playerSlots[i] === null) { playerSlots[i] = peerId; return `P${i + 1}`; }
+    return "P?";
+}
+function releaseSlot(peerId) {
+    const idx = playerSlots.indexOf(peerId);
+    if (idx !== -1) playerSlots[idx] = null;
+}
+
+// ============================================================================
+//  ENVIRONMENT SETUP (with camera bounds and void threshold)
+// ============================================================================
+
+function setupLobbyEnvironment() {
+    if (!itemManager) itemManager = new ItemManager();
+
+    const map = MAPS.lobby;
+    platforms = map.platforms || [];
+    hazards = map.hazards || [];
+    gems = map.gems || [];
+
+    if (map.scoreboard) {
+        window.lobbyScoreboardPos = { x: map.scoreboard.x, y: map.scoreboard.y, w: map.scoreboard.w, h: map.scoreboard.h };
+    } else {
+        window.lobbyScoreboardPos = { x: 50, y: 50, w: 250, h: 200 };
+    }
+
+
+    // Read spawn points from map
+    spawnPoints = (map.spawnPoints || []).map(sp => ({ x: sp.x, y: sp.y }));
+    if (spawnPoints.length === 0) {
+        spawnPoints = [
+            { x: 100, y: 500 }, { x: 200, y: 500 }, { x: 300, y: 500 },
+            { x: 400, y: 500 }, { x: 500, y: 500 }, { x: 600, y: 500 }
+        ];
+    }
+    if (map.doors) {
+        if (map.doors.skinDoor) Object.assign(skinDoor, map.doors.skinDoor);
+        if (map.doors.lobbyDoor) Object.assign(lobbyDoor, map.doors.lobbyDoor);
+    }
+    // Spawn items from map
+    if (map.items && Array.isArray(map.items)) {
+        itemManager.worldItems = [];
+        for (let item of map.items) {
+            itemManager.spawnItem(item.x, item.y, item.itemType, item.initialDelay || 0, item.shouldRespawn !== false, item.ammo || 3);
+        }
+    } else {
+        // default pistol for lobby (only if no items defined)
+        itemManager.worldItems = [];
+        itemManager.spawnItem(300, 580, 'pistol', 0, true, 3);
+    }
+    // Set camera bounds
+    cameraBounds = map.cameraBounds || { minX: 0, minY: 0, maxX: WORLD_WIDTH, maxY: WORLD_HEIGHT };
+    // Set void threshold
+    voidYThreshold = (map.voidYThreshold !== undefined) ? map.voidYThreshold : 2000;
+}
+
+function setupActiveMatchEnvironment() {
+    const map = MAPS.match;
+    platforms = map.platforms || [];
+    hazards = map.hazards || [];
+    gems = (map.gems || []).map(g => ({ ...g, collected: false }));
+    // Read spawn points
+    spawnPoints = (map.spawnPoints || []).map(sp => ({ x: sp.x, y: sp.y }));
+    if (spawnPoints.length === 0) {
+        spawnPoints = [{ x: 100, y: 400 }, { x: 150, y: 400 }, { x: 200, y: 400 }];
+    }
+    if (map.finishLine) Object.assign(finishLine, map.finishLine);
+    // Items from map
+    if (map.items && Array.isArray(map.items) && itemManager) {
+        itemManager.worldItems = [];
+        for (let item of map.items) {
+            itemManager.spawnItem(item.x, item.y, item.itemType, item.initialDelay || 0, item.shouldRespawn !== false, item.ammo || 3);
+        }
+    } else if (itemManager) {
+        // optional default items (none by default)
+        itemManager.worldItems = [];
+    }
+    cameraBounds = map.cameraBounds || { minX: 0, minY: 0, maxX: WORLD_WIDTH, maxY: WORLD_HEIGHT };
+    voidYThreshold = (map.voidYThreshold !== undefined) ? map.voidYThreshold : 2000;
+}
+
+// ------------------------------------------------------------------
+// HOST LOBBY RESET FUNCTION (with version)
+// ------------------------------------------------------------------
+function hostResetLobby() {
+    if (!isHost || currentEngineMode !== 'LOBBY') return;
+
+    projectiles = [];
+    throwables = [];
+    activeRobotHands = [];
+    lastThrowableSnapshot = null;
+    lastProjectileSnapshot = null;
+    lastRobotHandSnapshot = null;
+
+    setupLobbyEnvironment();
+
+    if (lobbyTimerId) {
+        clearInterval(lobbyTimerId);
+        lobbyTimerId = null;
+    }
+    if (raceTimerId) {
+        clearInterval(raceTimerId);
+        raceTimerId = null;
+    }
+    lobbyCountdownVal = -1;
+    raceCountdownVal = -1;
+    raceStarted = false;
+    firstPlayerFinishTime = -1;
+    finishPositions = [];
+
+    readyPlayers = {};
+    localPlayerItem = null;
+    resetVersion++;
+    broadcastToRoom('sync_players', { allPlayers: players, reset: true });
+    broadcastToRoom('sync_ready_players', { readyPlayers });
+    broadcastToRoom('sync_map', { platforms, hazards, gems, cameraBounds, voidYThreshold });
+    broadcastWorldItems();
+    broadcastToRoom('sync_throwables', { throwables });
+    broadcastProjectiles();
+    broadcastRobotHands();
+    broadcastToRoom('sync_lobby_countdown', { value: -1 });
+
+    playSound('door');
+    updateHudDisplays();
+}
+
+// ------------------------------------------------------------------
+// Show/hide reset button based on host and engine mode
+// ------------------------------------------------------------------
+function updateResetButtonVisibility() {
+    const resetBtn = document.getElementById('reset-lobby-btn');
+    if (!resetBtn) return;
+    if (isHost && currentEngineMode === 'LOBBY') {
+        resetBtn.classList.remove('hidden');
+    } else {
+        resetBtn.classList.add('hidden');
     }
 }
 
-// ============================================
-// PLAY AGAIN AND REMATCH SYSTEM
-// ============================================
+const originalEnterLobbyState = enterLobbyState;
+enterLobbyState = function () {
+    originalEnterLobbyState();
+    updateResetButtonVisibility();
+};
 
-// Send play-again request to opponent
-function sendPlayAgainRequest() {
-    triggerDimmer(false);
-    const msgBox = document.getElementById('msg-box');
-    if (msgBox) {
-        msgBox.style.display = 'none';
-        // Only clear the body content, not the entire structure
-        const body = document.getElementById('msg-body');
-        if (body) body.innerText = '';
+const originalExecuteMatchStart = executeActiveMatchStart;
+executeActiveMatchStart = function () {
+    originalExecuteMatchStart();
+    updateResetButtonVisibility();
+};
+
+const originalExecuteLobbyReturn = executeLobbyReturnSequence;
+executeLobbyReturnSequence = function () {
+    originalExecuteLobbyReturn();
+    updateResetButtonVisibility();
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    const resetBtn = document.getElementById('reset-lobby-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', hostResetLobby);
     }
+});
 
-    if (!isMultiplayerActive || !matchRef) {
-        fullReset();
+// ============================================================================
+//  PLAYER PROFILE & DIMENSIONS
+// ============================================================================
+
+const CHARACTER_BASE_WIDTH = 21;
+const CHARACTER_BASE_HEIGHT = 70;
+let characterSizeMultiplier = 1.0;
+
+function updatePlayerDimensions(player, multiplier) {
+    const oldCenterX = player.x + player.width / 2;
+    player.width = CHARACTER_BASE_WIDTH * multiplier;
+    player.height = CHARACTER_BASE_HEIGHT * multiplier;
+    player.x = oldCenterX - player.width / 2;
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > WORLD_WIDTH) player.x = WORLD_WIDTH - player.width;
+}
+
+function createPlayerProfile(id, nameTag) {
+    return {
+        id: id, nameTag: nameTag,
+        x: 640, y: 530, vx: 0, vy: 0,
+        width: CHARACTER_BASE_WIDTH, height: CHARACTER_BASE_HEIGHT,
+        color: getNextAvailableColor(),
+        isGrounded: false, facingRight: true,
+        score: 0, jumpsLeft: 2,
+        wasJumpPressed: false,
+        dashCooldown: 0, dashTimer: 0, isDashing: false, wasDashPressed: false,
+        dashPushedBy: null,
+        lastSeen: Date.now(),
+        sizeMultiplier: 1,
+        itemType: null, item: null,
+        ammo: 0,
+        eliminated: false,
+        deathReason: null,
+        knockbackTimer: 0,
+        knockbackVx: 0,
+        knockbackVy: 0,
+        grabbedBy: null
+    };
+}
+
+// ============================================================================
+//  VOID DEATH HANDLING
+// ============================================================================
+
+function voidRespawnLobby(player) {
+    console.warn(`[VOID RESPAWN LOBBY] ${player.id} fell below ${voidYThreshold} from (${player.x},${player.y})`);
+    if (spawnPoints.length === 0) {
+        player.x = 100;
+        player.y = 500;
+    } else {
+        const playerIds = Object.keys(players);
+        const playerIndex = playerIds.indexOf(player.id);
+        const idx = playerIndex % spawnPoints.length;
+        const sp = spawnPoints[idx];
+        player.x = sp.x;
+        player.y = sp.y;
+    }
+    player.vx = 0;
+    player.vy = 0;
+    player.isGrounded = true;
+    player.jumpsLeft = 2;
+    player.dashCooldown = 0;
+    player.dashTimer = 0;
+    player.isDashing = false;
+    player.dashPushedBy = null;
+    player.knockbackTimer = 0;
+    player.knockbackVx = 0;
+    player.knockbackVy = 0;
+    playSound('spike');
+}
+
+function voidEliminateGame(player, reason) {
+    if (player.eliminated) return;
+    player.eliminated = true;
+    player.deathReason = reason || 'unknown';
+    player.item = null;
+    player.itemType = null;
+    player.ammo = 0;
+    player.knockbackTimer = 0;
+    // Clear any active grab involving this player
+    if (isHost) {
+        activeRobotHands = activeRobotHands.filter(g => g.holderId !== player.id && g.targetId !== player.id);
+        for (let id in players) {
+            if (players[id].grabbedBy === player.id) players[id].grabbedBy = null;
+        }
+        broadcastRobotHands();
+    }
+    playSound('spike');
+    console.log(`[ELIMINATED] ${player.id} (${player.nameTag}) eliminated. Reason: ${player.deathReason}. Remaining alive: ${getAlivePlayers().length}`);
+
+    // If local player eliminated, enter spectator mode
+    if (player.id === localPlayerId && currentEngineMode === 'GAME') {
+        spectatorMode = true;
+        const alive = getAlivePlayers();
+        if (alive.length > 0) {
+            spectatorTargetId = alive[0].id;
+            updateCameraToTarget();
+        }
+        document.getElementById('spectator-controls')?.classList.remove('hidden');
+    }
+    // Host: check if all players eliminated (immediate match end)
+    if (isHost && currentEngineMode === 'GAME') {
+        checkAllPlayersEliminatedAndEndMatch();
+    }
+}
+
+function checkVoidDeath() {
+    if (currentEngineMode !== 'LOBBY' && currentEngineMode !== 'GAME') return;
+    const isGame = (currentEngineMode === 'GAME');
+    for (let id in players) {
+        const p = players[id];
+        if (p.eliminated) continue;
+        if (p.y > voidYThreshold) {
+            if (!isGame) voidRespawnLobby(p);
+            else voidEliminateGame(p, 'fell into void');
+        }
+    }
+}
+
+// ============================================================================
+//  ITEM & THROWABLE HELPERS
+// ============================================================================
+
+function createThrowable(itemType, x, y, vx, vy, ownerId, dropItem = false, ammo = 3) {
+    return {
+        id: Math.random() + Date.now(),
+        itemType, x, y, vx, vy,
+        radius: 12,
+        life: 300,
+        ownerId, angle: 0,
+        angularSpeed: (vx * 0.025) + ((Math.random() - 0.5) * 0.04),
+        dropItem, ammo
+    };
+}
+
+function broadcastThrowables() {
+    if (!isHost) return;
+    const snap = JSON.stringify(throwables);
+    if (snap === lastThrowableSnapshot) return;
+    lastThrowableSnapshot = snap;
+    broadcastToRoom('sync_throwables', { throwables });
+}
+
+function broadcastRobotHands() {
+    if (!isHost) return;
+    const snap = JSON.stringify(activeRobotHands);
+    if (snap === lastRobotHandSnapshot) return;
+    lastRobotHandSnapshot = snap;
+    console.log(`[RobotHand] Broadcasting activeRobotHands: ${activeRobotHands.length} entries`);
+    broadcastToRoom('sync_robot_hands', { activeRobotHands });
+}
+
+// ============================================================================
+//  BREAK PARTICLES (empty pistol drop)
+// ============================================================================
+
+function spawnBreakParticles(x, y) {
+    for (let i = 0; i < 20; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 3;
+        pushParticle({
+            type: 'spark',
+            x, y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 2,
+            life: 0.5 + Math.random() * 0.3,
+            age: 0,
+            size: Math.random() * 5 + 4,
+            radius: 3,
+            bounce: 0.1,
+            friction: 0.95,
+            onGround: false,
+            color: '#ff6600',
+            alpha: 1
+        });
+    }
+    playSound('spike');
+}
+
+// ============================================================================
+//  DROP & THROW (HOST)
+// ============================================================================
+
+function hostDropItem(playerId) {
+    const player = players[playerId];
+    if (!player || !player.item) return;
+    const itemType = player.itemType;
+    if (!itemType) return;
+    const ammo = player.item.ammo;
+
+    if (ammo === 0) {
+        spawnBreakParticles(player.x + player.width / 2, player.y + player.height / 2);
+        player.item = null;
+        player.itemType = null;
+        player.ammo = 0;
+        if (playerId === localPlayerId) localPlayerItem = null;
+        broadcastToRoom('sync_players', { allPlayers: players });
+        playSound('gem');
         return;
     }
-    if (playAgainRequested) return;
-    playAgainRequested = true;
-    sendMatchEvent('playAgainRequest', {});
-    startPlayAgainCountdown('確認重賽，自動重啟倒數', '等待對手...');
 
-    if (playAgainOpponentRequested) {
-        beginPlayAgain();
-    }
+    const handX = player.x + player.width * 0.5;
+    const handY = player.y + 32;
+    const dirX = player.facingRight ? 1 : -1;
+    const throwable = createThrowable(itemType, handX, handY, dirX * 2, -3, playerId, true, ammo);
+    throwables.push(throwable);
+    broadcastThrowables();
+
+    player.item = null;
+    player.itemType = null;
+    player.ammo = 0;
+    if (playerId === localPlayerId) localPlayerItem = null;
+    broadcastToRoom('sync_players', { allPlayers: players });
+    playSound('gem');
 }
 
-function receivePlayAgainRequest(data) {
-    playAgainOpponentRequested = true;
-    if (playAgainRequested) {
-        beginPlayAgain();
-        return;
-    }
-    showPlayAgainCountdownMessage();
-}
-
-function showPlayAgainCountdownMessage() {
-    const msgBox = document.getElementById('msg-box');
-    const replayBtn = document.getElementById('watch-replay-btn');
-    const title = document.getElementById('msg-title');
-    const body = document.getElementById('msg-body');
-    const btn = document.getElementById('action-btn');
-
-    msgBox.style.display = 'block';
-    replayBtn.style.display = 'none';
-    triggerDimmer(false);
-
-    btn.style.display = 'inline-block';
-    btn.disabled = false;
-    btn.innerText = '繼續';
-    btn.onclick = sendPlayAgainRequest;
-
-    title.innerText = '對手已準備';
-    startPlayAgainCountdown('自動重啟倒數', '等待您確認：');
-    body.innerText = `對手請求重賽，距離自動重啟還有 ${playAgainCountdownRemaining} 秒。`;
-}
-
-function startPlayAgainCountdown(successText, waitingText) {
-    const msgBox = document.getElementById('msg-box');
-    const body = document.getElementById('msg-body');
-    const btn = document.getElementById('action-btn');
-
-    if (playAgainCountdownTimer) {
-        clearInterval(playAgainCountdownTimer);
-    }
-    playAgainCountdownRemaining = 5;
-    playAgainCountdownTimer = setInterval(() => {
-        playAgainCountdownRemaining -= 1;
-        if (playAgainCountdownRemaining <= 0) {
-            clearInterval(playAgainCountdownTimer);
-            playAgainCountdownTimer = null;
-            if (!playAgainRequested) {
-                if (!playAgainOpponentRequested) {
-                    sendPlayAgainRequest();
-                }
-            }
-            beginPlayAgain();
-        } else {
-            if (body) {
-                body.innerText = `${waitingText} ${playAgainCountdownRemaining} 秒。`;
-            }
-            if (btn && btn.innerText === '繼續') {
-                btn.innerText = `繼續 (${playAgainCountdownRemaining})`;
+function hostCheckHazardsForAllPlayers() {
+    if (!isHost || currentEngineMode !== 'GAME') return;
+    for (let id in players) {
+        const p = players[id];
+        if (p.eliminated) continue;
+        // Check hazards
+        for (let h of hazards) {
+            if (checkCollision(p, h)) {
+                voidEliminateGame(p, 'touched a hazard');
+                break;
             }
         }
+    }
+    // void is already handled by checkVoidDeath() but call it again for safety
+    checkVoidDeath();
+}
+
+function hostThrowItem(playerId, angle, power = 14) {
+    const player = players[playerId];
+    if (!player || !player.item) return;
+    const itemType = player.itemType;
+    if (!itemType) return;
+    const ammo = player.item.ammo;
+
+    const handX = player.x + player.width * 0.5;
+    const handY = player.y + 32;
+    const dirX = Math.cos(angle);
+    const dirY = Math.sin(angle);
+    const spawnX = handX + dirX * 20;
+    const spawnY = handY + dirY * 20;
+    const vx = dirX * power;
+    const vy = dirY * power;
+
+    const throwable = createThrowable(itemType, spawnX, spawnY, vx, vy, playerId, false, ammo);
+    throwables.push(throwable);
+    broadcastThrowables();
+
+    player.item = null;
+    player.itemType = null;
+    player.ammo = 0;
+    if (playerId === localPlayerId) localPlayerItem = null;
+    broadcastToRoom('sync_players', { allPlayers: players });
+    playSound('door');
+}
+
+// ============================================================================
+//  NETWORKING – PEERJS
+// ============================================================================
+
+let peer = null;
+let clientConnections = [];
+let hostConnection = null;
+const HEARTBEAT_TIMEOUT = 5000;
+let hostWatchdogTimer = null;
+let resetVersion = 0;
+let clientResetVersion = 0;
+
+function initHost() {
+    switchPanel('panel-status');
+    roomCodeString = Math.floor(1000 + Math.random() * 9000).toString();
+    peer = new Peer(`uhcc-${roomCodeString}`);
+
+    peer.on('open', () => {
+        document.getElementById('status-spinner').classList.add('hidden');
+        document.getElementById('room-code-display').classList.remove('hidden');
+        document.getElementById('room-code').innerText = roomCodeString;
+        document.getElementById('hud-room').innerText = roomCodeString;
+        if (navigator.clipboard) navigator.clipboard.writeText(roomCodeString).catch(() => { });
+
+        isHost = true;
+        localPlayerId = "HOST";
+        players[localPlayerId] = createPlayerProfile(localPlayerId, claimSlot(localPlayerId));
+
+        enterLobbyState();
+        updateResetButtonVisibility();
+        startHostWatchdog();
+    });
+
+    peer.on('connection', (conn) => {
+        if (Object.keys(players).length >= 6) {
+            conn.on('open', () => { conn.send({ type: 'room_full' }); setTimeout(() => conn.close(), 500); });
+            return;
+        }
+        clientConnections.push(conn);
+        setupHostRoutingRules(conn);
+    });
+}
+
+function startHostWatchdog() {
+    if (hostWatchdogTimer) clearInterval(hostWatchdogTimer);
+    hostWatchdogTimer = setInterval(() => {
+        if (!isHost) return;
+        const now = Date.now();
+        for (let id in players) {
+            if (id === localPlayerId) continue;
+            if (now - players[id].lastSeen > HEARTBEAT_TIMEOUT) {
+                cleanupPlayer(id);
+            }
+        }
+    }, 2000);
+}
+
+function cleanupPlayer(peerId) {
+    if (players[peerId]) {
+        releaseSlot(peerId);
+        delete players[peerId];
+        updateHudDisplays();
+        broadcastToRoom('sync_players', { allPlayers: players });
+    }
+}
+
+function setupHostRoutingRules(conn) {
+    conn.on('open', () => {
+        const newId = conn.peer;
+        const spawnIndex = Object.keys(players).length % spawnPoints.length;
+        const sp = spawnPoints[spawnIndex];
+        players[newId] = createPlayerProfile(newId, claimSlot(newId));
+        players[newId].x = sp.x;
+        players[newId].y = sp.y;
+        updateHudDisplays();
+
+        const safePlayers = {};
+        for (let id in players) {
+            safePlayers[id] = { ...players[id] };
+            delete safePlayers[id].item;
+            safePlayers[id].eliminated = players[id].eliminated;
+            safePlayers[id].grabbedBy = players[id].grabbedBy;  // ✅ sync grabbed state
+        }
+        conn.send({
+            type: 'init_welcome',
+            payload: { assignedId: newId, allPlayers: safePlayers, mode: currentEngineMode, readyPlayers, resetVersion }
+        });
+
+        broadcastToRoom('sync_map', { platforms, hazards, gems, cameraBounds, voidYThreshold });
+        broadcastToRoom('sync_players', { allPlayers: players });
+        broadcastToRoom('sync_ready_players', { readyPlayers });
+
+        if (itemManager) {
+            const itemsData = itemManager.worldItems.map(item => ({
+                x: item.x, y: item.y, itemType: item.itemType,
+                isAvailable: item.isAvailable, respawnTimer: item.respawnTimer,
+                pickupDelayTimer: item.pickupDelayTimer, shouldRespawn: item.shouldRespawn,
+                ammo: item.ammo
+            }));
+            conn.send({ type: 'sync_world_items', payload: { items: itemsData } });
+        }
+
+        for (let id in players) {
+            if (id !== newId) {
+                const face = localStorage.getItem('playerFaceDrawing_' + id);
+                if (face) conn.send({ type: 'sync_face_drawing', payload: { playerId: id, faceData: face } });
+            }
+        }
+    });
+
+    conn.on('data', (pkg) => {
+        const sender = conn.peer;
+        switch (pkg.type) {
+            case 'heartbeat':
+                if (players[sender]) players[sender].lastSeen = Date.now();
+                break;
+            case 'client_input_update':
+                if (players[pkg.senderId]) {
+                    if (pkg.payload.resetVersion !== undefined && pkg.payload.resetVersion !== resetVersion) break;
+                    const pl = players[pkg.senderId];
+                    pl.x = pkg.payload.x; pl.y = pkg.payload.y;
+                    pl.vx = pkg.payload.vx; pl.vy = pkg.payload.vy;
+                    pl.isGrounded = pkg.payload.isGrounded;
+                    pl.facingRight = pkg.payload.facingRight;
+                    pl.isDashing = pkg.payload.isDashing;
+                    pl.handAngle = pkg.payload.handAngle;
+                    pl.lastSeen = Date.now();
+                }
+                broadcastToRoom('sync_players', { allPlayers: players });
+                break;
+            case 'update_skin':
+                if (players[pkg.senderId]) players[pkg.senderId].color = pkg.payload.color;
+                broadcastToRoom('sync_players', { allPlayers: players });
+                if (!document.getElementById('skin-modal').classList.contains('hidden')) updateColorButtonStates();
+                break;
+            case 'request_collect_gem':
+                processGemCapture(pkg.payload.gemId, pkg.senderId);
+                break;
+            case 'player_ready_toggle':
+                if (pkg.payload.isReady) readyPlayers[pkg.senderId] = true;
+                else delete readyPlayers[pkg.senderId];
+                broadcastToRoom('sync_ready_players', { readyPlayers });
+                break;
+            case 'update_face_drawing':
+                localStorage.setItem('playerFaceDrawing_' + pkg.senderId, pkg.payload.faceData);
+                localStorage.setItem('playerHasCustomFace_' + pkg.senderId, 'true');
+                broadcastToRoom('sync_face_drawing', { playerId: pkg.senderId, faceData: pkg.payload.faceData });
+                break;
+            case 'request_pickup_item':
+                if (players[pkg.senderId] && itemManager) {
+                    const picked = itemManager.checkPickup(players[pkg.senderId]);
+                    if (picked) {
+                        players[pkg.senderId].item = picked;
+                        players[pkg.senderId].itemType = picked.name === 'pistol' ? 'pistol' : 'robot_hand';
+                        players[pkg.senderId].ammo = picked.ammo;
+                        broadcastToRoom('sync_players', { allPlayers: players });
+                        broadcastWorldItems();
+                    }
+                }
+                break;
+            case 'client_shoot':
+                if (players[pkg.senderId]) {
+                    const player = players[pkg.senderId];
+                    // Do NOT set ammo from payload – host is authoritative.
+                    if (player.item && player.item.canUse()) {
+                        const gameState = {
+                            projectiles,
+                            activeRobotHands,
+                            mouseWorld: pkg.payload.mouseWorld || null
+                        };
+                        const used = player.item.onUse(player, gameState);
+                        if (used) {
+                            playSound('door');
+                            broadcastToRoom('sync_players', { allPlayers: players });
+                        }
+                    }
+                }
+                break;
+            case 'request_drop_item':
+                if (players[pkg.senderId]) hostDropItem(pkg.senderId);
+                break;
+            case 'request_throw_item':
+                if (players[pkg.senderId] && players[pkg.senderId].item)
+                    hostThrowItem(pkg.senderId, pkg.payload.angle);
+                break;
+        }
+    });
+
+    conn.on('close', () => {
+        releaseSlot(conn.peer);
+        clientConnections = clientConnections.filter(c => c !== conn);
+        delete players[conn.peer];
+        delete readyPlayers[conn.peer];
+        updateHudDisplays();
+        broadcastToRoom('sync_players', { allPlayers: players });
+    });
+}
+
+function initGuest() {
+    const code = document.getElementById('room-input').value.trim();
+    if (!/^[0-9]{4}$/.test(code)) return;
+    switchPanel('panel-status');
+    roomCodeString = code;
+    peer = new Peer();
+    peer.on('open', (id) => {
+        localPlayerId = id;
+        hostConnection = peer.connect(`uhcc-${roomCodeString}`);
+        itemManager = new ItemManager();
+        setupClientRoutingRules(hostConnection);
+    });
+    peer.on('error', () => { alert("Room code not found"); cancelConnection(); });
+}
+
+function setupClientRoutingRules(conn) {
+    conn.on('data', (pkg) => {
+        switch (pkg.type) {
+            case 'room_full':
+                alert("Room is full (max 6 players)!");
+                cancelConnection();
+                break;
+
+            case 'init_welcome':
+                localPlayerId = pkg.payload.assignedId;
+                players = pkg.payload.allPlayers;
+                currentEngineMode = pkg.payload.mode;
+                clientResetVersion = pkg.payload.resetVersion || 0;
+                document.getElementById('hud-room').innerText = roomCodeString;
+                enterLobbyState();
+                readyPlayers = pkg.payload.readyPlayers || {};
+                startClientHeartbeat(conn);
+
+                for (let id in players) {
+                    if (players[id].itemType === 'pistol') {
+                        if (!players[id].item || players[id].item.constructor !== pistolItem) {
+                            players[id].item = new pistolItem(players[id].ammo);
+                        } else {
+                            players[id].item.ammo = players[id].ammo;
+                        }
+                    } else if (players[id].itemType === 'robot_hand') {
+                        if (!players[id].item || players[id].item.constructor !== RobotHandItem) {
+                            players[id].item = new RobotHandItem();
+                            players[id].item.ammo = players[id].ammo;
+                        } else {
+                            players[id].item.ammo = players[id].ammo;
+                        }
+                    } else {
+                        players[id].item = null;
+                    }
+                }
+                if (players[localPlayerId] && players[localPlayerId].item)
+                    localPlayerItem = players[localPlayerId].item;
+                else
+                    localPlayerItem = null;
+                break;
+
+            case 'sync_players': {
+                const isReset = pkg.payload.reset === true;
+                const newVersion = pkg.payload.resetVersion;
+                if (newVersion !== undefined && newVersion !== clientResetVersion) {
+                    clientResetVersion = newVersion;
+                }
+
+                // Update other players
+                for (let id in pkg.payload.allPlayers) {
+                    const data = pkg.payload.allPlayers[id];
+                    if (id !== localPlayerId) {
+                        if (!players[id]) {
+                            players[id] = data;
+                        } else {
+                            players[id].x = data.x;
+                            players[id].y = data.y;
+                            players[id].vx = data.vx;
+                            players[id].vy = data.vy;
+                            players[id].isGrounded = data.isGrounded;
+                            players[id].facingRight = data.facingRight;
+                            players[id].score = data.score;
+                            players[id].isDashing = data.isDashing;
+                            players[id].handAngle = data.handAngle;
+                            players[id].color = data.color;
+                            players[id].finished = data.finished;
+                            players[id].finishTime = data.finishTime;
+                            players[id].itemType = data.itemType;
+                            players[id].ammo = data.ammo;
+                            players[id].eliminated = data.eliminated || false;
+                            players[id].deathReason = data.deathReason || null;
+                        }
+                    }
+                }
+
+                // Update local player
+                if (pkg.payload.allPlayers[localPlayerId]) {
+                    const local = pkg.payload.allPlayers[localPlayerId];
+
+                    // --- FULL RESET (entire state overwritten) ---
+                    if (isReset) {
+                        players[localPlayerId].x = local.x;
+                        players[localPlayerId].y = local.y;
+                        players[localPlayerId].vx = local.vx;
+                        players[localPlayerId].vy = local.vy;
+                        players[localPlayerId].isGrounded = local.isGrounded;
+                        players[localPlayerId].facingRight = local.facingRight;
+                        players[localPlayerId].isDashing = local.isDashing;
+                        players[localPlayerId].handAngle = local.handAngle;
+                        players[localPlayerId].itemType = local.itemType;
+                        players[localPlayerId].ammo = local.ammo;
+                        players[localPlayerId].finished = local.finished;
+                        players[localPlayerId].finishTime = local.finishTime;
+                        players[localPlayerId].eliminated = local.eliminated || false;
+                        players[localPlayerId].deathReason = local.deathReason || null;
+                        players[localPlayerId].grabbedBy = local.grabbedBy;
+
+                        // Reset input & spectator mode
+                        keys.ArrowLeft = false;
+                        keys.ArrowRight = false;
+                        keys.ArrowUp = false;
+
+                        spectatorMode = false;
+                        spectatorTargetId = null;
+                        document.getElementById('spectator-controls')?.classList.add('hidden');
+
+                        // Reset camera
+                        let initCamX = local.x - BASE_WIDTH / 2;
+                        let initCamY = local.y - BASE_HEIGHT / 2;
+                        let maxX = cameraBounds.maxX - BASE_WIDTH / camera.zoom;
+                        let maxY = cameraBounds.maxY - BASE_HEIGHT / camera.zoom;
+                        initCamX = Math.max(cameraBounds.minX, Math.min(initCamX, maxX));
+                        initCamY = Math.max(cameraBounds.minY, Math.min(initCamY, maxY));
+                        camera.x = initCamX;
+                        camera.y = initCamY;
+
+                        players[localPlayerId].item = null;
+                        localPlayerItem = null;
+
+                        if (hostConnection && hostConnection.open) {
+                            hostConnection.send({
+                                type: 'client_input_update',
+                                senderId: localPlayerId,
+                                payload: {
+                                    x: players[localPlayerId].x,
+                                    y: players[localPlayerId].y,
+                                    vx: players[localPlayerId].vx,
+                                    vy: players[localPlayerId].vy,
+                                    isGrounded: players[localPlayerId].isGrounded,
+                                    facingRight: players[localPlayerId].facingRight,
+                                    isDashing: players[localPlayerId].isDashing,
+                                    handAngle: players[localPlayerId].handAngle,
+                                    resetVersion: clientResetVersion
+                                }
+                            });
+                        }
+                    }
+
+                    // --- CRITICAL: If grabbed, always accept host position & physics ---
+                    if (local.grabbedBy) {
+                        players[localPlayerId].x = local.x;
+                        players[localPlayerId].y = local.y;
+                        players[localPlayerId].vx = local.vx;
+                        players[localPlayerId].vy = local.vy;
+                        players[localPlayerId].isGrounded = local.isGrounded;
+                        players[localPlayerId].facingRight = local.facingRight;
+                        players[localPlayerId].isDashing = local.isDashing;
+                        players[localPlayerId].handAngle = local.handAngle;
+                        players[localPlayerId].grabbedBy = local.grabbedBy;
+                    }
+
+                    // Update non‑positional attributes (always)
+                    players[localPlayerId].grabbedBy = local.grabbedBy;
+                    players[localPlayerId].score = local.score;
+                    players[localPlayerId].color = local.color;
+                    players[localPlayerId].itemType = local.itemType;
+                    players[localPlayerId].finished = local.finished;
+                    players[localPlayerId].finishTime = local.finishTime;
+                    players[localPlayerId].ammo = local.ammo;
+                    players[localPlayerId].eliminated = local.eliminated || false;
+                    players[localPlayerId].deathReason = local.deathReason || null;
+                }
+
+                // Reconstruct items for all players
+                for (let id in players) {
+                    if (players[id].itemType === 'pistol') {
+                        if (!players[id].item || players[id].item.constructor !== pistolItem) {
+                            players[id].item = new pistolItem(players[id].ammo);
+                        } else {
+                            players[id].item.ammo = players[id].ammo;
+                        }
+                        const data = pkg.payload.allPlayers[id];
+                        if (data && data.itemCooldown !== undefined) {
+                            players[id].item.cooldown = data.itemCooldown;
+                        }
+                    } else if (players[id].itemType === 'robot_hand') {
+                        if (!players[id].item || players[id].item.constructor !== RobotHandItem) {
+                            players[id].item = new RobotHandItem();
+                            players[id].item.ammo = players[id].ammo;
+                        } else {
+                            players[id].item.ammo = players[id].ammo;
+                        }
+                        const data = pkg.payload.allPlayers[id];
+                        if (data && data.itemCooldown !== undefined) {
+                            players[id].item.cooldown = data.itemCooldown;
+                        }
+                    } else {
+                        players[id].item = null;
+                    }
+                }
+
+                if (players[localPlayerId] && players[localPlayerId].item)
+                    localPlayerItem = players[localPlayerId].item;
+                else
+                    localPlayerItem = null;
+
+                updateHudDisplays();
+                updateColorButtonStates();
+                break;
+            }
+
+            case 'sync_throwables':
+                throwables = pkg.payload.throwables;
+                break;
+
+            case 'sync_robot_hands':
+                activeRobotHands = pkg.payload.activeRobotHands;
+                console.log(`[RobotHand] Client received ${activeRobotHands.length} active hands`);
+                break;
+
+            case 'sync_map':
+                platforms = pkg.payload.platforms;
+                hazards = pkg.payload.hazards;
+                gems = pkg.payload.gems;
+                if (pkg.payload.cameraBounds) {
+                    cameraBounds = pkg.payload.cameraBounds;
+                }
+                if (pkg.payload.voidYThreshold !== undefined) {
+                    voidYThreshold = pkg.payload.voidYThreshold;
+                }
+                break;
+
+            case 'sync_lobby_countdown':
+                lobbyCountdownVal = pkg.payload.value;
+                break;
+
+            case 'sync_ready_players':
+                readyPlayers = pkg.payload.readyPlayers;
+                break;
+
+            case 'sync_face_drawing':
+                localStorage.setItem('playerFaceDrawing_' + pkg.payload.playerId, pkg.payload.faceData);
+                localStorage.setItem('playerHasCustomFace_' + pkg.payload.playerId, 'true');
+                break;
+
+            case 'trigger_match_start':
+                executeActiveMatchStart();
+                break;
+
+            case 'sync_timer':
+                timerVal = pkg.payload.time;
+                document.getElementById('timer').innerText = timerVal;
+                break;
+
+            case 'match_over':
+                executeMatchEndingSequence(pkg.payload.summary);
+                break;
+
+            case 'return_to_lobby':
+                executeLobbyReturnSequence();
+                break;
+
+            case 'sync_race_start':
+                raceCountdownVal = pkg.payload.raceCountdownVal;
+                firstPlayerFinishTime = Date.now();
+                break;
+
+            case 'sync_race_countdown':
+                raceCountdownVal = pkg.payload.value;
+                break;
+
+            case 'sync_world_items':
+                if (itemManager) itemManager.syncFromData(pkg.payload.items);
+                break;
+
+            case 'sync_projectiles':
+                projectiles = pkg.payload.projectiles;
+                break;
+        }
+    });
+
+    conn.on('close', () => document.getElementById('disconnect-modal').classList.remove('hidden'));
+}
+
+let clientHeartbeatTimer = null;
+function startClientHeartbeat(conn) {
+    if (clientHeartbeatTimer) clearInterval(clientHeartbeatTimer);
+    clientHeartbeatTimer = setInterval(() => {
+        if (!isHost && conn && conn.open) conn.send({ type: 'heartbeat' });
     }, 1000);
-
-    if (body) {
-        body.innerText = `${waitingText} ${playAgainCountdownRemaining} 秒。`;
-    }
-    if (btn && btn.innerText === '繼續') {
-        btn.innerText = `繼續 (${playAgainCountdownRemaining})`;
-    }
 }
 
-function resetPlayAgainState() {
-    playAgainRequested = false;
-    playAgainOpponentRequested = false;
-    if (playAgainCountdownTimer) {
-        clearInterval(playAgainCountdownTimer);
-        playAgainCountdownTimer = null;
-    }
-    playAgainCountdownRemaining = 5;
-}
-
-// Begin play again - full reset for new match
-function beginPlayAgain() {
-    resetPlayAgainState();
-    const msgBox = document.getElementById('msg-box');
-    if (msgBox) {
-        msgBox.style.display = 'none';
-        // Only clear the body content, not the entire structure
-        const body = document.getElementById('msg-body');
-        if (body) body.innerText = '';
-    }
-    fullReset();
-}
-
-// Show waiting message when a player completes but opponent hasn't
-function showMultiplayerWaitMessage(localFinished) {
-    const msgBox = document.getElementById('msg-box');
-    const replayBtn = document.getElementById('watch-replay-btn');
-    const title = document.getElementById('msg-title');
-    const body = document.getElementById('msg-body');
-    const btn = document.getElementById('action-btn');
-
-    msgBox.style.display = 'block';
-    replayBtn.style.display = 'block';
-    replayBtn.innerText = 'WATCH REPLAY';
-    replayBtn.onclick = startReplay;
-    triggerDimmer(false);
-
-    if (localFinished) {
-        title.innerText = t('msgTitleEnd');
-        body.innerText = t('completeLocal');
-        btn.style.display = 'inline-block';
-        btn.disabled = false;
-        btn.innerText = '關閉';
-        btn.onclick = () => { msgBox.style.display = 'none'; };
-        hasShownLocalCompleteMessage = true;
-    } else {
-        title.innerText = '對手已完成';
-        body.innerText = '對手已完成 5 局。請繼續完成您的剩餘局整整整整。';
-        btn.style.display = 'inline-block';
-        btn.disabled = false;
-        btn.innerText = '繼續';
-        btn.onclick = () => { msgBox.style.display = 'none'; resetGame(); };
-        hasShownOpponentCompleteMessage = true;
-    }
-}
-
-function getPlayerTotal(playerId) {
-    if (!scores[playerId]) return 0;
-    return scores[playerId].reduce((sum, score) => sum + (score !== undefined ? score : 0), 0);
-}
-
-// ============================================
-// FINAL RESULT AND WINNING DETERMINATION
-// ============================================
-
-// Display final match results when both players complete
-function showMultiplayerFinalResult() {
-    const msgBox = document.getElementById('msg-box');
-    const replayBtn = document.getElementById('watch-replay-btn');
-    const title = document.getElementById('msg-title');
-    const body = document.getElementById('msg-body');
-    const btn = document.getElementById('action-btn');
-
-    const p1Total = getPlayerTotal('p1');
-    const p2Total = getPlayerTotal('p2');
-    let winnerText;
-    if (p1Total === p2Total) {
-        winnerText = '平手';
-    } else if (p1Total > p2Total) {
-        winnerText = '玩家 1 獲勝！';
-    } else {
-        winnerText = '玩家 2 獲勝！';
-    }
-
-    title.innerText = '最終結果';
-    triggerDimmer(true);
-
-    let winnerLabel = winnerText;
-    let winnerStatus = '';
-    if (winnerText !== '平手') {
-        const parts = winnerText.split(' ');
-        winnerLabel = `${parts[0]} ${parts[1]}`;
-        winnerStatus = parts.slice(2).join(' ');
-    }
-
-    body.innerHTML = `
-                <div style="text-align:center; font-size:18px; font-weight:bold; margin-bottom:4px; color:#f1c40f; letter-spacing:1px;">${winnerLabel}</div>
-                ${winnerStatus ? `<div style="text-align:center; font-size:24px; font-weight:bold; margin-bottom:14px; color:#ffffff;">${winnerStatus}</div>` : ''}
-                <div style="display:flex; justify-content:space-between; gap:12px; margin-top:10px;">
-                    <div style="flex:1; background:rgba(255,255,255,0.08); padding:12px; border-radius:12px; text-align:center;">
-                        <div style="font-size:14px; font-weight:bold; margin-bottom:8px;">玩家 1</div>
-                        <div>${(scores.p1 || []).map(v => v === undefined ? '-' : v).join(' | ')}</div>
-                        <div style="margin-top:10px; font-size:20px; font-weight:bold; color:#1e90ff;">${p1Total}</div>
-                    </div>
-                    <div style="flex:1; background:rgba(255,255,255,0.08); padding:12px; border-radius:12px; text-align:center;">
-                        <div style="font-size:14px; font-weight:bold; margin-bottom:8px;">玩家 2</div>
-                        <div>${(scores.p2 || []).map(v => v === undefined ? '-' : v).join(' | ')}</div>
-                        <div style="margin-top:10px; font-size:20px; font-weight:bold; color:#ff4757;">${p2Total}</div>
-                    </div>
-                </div>`;
-
-    btn.innerText = '再玩一次';
-    btn.style.display = 'inline-block';
-    btn.disabled = false;
-    btn.onclick = sendPlayAgainRequest;
-    replayBtn.style.display = 'none';
-    msgBox.style.display = 'block';
-
-    const strikePopup = document.getElementById('strike-popup');
-    if (strikePopup) {
-        strikePopup.innerText = winnerText;
-        strikePopup.classList.add('show');
-        setTimeout(() => strikePopup.classList.remove('show'), 3000);
-    }
-
-    setTimeout(() => triggerDimmer(false), 4000);
-}
-
-// ============================================
-// OPPONENT BALL SYNCHRONIZATION
-// ============================================
-
-// Update opponent ball position and rotation from Firebase data
-// Synchronizes ball physics state across multiplayer clients
-function updateOpponentBall(data) {
-    if (!opponentBallMesh || targetPinCount === 100) return;
-    if (data.active) {
-        if (!opponentBallMesh.visible) opponentBallMesh.visible = true;
-        opponentBallMesh.position.set(data.pos.x, data.pos.y, data.pos.z);
-        opponentBallMesh.quaternion.set(data.quat.x, data.quat.y, data.quat.z, data.quat.w);
-    } else {
-        opponentBallMesh.visible = false;
-    }
-}
-
-function handlePinUpdateEvent(snapshot) {
-    const data = snapshot.val();
-    if (!data || data.from === getLocalPlayerId()) return;
-    updateOpponentPins(data);
-}
-
-// ============================================
-// OPPONENT PIN SYNCHRONIZATION
-// ============================================
-
-// Update opponent pin positions and rotations from Firebase data
-// Shows ghost pins representing opponent's pin state during their turn
-function updateOpponentPins(data) {
-    if (!Array.isArray(data.pins) || opponentGhostPins.length === 0) return;
-    data.pins.forEach((pinData, index) => {
-        const ghostPin = opponentGhostPins[index];
-        if (!ghostPin) return;
-        ghostPin.position.set(pinData.pos.x, pinData.pos.y, pinData.pos.z);
-        ghostPin.quaternion.set(pinData.quat.x, pinData.quat.y, pinData.quat.z, pinData.quat.w);
-        ghostPin.visible = true;
-    });
-}
-
-// ============================================
-// MULTIPLAYER MODE ACTIVATION
-// ============================================
-
-// Initialize multiplayer game state and environment
-// Sets up dual lanes, opponent visualization, and camera positioning
-function activateMultiplayerMode(isHostRole) {
-    isMultiplayerActive = true;
-
-    updateLaneWidth();
-    const p2Row = document.getElementById('p2-row');
-    if (p2Row) p2Row.style.display = 'table-row';
-
-    const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
-    const localOffset = isHostRole ? 0 : offsetDistance;
-    const remoteOffset = isHostRole ? offsetDistance : 0;
-    myPlayerOffset = localOffset;
-
-    // Update camera to center between both lanes for visibility
-    camera.position.set(offsetDistance / 2, 4, 20);
-    cameraLookAtTarget.set(offsetDistance / 2, 1, -22);
-    camera.lookAt(cameraLookAtTarget);
-    sunLight.position.set(offsetDistance / 2 + 15, 35, -40);
-
-    createStreetEnvironment(remoteOffset);
-    if (targetPinCount !== 100) {
-        createGhostPins(remoteOffset);
-    }
-
-    if (opponentBallMesh) {
-        opponentBallMesh.visible = targetPinCount !== 100;
-        // Position opponent ball at opponent's lane
-        opponentBallMesh.position.set(remoteOffset, LANE_Y + BALL_RADIUS, 6);
-    }
-
-    if (isHostRole) {
-        ballMesh.material.color.setHex(0x1e90ff);
-        if (opponentBallMesh) opponentBallMesh.material.color.setHex(0xff0000);
-    } else {
-        ballMesh.material.color.setHex(0xff0000);
-        if (opponentBallMesh) opponentBallMesh.material.color.setHex(0x1e90ff);
-    }
-}
-
-// --- GAME FUNCTIONS ---
-
-function init() {
-    // 1. Scene Setup
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x010105);
-    scene.fog = new THREE.FogExp2(0x010105, 0.03);
-
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const startX = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
-    camera.position.set(startX, 4, 20);
-
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    document.body.appendChild(renderer.domElement);
-
-    // Initialize raycaster for touch/mouse interaction
-    raycaster = new THREE.Raycaster();
-
-    // 2. Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
-    scene.add(hemiLight);
-
-    sunLight = new THREE.DirectionalLight(0xffffff, 3);
-    sunLight.position.set(startX + 15, 35, -40);
-    sunLight.intensity = 2.5;
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.left = -20;
-    sunLight.shadow.camera.right = 20;
-    sunLight.shadow.camera.top = 40;
-    sunLight.shadow.camera.bottom = -40;
-    sunLight.shadow.camera.near = 0.5;
-    sunLight.shadow.camera.far = 100;
-    sunLight.shadow.bias = -0.0005;
-    scene.add(sunLight);
-
-    // 3. UI Lines - PLAYER 1 (BLUE)
-    const pathMaterial_P1 = new THREE.LineBasicMaterial({
-        color: 0x00ffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending
-    });
-    touchPathLine_P1 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P1);
-    touchPathLine2_P1 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P1);
-    touchPathLine3_P1 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P1);
-    scene.add(touchPathLine_P1, touchPathLine2_P1, touchPathLine3_P1);
-
-    const outerGlowMaterial_P1 = new THREE.LineBasicMaterial({
-        color: 0x0088ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending
-    });
-    outerGlowLine_P1 = new THREE.Line(new THREE.BufferGeometry(), outerGlowMaterial_P1);
-    outerGlowLine_P1.scale.set(1.02, 1, 1.02);
-    scene.add(outerGlowLine_P1);
-
-    // 3b. UI Lines - PLAYER 2 (RED)
-    const pathMaterial_P2 = new THREE.LineBasicMaterial({
-        color: 0xff0000, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending
-    });
-    touchPathLine_P2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P2);
-    touchPathLine2_P2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P2);
-    touchPathLine3_P2 = new THREE.Line(new THREE.BufferGeometry(), pathMaterial_P2);
-    scene.add(touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2);
-
-    const outerGlowMaterial_P2 = new THREE.LineBasicMaterial({
-        color: 0xff3333, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending
-    });
-    outerGlowLine_P2 = new THREE.Line(new THREE.BufferGeometry(), outerGlowMaterial_P2);
-    outerGlowLine_P2.scale.set(1.02, 1, 1.02);
-    scene.add(outerGlowLine_P2);
-
-    // 4. Street Lamps
-    const streetLamp1 = new THREE.PointLight(0xffaa44, 1.5, 50);
-    streetLamp1.position.set(startX + 10, 10, -15);
-    scene.add(streetLamp1);
-
-    const streetLamp2 = new THREE.PointLight(0x00ffff, 4, 40);
-    streetLamp2.position.set(startX - 5, 8, -30);
-    scene.add(streetLamp2);
-
-    // 5. AUDIO SETUP
-    audioListener = new THREE.AudioListener();
-    camera.add(audioListener);
-    audioLoader = new THREE.AudioLoader();
-
-    if (typeof gameSounds === 'undefined') window.gameSounds = {};
-    sounds = gameSounds;
-
-    ballPathSound = new THREE.Audio(audioListener);
-    audioLoader.load('ball_rolling.mp3', function (buffer) {
-        ballPathSound.setBuffer(buffer);
-        ballPathSound.setLoop(true);
-        ballPathSound.setVolume(0.5);
-        gameSounds['ball_roll'] = ballPathSound;
-    });
-
-    pinKnockSound = new THREE.Audio(audioListener);
-    audioLoader.load('single-bowling-pin-knock.mp3', function (buffer) {
-        pinKnockSound.setBuffer(buffer);
-        pinKnockSound.setVolume(0.7);
-        gameSounds['collision'] = pinKnockSound;
-    });
-
-    audioLoader.load('ball_down.mp3', function (buffer) {
-        const ballDownSound = new THREE.Audio(audioListener);
-        ballDownSound.setBuffer(buffer);
-        ballDownSound.setVolume(0.5);
-        gameSounds['ball_down'] = ballDownSound;
-    });
-
-    audioLoader.load('Minecraft_TNT.mp3', function (buffer) {
-        const explosionSound = new THREE.Audio(audioListener);
-        explosionSound.setBuffer(buffer);
-        explosionSound.setVolume(0.7);
-        gameSounds['explosion'] = explosionSound;
-    });
-
-    audioLoader.load('ui_sound.mp3', function (buffer) {
-        const uiSound = new THREE.Audio(audioListener);
-        uiSound.setBuffer(buffer);
-        uiSound.setVolume(0.5);
-        gameSounds['ui_click'] = uiSound;
-    });
-
-    // 6. PHYSICS SETUP
-    world = new CANNON.World();
-    world.gravity.set(0, -23, 0);
-
-    // Apply chaos gravity modifier if active
-    if (typeof chaosModifiers !== 'undefined' && chaosModifiers.gravityMult) {
-        world.gravity.y *= chaosModifiers.gravityMult;
-    }
-
-    window.ballMat = new CANNON.Material("ballMat");
-    window.groundMat = new CANNON.Material("groundMat");
-    window.pinMat = new CANNON.Material("pinMat");
-    window.wallMat = new CANNON.Material("wallMat");
-
-    const frictionScale = (typeof chaosModifiers !== 'undefined' && chaosModifiers.frictionMult) ? chaosModifiers.frictionMult : 1.0;
-    const ballGroundContact = new CANNON.ContactMaterial(ballMat, groundMat, {
-        friction: 0.2 * frictionScale,
-        restitution: 0.1
-    });
-    const ballPinContact = new CANNON.ContactMaterial(ballMat, pinMat, {
-        friction: 0.0,
-        restitution: 0.5
-    });
-    const pinPinContact = new CANNON.ContactMaterial(pinMat, pinMat, { friction: 0.5, restitution: 0.2 });
-    const pinGroundContact = new CANNON.ContactMaterial(pinMat, groundMat, { friction: 0.6, restitution: 0.1 });
-
-    const ballWallContact = new CANNON.ContactMaterial(ballMat, wallMat, {
-        friction: 0.1 * frictionScale,
-        restitution: 0.8,
-        contactEquationStiffness: 1e8,
-        contactEquationRelaxation: 3
-    });
-
-    world.addContactMaterial(ballGroundContact);
-    world.addContactMaterial(ballPinContact);
-    world.addContactMaterial(pinPinContact);
-    world.addContactMaterial(pinGroundContact);
-    world.addContactMaterial(ballWallContact);
-
-    // Warm up the physics world with a few initial steps
-    for (let i = 0; i < 10; i++) {
-        world.step(1 / 60);
-    }
-
-    // 7. Action Camera Rendering
-    actionCanvas = document.getElementById('action-canvas');
-    actionCamera = new THREE.PerspectiveCamera(45, 250 / 150, 0.1, 100);
-    actionRenderer = new THREE.WebGLRenderer({ canvas: actionCanvas, antialias: true });
-    actionRenderer.setSize(250, 150);
-
-    // 8. Object Initialization
-    createStreetEnvironment(myPlayerOffset);
-    createBall();
-    createPins(myPlayerOffset);
-    initLightTrail();
-
-    // 9. Setup Opponent Ball
-    const radius = typeof BALL_RADIUS !== 'undefined' ? BALL_RADIUS : 0.35;
-    const ghostGeo = new THREE.SphereGeometry(radius, 32, 32);
-    const ghostMat = new THREE.MeshStandardMaterial({
-        color: 0xff0000, transparent: true, opacity: 0.6
-    });
-    opponentBallMesh = new THREE.Mesh(ghostGeo, ghostMat);
-    opponentBallMesh.visible = false;
-    scene.add(opponentBallMesh);
-
-    // 10. Event Listeners
-    window.addEventListener('resize', onWindowResize);
-    window.addEventListener('touchstart', onTouchStart, { passive: false });
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onTouchEnd, { passive: false });
-
-    window.addEventListener('mousedown', (e) => onTouchStart({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }));
-    window.addEventListener('mousemove', (e) => { if (isTouching) onTouchMove({ touches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }); });
-    window.addEventListener('mouseup', (e) => onTouchEnd({ changedTouches: [{ clientX: e.clientX, clientY: e.clientY }], preventDefault: () => { } }));
-
-    // Close settings menu when clicking outside
-    document.addEventListener('click', (e) => {
-        const menu = document.getElementById('settings-menu');
-        const menuContainer = document.querySelector('.menu-container');
-        if (menu && menuContainer && menu.style.display === 'flex') {
-            if (!menuContainer.contains(e.target)) {
-                closeSettingsMenu();
+function broadcastToRoom(type, payload) {
+    if (!isHost) return;
+    let msgPayload = payload;
+    if (type === 'sync_players' && payload.allPlayers) {
+        const safe = {};
+        for (let id in payload.allPlayers) {
+            safe[id] = { ...payload.allPlayers[id] };
+            delete safe[id].item;
+            if (payload.allPlayers[id].item && payload.allPlayers[id].item.cooldown !== undefined) {
+                safe[id].itemCooldown = payload.allPlayers[id].item.cooldown;
             }
+            safe[id].eliminated = payload.allPlayers[id].eliminated;
+            safe[id].deathReason = payload.allPlayers[id].deathReason || null;
+            safe[id].grabbedBy = payload.allPlayers[id].grabbedBy || null;   // ✅ ADD THIS LINE
         }
-    });
-
-    const modeAcceptBtn = document.getElementById('mode-switch-accept');
-    const modeDeclineBtn = document.getElementById('mode-switch-decline');
-    if (modeAcceptBtn) {
-        modeAcceptBtn.addEventListener('click', () => {
-            if (!isMultiplayerActive || !matchRef) return;
-            sendMatchEvent('modeSwitchResponse', { accepted: true, mode: modeSwitchRequestMode });
-            doToggleGameMode(modeSwitchRequestMode);
-            hideModeSwitchModal();
-        });
+        msgPayload = { allPlayers: safe, resetVersion: resetVersion };
+        if (payload.reset === true) msgPayload.reset = true;
     }
-    if (modeDeclineBtn) {
-        modeDeclineBtn.addEventListener('click', () => {
-            if (!isMultiplayerActive || !matchRef) return;
-            sendMatchEvent('modeSwitchResponse', { accepted: false, mode: modeSwitchRequestMode });
-            hideModeSwitchModal();
-            // Restore wait message if it was showing before
-            if (wasShowingWaitMessage) {
-                showMultiplayerWaitMessage(waitMessageLocalFinished);
-                wasShowingWaitMessage = false;
-            }
-        });
-    }
-
-    // --- FIX FOR FIRST-THROW LAG ---
-    // 1. Temporarily show hidden objects so their materials get compiled
-    if (trailMesh_P1) trailMesh_P1.visible = true;
-    if (trailMesh_P2) trailMesh_P2.visible = true;
-    if (opponentBallMesh) opponentBallMesh.visible = true;
-
-    // 2. Pre-compile shaders for both the main view AND the action camera
-    renderer.compile(scene, camera);
-    actionRenderer.compile(scene, actionCamera);
-
-    // 3. Force one invisible render pass to ensure GPU buffers are fully allocated
-    renderer.render(scene, camera);
-    actionRenderer.render(scene, actionCamera);
-
-    // 4. Hide the objects again before the game starts
-    if (trailMesh_P1) trailMesh_P1.visible = false;
-    if (trailMesh_P2) trailMesh_P2.visible = false;
-    if (opponentBallMesh) opponentBallMesh.visible = false;
-    // -------------------------------
-
-    // Initialize language system
-    document.documentElement.lang = currentLanguage;
-    updateAllUIText();
-
-    // Multiplayer requires Firebase auth; keep anonymous login disabled.
-    // Keep the menu visible so the player starts from the menu page.
-    showMatchmakingPanel();
-    unlockAudio();
-    animate();
+    const msg = { type, payload: msgPayload };
+    clientConnections.forEach(conn => { if (conn.open) conn.send(msg); });
 }
 
-
-function toggleActionCamSize(event) {
-    if (event) event.stopPropagation();
-    playGameSound('ui_click');
-    const container = document.getElementById('action-cam-container');
-    container.classList.toggle('enlarged');
-
-    setTimeout(() => {
-        if (actionRenderer && actionCamera) {
-            const w = container.clientWidth;
-            const h = container.clientHeight;
-            actionRenderer.setSize(w, h);
-            actionCamera.aspect = w / h;
-            actionCamera.updateProjectionMatrix();
-        }
-    }, 50);
+let lastProjectileSnapshot = null;
+function broadcastProjectiles() {
+    if (!isHost) return;
+    const snap = JSON.stringify(projectiles);
+    if (snap === lastProjectileSnapshot) return;
+    lastProjectileSnapshot = snap;
+    broadcastToRoom('sync_projectiles', { projectiles });
 }
 
-function toggleSettingsMenu() {
-    // Prevent settings menu when matchmaking panel is shown
-    const panel = document.getElementById('matchmaking-panel');
-    if (panel && panel.style.display === 'block') return;
-    playGameSound('ui_click');
-    const menu = document.getElementById('settings-menu');
-    menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
+function broadcastWorldItems() {
+    if (!isHost) return;
+    const itemsData = itemManager.worldItems.map(item => ({
+        x: item.x, y: item.y, itemType: item.itemType,
+        isAvailable: item.isAvailable, respawnTimer: item.respawnTimer,
+        pickupDelayTimer: item.pickupDelayTimer, shouldRespawn: item.shouldRespawn,
+        ammo: item.ammo
+    }));
+    broadcastToRoom('sync_world_items', { items: itemsData });
 }
 
-function closeSettingsMenu() {
-    const menu = document.getElementById('settings-menu');
-    if (menu) menu.style.display = 'none';
+function cancelConnection() {
+    if (hostConnection) hostConnection.close();
+    clientConnections.forEach(c => c.close());
+    if (peer) peer.destroy();
+    location.reload();
+}
+function disconnectGame() { cancelConnection(); }
+
+// ============================================================================
+//  GAME STATE & LOBBY
+// ============================================================================
+
+function updateHudDisplays() {
+    const count = Object.keys(players).length;
+    document.getElementById('player-count-hud').innerText = `${count} / 6`;
+    let stateLabel = "LOBBY";
+    if (currentEngineMode === 'MENU') stateLabel = "UHCC";
+    if (currentEngineMode === 'GAME') stateLabel = "MATCH IN PROGRESS";
+    document.getElementById('game-state-hud').innerText = stateLabel;
 }
 
-// ============================================
-// FIREBASE ANONYMOUS AUTHENTICATION
-// ============================================
-
-function loginAnonymously() {
-    // Firebase Auth is disabled to avoid API_KEY_HTTP_REFERRER_BLOCKED (403).
-    // Multiplayer features requiring authentication are not supported in this build.
-    return Promise.resolve();
+function enterLobbyState() {
+    currentEngineMode = 'LOBBY';
+    lobbyCountdownVal = -1;
+    readyPlayers = {};
+    raceStarted = false;
+    firstPlayerFinishTime = -1;
+    raceCountdownVal = -1;
+    finishPositions = [];
+    if (lobbyTimerId) clearInterval(lobbyTimerId);
+    document.getElementById('menu-screen').classList.add('hidden');
+    setupLobbyEnvironment();
+    repositionAllPlayersToSpawnPoints();
+    // Reset spectator mode
+    spectatorMode = false;
+    spectatorTargetId = null;
+    document.getElementById('spectator-controls')?.classList.add('hidden');
+    // Immediately set camera to local player's position (clamped to bounds)
+    if (players[localPlayerId]) {
+        let targetX = players[localPlayerId].x + players[localPlayerId].width / 2 - BASE_WIDTH / 2 / camera.zoom;
+        let targetY = players[localPlayerId].y + players[localPlayerId].height / 2 - BASE_HEIGHT / 2 / camera.zoom;
+        let maxX = cameraBounds.maxX - BASE_WIDTH / camera.zoom;
+        let maxY = cameraBounds.maxY - BASE_HEIGHT / camera.zoom;
+        let minX = cameraBounds.minX;
+        let minY = cameraBounds.minY;
+        camera.x = Math.max(minX, Math.min(targetX, maxX));
+        camera.y = Math.max(minY, Math.min(targetY, maxY));
+    }
+    timerVal = 60;                         // reset match timer display
+    document.getElementById('timer').innerText = timerVal;
+    updateHudDisplays();
 }
 
-
-// ============================================
-// HOME AND NAVIGATION
-// ============================================
-
-function goHome() {
-    playGameSound('ui_click');
-    closeSettingsMenu();
-    // Stop any active game or multiplayer session
-    if (isMultiplayerActive) {
-        handleOpponentDisconnect();
-    } else {
-        stopAllGameSounds();
-        fullReset();
-        showMatchmakingPanel();
-    }
-}
-
-function toggleGameMode() {
-    // Always return to matchmaking after mode change
-    hideMatchmakingPanel();
-
-    const newMode = (targetPinCount === 10) ? 100 : 10;
-
-    // --- SINGLE PLAYER MODE ---
-    if (!isMultiplayerActive) {
-        const modal = document.getElementById('mode-switch-modal');
-        document.getElementById('mode-switch-title').innerText = "切換模式";
-        document.getElementById('mode-switch-body').innerText = `是否切換至 ${newMode} 瓶模式？這將重置目前分數。`;
-
-        const acceptBtn = document.getElementById('mode-switch-accept');
-        const declineBtn = document.getElementById('mode-switch-decline');
-
-        modal.style.display = 'block';
-
-        acceptBtn.onclick = () => {
-            doToggleGameMode();
-            modal.style.display = 'none';
-            startSinglePlayer();
-        };
-
-        declineBtn.onclick = () => {
-            modal.style.display = 'none';
-        };
-
-        // CRITICAL: Stop the function here so doToggleGameMode() 
-        // doesn't run automatically below!
-        return;
-    }
-
-    // --- MULTIPLAYER MODE ---
-    if (isMultiplayerActive && matchRef) {
-        requestModeSwitch();
-        return;
-    }
-
-    // Always return to matchmaking
-    showMatchmakingPanel();
-}
-
-function adjustMultiplayerLaneOffsets(oldLocalOffset, oldRemoteOffset, newLocalOffset, newRemoteOffset) {
-    if (!scene || !world) return;
-    scene.traverse(obj => {
-        if (!obj.userData || typeof obj.userData.offset === 'undefined') return;
-        let isLocal = obj.userData.offset === oldLocalOffset;
-        let isRemote = obj.userData.offset === oldRemoteOffset;
-        if (!isLocal && !isRemote) return;
-        const newOffset = isLocal ? newLocalOffset : newRemoteOffset;
-        obj.userData.offset = newOffset;
-        if (obj.userData.envType === 'lane') {
-            obj.position.x = newOffset;
-        } else if (obj.userData.envType === 'gutter') {
-            obj.position.x = newOffset + (obj.userData.side === 'left' ? -2.5 : 2.5);
-        } else if (obj.userData.envType === 'wall') {
-            const wallX = (targetPinCount === 100) ? 4.4 : 3.6;
-            obj.position.x = newOffset + (obj.userData.side === 'left' ? -wallX : wallX);
-        }
-    });
-    world.bodies.forEach(body => {
-        if (!body.userData || typeof body.userData.offset === 'undefined') return;
-        let isLocal = body.userData.offset === oldLocalOffset;
-        let isRemote = body.userData.offset === oldRemoteOffset;
-        if (!isLocal && !isRemote) return;
-        const newOffset = isLocal ? newLocalOffset : newRemoteOffset;
-        body.userData.offset = newOffset;
-        if (body.userData.envType === 'ground') {
-            body.position.x = newOffset;
-        } else if (body.userData.envType === 'wall') {
-            const wallX = (targetPinCount === 100) ? 4.4 : 3.6;
-            body.position.x = newOffset + (body.userData.side === 'left' ? -wallX : wallX);
-        }
-    });
-}
-
-// ============================================
-// GAME MODE TOGGLE
-// ============================================
-
-// Switch between 10-pin and 100-pin bowling modes
-// Handles pin count changes, lane width adjustments, and memory cleanup
-function doToggleGameMode(newMode) {
-    const previousTargetPinCount = targetPinCount;
-    if (typeof newMode === 'undefined') {
-        targetPinCount = (targetPinCount === 10) ? 100 : 10;
-    } else {
-        targetPinCount = newMode;
-    }
-
-    const oldOffsetDistance = (previousTargetPinCount === 100) ? offsetDistance100 : offsetDistance10;
-    const newOffsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
-    const oldLocalOffset = isHost ? 0 : oldOffsetDistance;
-    const oldRemoteOffset = isHost ? oldOffsetDistance : 0;
-    const newLocalOffset = isHost ? 0 : newOffsetDistance;
-    const newRemoteOffset = isHost ? newOffsetDistance : 0;
-
-    if (isMultiplayerActive) {
-        // Clear existing pins to recreate with new count
-        pins.forEach(pin => {
-            scene.remove(pin.mesh);
-            world.removeBody(pin.body);
-
-            // Dispose GPU memory
-            if (pin.mesh.geometry) pin.mesh.geometry.dispose();
-            if (pin.mesh.material) pin.mesh.material.dispose();
-            pin.mesh.children.forEach(child => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) child.material.dispose();
-            });
-        });
-        pins = [];
-
-        // Dispose pin circle outlines
-        pinCircles.forEach(circle => {
-            scene.remove(circle);
-            if (circle.geometry) circle.geometry.dispose();
-            if (circle.material) circle.material.dispose();
-        });
-        pinCircles = [];
-    }
-
-    document.getElementById('mode-toggle-btn').innerText = (targetPinCount === 10) ? '10 瓶' : '100 瓶';
-    if (isMultiplayerActive) {
-        myPlayerOffset = newLocalOffset;
-        adjustMultiplayerLaneOffsets(oldLocalOffset, oldRemoteOffset, newLocalOffset, newRemoteOffset);
-    }
-    updateLaneWidth();
-    if (typeof resetChaosState === 'function') {
-        resetChaosState();
-    }
-    if (typeof window !== 'undefined' && typeof window.isChaosMode !== 'undefined') {
-        window.isChaosMode = false;
-    }
-    matchHistory = [];
-    scores = { p1: [], p2: [] };
-    updateScoreTable('p1');
-    updateScoreTable('p2');
-    resetGame();
-    if (isMultiplayerActive) {
-        const offsetDistance = newOffsetDistance;
-        camera.position.set(offsetDistance / 2, 4, 20);
-        cameraLookAtTarget.set(offsetDistance / 2, 1, -22);
-        camera.lookAt(cameraLookAtTarget);
-        sunLight.position.set(offsetDistance / 2 + 15, 35, -40);
-        const remoteOffset = isHost ? offsetDistance : 0;
-        // Recreate ghost pins with new count for the opponent lane only
-        opponentGhostPins.forEach(g => scene.remove(g));
-        opponentGhostPins = [];
-        if (targetPinCount !== 100) {
-            createGhostPins(remoteOffset);
-        } else if (opponentBallMesh) {
-            opponentBallMesh.visible = false;
-        }
-        if (matchRef) {
-            matchRef.child('scores').set(scores).catch((err) => {
-            });
-        }
-    }
-    playGameSound('ui_click');
-}
-
-function requestModeSwitch() {
-    if (!isMultiplayerActive || modeSwitchRequestPending) return;
-    const requestedMode = (targetPinCount === 10) ? 100 : 10;
-    modeSwitchRequestPending = true;
-    modeSwitchRequestMode = requestedMode;
-    modeSwitchRequester = isHost ? 'p1' : 'p2';
-    showModeSwitchModal(`您請求切換至 ${requestedMode} 瓶模式。等待對手回應...`, false);
-    sendMatchEvent('modeSwitchRequest', { mode: requestedMode });
-}
-
-function handleModeSwitchRequest(data) {
-    if (modeSwitchRequestPending) {
-        sendMatchEvent('modeSwitchResponse', { accepted: false, mode: data.mode });
-        return;
-    }
-    // Hide wait message if it's shown so mode switch modal can be visible
-    const msgBox = document.getElementById('msg-box');
-    wasShowingWaitMessage = msgBox && msgBox.style.display === 'block';
-    if (wasShowingWaitMessage) {
-        // Check which wait message was showing
-        const title = document.getElementById('msg-title');
-        waitMessageLocalFinished = (title && title.innerText === '比賽結束');
-        msgBox.style.display = 'none';
-    }
-    modeSwitchRequestMode = data.mode;
-    modeSwitchRequester = data.from || (isHost ? 'p2' : 'p1');
-    showModeSwitchModal(`對手請求切換至 ${data.mode} 瓶模式。是否接受？`, true);
-}
-
-function handleModeSwitchResponse(data) {
-    if (!modeSwitchRequestPending) return;
-    modeSwitchRequestPending = false;
-    hideModeSwitchModal();
-    if (data.accepted && data.mode === modeSwitchRequestMode) {
-        doToggleGameMode(data.mode);
-    }
-}
-
-function showModeSwitchModal(message, showButtons) {
-    const modal = document.getElementById('mode-switch-modal');
-    const accept = document.getElementById('mode-switch-accept');
-    const decline = document.getElementById('mode-switch-decline');
-    document.getElementById('mode-switch-body').innerText = message;
-    modal.style.display = 'block';
-    if (showButtons) {
-        accept.style.display = 'inline-block';
-        decline.style.display = 'inline-block';
-    } else {
-        accept.style.display = 'none';
-        decline.style.display = 'none';
-    }
-    triggerDimmer(true);
-}
-
-function hideModeSwitchModal() {
-    const modal = document.getElementById('mode-switch-modal');
-    modal.style.display = 'none';
-    triggerDimmer(false);
-}
-
-function updateVolume(value) {
-    const percent = Math.round(value * 100);
-    document.getElementById('vol-percent').innerText = percent + "%";
-    if (audioListener) {
-        audioListener.setMasterVolume(value * 2);
-    }
-}
-
-function updateLaneWidth() {
-    const is100 = (targetPinCount === 100);
-    const laneWidth = is100 ? 7.6 : 4.5;
-    const wallX = is100 ? 4.4 : 3.6;
-    const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
-    const fullWallHeight = 18;
-    const lowWallHeight = 1.2;
-
-    if (scene) {
-        scene.traverse(obj => {
-            if (!obj.userData) return;
-            if (obj.userData.envType === 'lane') {
-                obj.scale.x = laneWidth / 4.5;
-                obj.position.x = obj.userData.offset;
-            } else if (obj.userData.envType === 'gutter') {
-                if (is100) {
-                    obj.visible = false;
-                } else {
-                    obj.visible = true;
-                    obj.position.x = obj.userData.offset + (obj.userData.side === 'left' ? -2.5 : 2.5);
+function evaluateLobbyDoorTrigger() {
+    if (!isHost || currentEngineMode !== 'LOBBY') return;
+    const total = Object.keys(players).length;
+    const ready = Object.keys(readyPlayers).length;
+    if (total >= 2 && ready > total / 2) {
+        if (lobbyCountdownVal === -1) {
+            lobbyCountdownVal = 10;
+            playSound('door');
+            broadcastToRoom('sync_lobby_countdown', { value: lobbyCountdownVal });
+            if (lobbyTimerId) clearInterval(lobbyTimerId);
+            lobbyTimerId = setInterval(() => {
+                if (currentEngineMode !== 'LOBBY') {
+                    clearInterval(lobbyTimerId); lobbyTimerId = null;
+                    lobbyCountdownVal = -1;
+                    return;
                 }
-            } else if (obj.userData.envType === 'wall') {
-                obj.position.x = obj.userData.offset + (obj.userData.side === 'left' ? -wallX : wallX);
-                // Update wall height
-                const isPlayer2Lane = (obj.userData.offset !== 0);
-                let wallHeight;
-                if (isMultiplayerActive) {
-                    wallHeight = (obj.userData.side === 'left') ?
-                        (isPlayer2Lane ? lowWallHeight : fullWallHeight) :
-                        (isPlayer2Lane ? fullWallHeight : lowWallHeight);
-                } else {
-                    wallHeight = fullWallHeight;
-                }
-                obj.scale.y = wallHeight / fullWallHeight;
-                obj.position.y = wallHeight / 2;
-            }
-        });
-    }
-
-    if (world) {
-        world.bodies.forEach(body => {
-            if (!body.userData) return;
-            if (body.userData.envType === 'ground') {
-                const shape = body.shapes[0];
-                if (shape) {
-                    shape.halfExtents.x = laneWidth / 2;
-                    shape.updateConvexPolyhedronRepresentation();
-                }
-                body.updateBoundingRadius();
-                body.position.x = body.userData.offset;
-            } else if (body.userData.envType === 'wall') {
-                body.position.x = body.userData.offset + (body.userData.side === 'left' ? -wallX : wallX);
-                // Update wall height
-                const isPlayer2Lane = (body.userData.offset !== 0);
-                let wallHeight;
-                if (isMultiplayerActive) {
-                    wallHeight = (body.userData.side === 'left') ?
-                        (isPlayer2Lane ? lowWallHeight : fullWallHeight) :
-                        (isPlayer2Lane ? fullWallHeight : lowWallHeight);
-                } else {
-                    wallHeight = fullWallHeight;
-                }
-                const shape = body.shapes[0];
-                if (shape) {
-                    shape.halfExtents.y = wallHeight / 2;
-                    shape.updateConvexPolyhedronRepresentation();
-                }
-                body.updateBoundingRadius();
-                body.position.y = wallHeight / 2;
-            }
-        });
-    }
-}
-
-function triggerDimmer(show) {
-    const dimmer = document.getElementById('screen-dimmer');
-    if (!dimmer) return;
-    if (show) dimmer.classList.add('dimmed');
-    else dimmer.classList.remove('dimmed');
-}
-
-function createStreetEnvironment(offset = 0) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 1024;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = '#e3c18d';
-    ctx.fillRect(0, 0, 512, 1024);
-
-    const plankCount = 39;
-    const plankWidth = 512 / plankCount;
-
-    for (let i = 0; i < plankCount; i++) {
-        ctx.fillStyle = `rgba(139, 69, 19, ${Math.random() * 0.1})`;
-        ctx.fillRect(i * plankWidth, 0, plankWidth, 1024);
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(i * plankWidth, 0);
-        ctx.lineTo(i * plankWidth, 1024);
-        ctx.stroke();
-    }
-
-    const laneTexture = new THREE.CanvasTexture(canvas);
-    laneTexture.wrapS = THREE.RepeatWrapping;
-    laneTexture.wrapT = THREE.RepeatWrapping;
-    laneTexture.repeat.set(1, 10);
-
-    const laneGeo = new THREE.BoxGeometry(4.5, 0.2, 100);
-    const laneMat = new THREE.MeshStandardMaterial({
-        map: laneTexture,
-        roughness: 0.9,
-        metalness: 0.7,
-        color: 0x444444
-    });
-
-    laneMesh = new THREE.Mesh(laneGeo, laneMat);
-    laneMesh.position.set(offset, 0, -35);
-    laneMesh.receiveShadow = true;
-    laneMesh.userData = { envType: 'lane', offset };
-    scene.add(laneMesh);
-
-    // --- GUTTER CREATION ---
-    const gutterGeo = new THREE.BoxGeometry(0.5, 0.2, 100);
-    const gutterMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
-
-    leftGutter = new THREE.Mesh(gutterGeo, gutterMat);
-    leftGutter.position.set(offset - 2.5, -0.05, -35);
-    leftGutter.userData = { envType: 'gutter', side: 'left', offset };
-    scene.add(leftGutter);
-
-    rightGutter = new THREE.Mesh(gutterGeo, gutterMat.clone());
-    rightGutter.position.set(offset + 2.5, -0.05, -35);
-    rightGutter.userData = { envType: 'gutter', side: 'right', offset };
-    scene.add(rightGutter);
-
-    // --- VISUAL WALLS ---
-    const fullWallHeight = 18;
-    const lowWallHeight = 1.2;
-    const is100 = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
-    const wallDist = is100 ? 4.4 : 3.6;
-
-    const isPlayer2Lane = (offset !== 0);
-    let leftWallHeight, rightWallHeight;
-    if (isMultiplayerActive) {
-        leftWallHeight = isPlayer2Lane ? lowWallHeight : fullWallHeight;
-        rightWallHeight = isPlayer2Lane ? fullWallHeight : lowWallHeight;
-    } else {
-        leftWallHeight = fullWallHeight;
-        rightWallHeight = fullWallHeight;
-    }
-
-    const leftWallGeo = new THREE.BoxGeometry(1.2, leftWallHeight, 100);
-    const rightWallGeo = new THREE.BoxGeometry(1.2, rightWallHeight, 100);
-    const wallVisualMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d });
-
-    leftWallMesh = new THREE.Mesh(leftWallGeo, wallVisualMat);
-    leftWallMesh.position.set(offset - wallDist, leftWallHeight / 2, -35);
-    leftWallMesh.userData = { envType: 'wall', side: 'left', offset };
-    scene.add(leftWallMesh);
-
-    rightWallMesh = new THREE.Mesh(rightWallGeo, wallVisualMat.clone());
-    rightWallMesh.position.set(offset + wallDist, rightWallHeight / 2, -35);
-    rightWallMesh.userData = { envType: 'wall', side: 'right', offset };
-    scene.add(rightWallMesh);
-
-    // --- PHYSICS BODIES ---
-    const groundShape = new CANNON.Box(new CANNON.Vec3(2.25, 0.1, 50));
-    groundBody = new CANNON.Body({ mass: 0, material: groundMat });
-    groundBody.addShape(groundShape);
-    groundBody.position.set(offset, 0, -35);
-    groundBody.userData = { envType: 'ground', offset };
-    world.addBody(groundBody);
-
-    const leftWallShape = new CANNON.Box(new CANNON.Vec3(0.6, leftWallHeight / 2, 50));
-    const rightWallShape = new CANNON.Box(new CANNON.Vec3(0.6, rightWallHeight / 2, 50));
-
-    leftWallBody = new CANNON.Body({
-        mass: 0,
-        material: typeof wallMat !== 'undefined' ? wallMat : groundMat
-    });
-    leftWallBody.addShape(leftWallShape);
-    leftWallBody.position.set(offset - wallDist, leftWallHeight / 2, -35);
-    leftWallBody.userData = { envType: 'wall', side: 'left', offset };
-    world.addBody(leftWallBody);
-
-    rightWallBody = new CANNON.Body({
-        mass: 0,
-        material: typeof wallMat !== 'undefined' ? wallMat : groundMat
-    });
-    rightWallBody.addShape(rightWallShape);
-    rightWallBody.position.set(offset + wallDist, rightWallHeight / 2, -35);
-    rightWallBody.userData = { envType: 'wall', side: 'right', offset };
-    world.addBody(rightWallBody);
-}
-
-function createBall() {
-    let geometry, material;
-
-    if (isChaosMode && chaosModifiers.isExplosive) {
-        // ... (Your existing TNT Canvas/Texture logic)
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#8B0000';
-        ctx.fillRect(0, 0, 64, 64);
-        ctx.fillStyle = '#000000';
-        for (let i = 0; i < 64; i += 8) {
-            ctx.fillRect(i, 0, 4, 64);
-            ctx.fillRect(0, i, 64, 4);
-        }
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('TNT', 32, 32);
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(28, 0, 8, 16);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        geometry = new THREE.BoxGeometry(BALL_RADIUS * 2, BALL_RADIUS * 2, BALL_RADIUS * 2);
-        material = new THREE.MeshPhongMaterial({ map: texture, shininess: 10 });
-    } else {
-        // Ice Lane special material
-        if (isChaosMode && chaosModifiers.isIceLane) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128;
-            canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-
-            // Ice crystal background
-            const gradient = ctx.createLinearGradient(0, 0, 128, 128);
-            gradient.addColorStop(0, '#e6f3ff');
-            gradient.addColorStop(0.5, '#b3d9ff');
-            gradient.addColorStop(1, '#87cefa');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, 128, 128);
-
-            // Ice cracks
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1;
-            ctx.lineCap = 'round';
-            for (let i = 0; i < 8; i++) {
-                ctx.beginPath();
-                ctx.moveTo(Math.random() * 128, Math.random() * 128);
-                ctx.lineTo(Math.random() * 128, Math.random() * 128);
-                ctx.stroke();
-            }
-
-            // Frost texture
-            ctx.fillStyle = 'rgba(255,255,255,0.3)';
-            for (let i = 0; i < 20; i++) {
-                ctx.beginPath();
-                ctx.arc(Math.random() * 128, Math.random() * 128, Math.random() * 3 + 1, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            const iceTexture = new THREE.CanvasTexture(canvas);
-            material = new THREE.MeshPhongMaterial({
-                map: iceTexture,
-                shininess: 350,
-                emissive: 0x87cefa,
-                emissiveIntensity: 0.3,
-                transparent: true,
-                opacity: 0.92
-            });
-        } else {
-            material = new THREE.MeshPhongMaterial({
-                color: (myPlayerId === 2) ? 0xff4757 : 0x00eeff,
-                shininess: 250,
-                emissive: 0x003366
-            });
-        }
-        geometry = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
-    }
-
-    ballMesh = new THREE.Mesh(geometry, material);
-    ballMesh.castShadow = true;
-
-    // --- ADD OUTLINE EFFECT START ---
-    // We create a duplicate geometry slightly larger than the original
-    const outlineThickness = 0.01;
-    let outlineGeo;
-
-    if (isChaosMode && chaosModifiers.isExplosive) {
-        // Use a Box for the TNT outline
-        const size = (BALL_RADIUS * 2) + outlineThickness;
-        outlineGeo = new THREE.BoxGeometry(size, size, size);
-    } else {
-        // Use a Sphere for the normal ball outline
-        outlineGeo = new THREE.SphereGeometry(BALL_RADIUS + outlineThickness, 32, 32);
-    }
-
-    const outlineMat = new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        side: THREE.BackSide
-    });
-    const ballOutline = new THREE.Mesh(outlineGeo, outlineMat);
-
-    // Attach the outline to the ballMesh so it moves and rotates with it
-    ballMesh.add(ballOutline);
-    // --- ADD OUTLINE EFFECT END ---
-
-    scene.add(ballMesh);
-
-    // ... (Your existing Cannon.js physics logic)
-    const ballShape = new CANNON.Sphere(BALL_RADIUS);
-    const ballFriction = (typeof chaosModifiers !== 'undefined' && chaosModifiers.frictionMult) ? chaosModifiers.frictionMult * 0.1 : 0.1;
-    ballMat.friction = ballFriction;
-    ballBody = new CANNON.Body({ mass: 0, shape: ballShape, material: ballMat });
-    ballBody.type = CANNON.Body.STATIC;
-    ballBody.mass = 0;
-    ballBody.updateMassProperties();
-    ballBody.allowSleep = false;
-    if (typeof ballBody.wakeUp === 'function') ballBody.wakeUp();
-    // Apply chaos damping modifiers
-    const dampingScale = (typeof chaosModifiers !== 'undefined' && chaosModifiers.linearDampingMult) ? chaosModifiers.linearDampingMult : 1.0;
-    ballBody.linearDamping = 0.1 * dampingScale;
-    ballBody.angularDamping = 0.1 * dampingScale;
-
-    const startPos = new CANNON.Vec3(myPlayerOffset, LANE_Y + BALL_RADIUS + 0.05, 6);
-    ballBody.position.copy(startPos);
-    world.addBody(ballBody);
-    ballMesh.position.copy(ballBody.position);
-}
-
-function createPinGeometry() {
-    const points = [];
-    points.push(new THREE.Vector2(0, -0.4));
-    points.push(new THREE.Vector2(0.12, -0.4));
-    points.push(new THREE.Vector2(0.16, -0.25));
-    points.push(new THREE.Vector2(0.15, -0.15));
-    points.push(new THREE.Vector2(0.08, 0.08));
-    points.push(new THREE.Vector2(0.06, 0.22));
-    points.push(new THREE.Vector2(0.09, 0.32));
-    points.push(new THREE.Vector2(0.07, 0.38));
-    points.push(new THREE.Vector2(0, 0.4));
-    return new THREE.LatheGeometry(points, 24);
-}
-
-function createPins(offset = 0) {
-    const pinGeo = createPinGeometry();
-    const pinMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 200 });
-    const stripeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const stripeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 16);
-
-    const SCORE_RADIUS = 0.22;
-    const circleGeo = new THREE.RingGeometry(SCORE_RADIUS - 0.05, SCORE_RADIUS, 32);
-    const circleMat = new THREE.MeshLambertMaterial({
-        color: 0xffffff,
-        emissive: 0x00ffff,
-        emissiveIntensity: 0.5,
-        transparent: true,
-        opacity: 0.6
-    });
-
-    const spawnSinglePin = (x, z) => {
-        const pinSizeMult = (typeof chaosModifiers !== 'undefined' && chaosModifiers.pinSizeMult) ? chaosModifiers.pinSizeMult : 1.0;
-        const pinMassMult = (typeof chaosModifiers !== 'undefined' && chaosModifiers.pinMassMult) ? chaosModifiers.pinMassMult : 1.0;
-        const worldX = x + offset;
-
-        const group = new THREE.Group();
-
-        const circle = new THREE.Mesh(circleGeo, circleMat.clone());
-        circle.rotation.x = -Math.PI / 2;
-        circle.scale.setScalar(pinSizeMult);
-        circle.position.set(worldX, LANE_Y + 0.05, z);  // Fixed world position above ice overlay
-        scene.add(circle);
-
-        pinCircles.push(circle); // Track in global array for scoring
-
-        // NEW: Ice block ghost effect for pins during ice_lane
-        if (chaosModifiers.isIceLane) {
-            const iceBlockGeo = new THREE.BoxGeometry(0.35 * pinSizeMult, 1 * pinSizeMult, 0.35 * pinSizeMult);
-            const iceBlockMat = new THREE.MeshPhongMaterial({
-                color: 0xa0d1ff,
-                transparent: true,
-                opacity: 0.6,
-                emissive: 0x87cefa,
-                emissiveIntensity: 0.2
-            });
-            const iceBlock = new THREE.Mesh(iceBlockGeo, iceBlockMat);
-            iceBlock.position.y = 0.01 * pinSizeMult;
-            group.add(iceBlock); // Ghost - no physics collision
-        }
-
-        const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
-        pMesh.castShadow = true;
-        pMesh.scale.setScalar(pinSizeMult);
-        group.add(pMesh);
-
-        const outlineMaterial = new THREE.MeshBasicMaterial({
-            color: 0x000000,
-            side: THREE.BackSide
-        });
-        const outlineMesh = new THREE.Mesh(pinGeo, outlineMaterial);
-        outlineMesh.scale.setScalar(1.07 * pinSizeMult);
-        group.add(outlineMesh);
-
-        const stripe = new THREE.Mesh(stripeGeo, stripeMat);
-        stripe.scale.setScalar(pinSizeMult);
-        stripe.position.set(0, 0.16 * pinSizeMult, 0);
-        group.add(stripe);
-
-        scene.add(group);
-
-        const pinMass = ((targetPinCount > 50) ? 2.0 : 2.5) * pinMassMult;
-        const pBody = new CANNON.Body({ mass: pinMass, material: pinMat });
-        const qCyl = new CANNON.Quaternion();
-        qCyl.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
-
-        // Scale physics shapes to match visual pinSizeMult
-        const s = pinSizeMult;
-        pBody.addShape(new CANNON.Cylinder(0.12 * s, 0.12 * s, 0.1 * s, 12), new CANNON.Vec3(0, -0.35 * s, 0), qCyl);
-        pBody.addShape(new CANNON.Sphere(0.16 * s), new CANNON.Vec3(0, -0.18 * s, 0));
-        pBody.addShape(new CANNON.Cylinder(0.08 * s, 0.13 * s, 0.3 * s, 12), new CANNON.Vec3(0, 0.05 * s, 0), qCyl);
-        pBody.addShape(new CANNON.Sphere(0.09 * s), new CANNON.Vec3(0, 0.31 * s, 0));
-        pBody.updateBoundingRadius();
-
-        pBody.linearDamping = targetPinCount > 50 ? 0.30 : 0.2;
-        pBody.angularDamping = targetPinCount > 50 ? 0.35 : 0.3;
-        pBody.type = CANNON.Body.KINEMATIC;
-        pBody.position.set(worldX, LANE_Y + (PIN_HEIGHT / 2 * pinSizeMult), z);
-
-        pBody.addEventListener('collide', (e) => {
-            if (pBody.type === CANNON.Body.KINEMATIC) {
-                pBody.type = CANNON.Body.DYNAMIC;
-                pBody.updateMassProperties();
-
-                const now = performance.now();
-
-                if (now - lastPinHitTime > 1000) {
-                    currentPinVolume = 0.7;
-                } else {
-                    currentPinVolume = Math.max(0.07, currentPinVolume - 0.05);
-                }
-                lastPinHitTime = now;
-
-                if (now - lastPinSoundTime > 80) {
-                    if (pinKnockSound && pinKnockSound.buffer) {
-                        if (pinKnockSound.isPlaying) pinKnockSound.stop();
-                        pinKnockSound.setVolume(currentPinVolume);
-                        pinKnockSound.play();
+                let newTotal = Object.keys(players).length;
+                let newReady = Object.keys(readyPlayers).length;
+                if (newTotal >= 2 && newReady > newTotal / 2) {
+                    lobbyCountdownVal--;
+                    broadcastToRoom('sync_lobby_countdown', { value: lobbyCountdownVal });
+                    if (lobbyCountdownVal <= 0) {
+                        clearInterval(lobbyTimerId); lobbyTimerId = null;
+                        lobbyCountdownVal = -1;
+                        broadcastToRoom('sync_lobby_countdown', { value: lobbyCountdownVal });
+                        broadcastToRoom('trigger_match_start');
+                        executeActiveMatchStart();
                     }
-                    lastPinSoundTime = now;
+                } else {
+                    clearInterval(lobbyTimerId); lobbyTimerId = null;
+                    lobbyCountdownVal = -1;
+                    broadcastToRoom('sync_lobby_countdown', { value: lobbyCountdownVal });
+                }
+            }, 1000);
+        }
+    } else {
+        if (lobbyCountdownVal !== -1) {
+            if (lobbyTimerId) clearInterval(lobbyTimerId);
+            lobbyTimerId = null;
+            lobbyCountdownVal = -1;
+            broadcastToRoom('sync_lobby_countdown', { value: lobbyCountdownVal });
+        }
+    }
+}
+
+function executeActiveMatchStart() {
+    currentEngineMode = 'GAME';
+    readyPlayers = {};
+    setupActiveMatchEnvironment();
+    updateHudDisplays();
+    raceStarted = true;
+    firstPlayerFinishTime = -1;
+    raceCountdownVal = -1;
+    finishPositions = [];
+
+    // Clear any leftover projectiles, throwables, particles, robot hands
+    projectiles = [];
+    throwables = [];
+    activeRobotHands = [];
+    particles = [];
+    lastThrowableSnapshot = null;
+    lastProjectileSnapshot = null;
+    lastRobotHandSnapshot = null;
+
+    // Use the first spawn point for all players
+    const sp = spawnPoints[0];
+    for (let id in players) {
+        players[id].x = sp.x;
+        players[id].y = sp.y;
+        players[id].vx = 0;
+        players[id].vy = 0;
+        players[id].finished = false;
+        players[id].finishTime = -1;
+        players[id].eliminated = false;
+        players[id].deathReason = null;
+        players[id].knockbackTimer = 0;
+        players[id].knockbackVx = 0;
+        players[id].knockbackVy = 0;
+        players[id].item = null;
+        players[id].itemType = null;
+        players[id].ammo = 0;
+        players[id].grabbedBy = null;
+    }
+
+    // Reset local player's item reference
+    localPlayerItem = null;
+
+    // Reset spectator mode
+    spectatorMode = false;
+    spectatorTargetId = null;
+    document.getElementById('spectator-controls')?.classList.add('hidden');
+
+    // Reset match ending flag for new match
+    matchEndingInProgress = false;
+
+    if (isHost) {
+        timerVal = 60;
+        if (gameTimer) clearInterval(gameTimer);
+        gameTimer = setInterval(() => {
+            timerVal--;
+            broadcastToRoom('sync_timer', { time: timerVal });
+            document.getElementById('timer').innerText = timerVal;
+
+            if (timerVal <= 0) {
+                clearInterval(gameTimer);
+                gameTimer = null;
+
+                if (raceTimerId) {
+                    clearInterval(raceTimerId);
+                    raceTimerId = null;
                 }
 
-                const forceDir = pBody.position.vsub(e.contact.bi.position);
-                forceDir.normalize();
-                const impulseStrength = (targetPinCount === 100) ? 2.5 : 2;
-                pBody.applyImpulse(forceDir.scale(impulseStrength), pBody.position);
-                pBody.velocity.y += 1.2;
-
-                spawnImpact(pBody.position, 0xffffff, 8);
-
-                const collider = e.contact.bi === pBody ? e.contact.bj : e.contact.bi;
-                if (chaosModifiers.isExplosive && ballBody && collider === ballBody) {
-                    const explosionPosition = pBody.position.clone();
-                    spawnExplosionEffect({ x: explosionPosition.x, y: explosionPosition.y, z: explosionPosition.z }, 0xffaa33, 14, 1);
-                    playGameSound('explosion');
-
-                    pins.forEach(pin => {
-                        const dir = pin.body.position.clone().vsub(explosionPosition);
-                        const distance = dir.length();
-                        if (distance > 0 && distance < 5) {
-                            dir.normalize();
-                            const power = (5 - distance) * 3 * chaosModifiers.ballSpeedMult;
-                            pin.body.applyImpulse(dir.scale(power), pin.body.position);
-                        }
-                    });
+                // Gather final results safely even if nobody reached the finish line
+                let results = [];
+                for (let id in players) {
+                    results.push({ id, nameTag: players[id].nameTag, score: players[id].score });
                 }
-
-                if (!impactOccurred) {
-                    impactOccurred = true;
-                    isCinematicMode = true;
-                    timeScale = 0.15;
-                    cinematicTargetPin = pBody;
-
-                    setTimeout(() => {
-                        timeScale = 1.0;
-                        isCinematicMode = false;
-                    }, 3000);
-
-                    clearTimeout(resetTimer);
-                    resetTimer = setTimeout(checkPinsStability, (targetPinCount === 100) ? 9000 : 4000);
-                }
+                broadcastToRoom('match_over', { summary: results });
+                executeMatchEndingSequence(results);
             }
-        });
-
-        world.addBody(pBody);
-        pins.push({ mesh: group, body: pBody, initialPos: { x: worldX, z: z } });
-    };
-
-    const startZ = -22;
-    if (targetPinCount === 100) {
-        const spacing = 0.52;
-        for (let r = 0; r < 13; r++) {
-            for (let i = 0; i <= r; i++) {
-                const x = (i - r * 0.5) * spacing;
-                spawnSinglePin(x, startZ - (r * spacing));
-            }
-        }
-        const row14Count = 9;
-        for (let i = 0; i < row14Count; i++) {
-            const x = (i - (row14Count - 1) * 0.5) * spacing;
-            spawnSinglePin(x, startZ - (13 * spacing));
-        }
-    } else {
-        const spacing = 0.65;
-        for (let r = 0; r < 4; r++) {
-            for (let i = 0; i <= r; i++) {
-                const x = (i - r * 0.5) * spacing;
-                spawnSinglePin(x, startZ - (r * spacing));
-            }
-        }
-    }
-}
-
-function createGhostPins(offset = 0) {
-    const pinGeo = createPinGeometry();
-    const pinMaterial = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        roughness: 0.8,
-        metalness: 0.1,
-        transparent: true,
-        opacity: 0.35
-    });
-    const stripeMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.4 });
-    const stripeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 16);
-
-    let ghostPinCount = 0;
-    const maxGhostPins = (targetPinCount === 100) ? 30 : 10;
-
-    const spawnGhostPin = (x, z) => {
-        if (ghostPinCount >= maxGhostPins) return;
-        ghostPinCount++;
-
-        const worldX = x + offset;
-        const group = new THREE.Group();
-
-        const pMesh = new THREE.Mesh(pinGeo, pinMaterial);
-        pMesh.castShadow = true;
-        group.add(pMesh);
-
-        const outlineMaterial = new THREE.MeshBasicMaterial({
-            color: 0x000000,
-            side: THREE.BackSide,
-            transparent: true,
-            opacity: 0.2
-        });
-        const outlineMesh = new THREE.Mesh(pinGeo, outlineMaterial);
-        outlineMesh.scale.setScalar(1.07);
-        group.add(outlineMesh);
-
-        const stripe = new THREE.Mesh(stripeGeo, stripeMat);
-        stripe.position.set(0, 0.16, 0);
-        group.add(stripe);
-
-        group.position.set(worldX, LANE_Y + (PIN_HEIGHT / 2), z);
-        group.visible = true;
-        scene.add(group);
-        opponentGhostPins.push(group);
-    };
-
-    const startZ = -22;
-    if (targetPinCount === 100) {
-        const spacing = 0.52;
-        for (let r = 0; r < 13 && ghostPinCount < maxGhostPins; r++) {
-            for (let i = 0; i <= r && ghostPinCount < maxGhostPins; i++) {
-                const x = (i - r * 0.5) * spacing;
-                spawnGhostPin(x, startZ - (r * spacing));
-            }
-        }
-        const row14Count = 9;
-        for (let i = 0; i < row14Count && ghostPinCount < maxGhostPins; i++) {
-            const x = (i - (row14Count - 1) * 0.5) * spacing;
-            spawnGhostPin(x, startZ - (13 * spacing));
-        }
-    } else {
-        const spacing = 0.65;
-        for (let r = 0; r < 4; r++) {
-            for (let i = 0; i <= r; i++) {
-                const x = (i - r * 0.5) * spacing;
-                spawnGhostPin(x, startZ - (r * spacing));
-            }
-        }
-    }
-}
-
-function initLightTrail() {
-    const geometry = new THREE.PlaneGeometry(1, 1, 1, TRAIL_MAX_POINTS - 1);
-
-
-    // Player 1 Trail (BLUE)
-    const material_P1 = new THREE.MeshBasicMaterial({
-        color: 0x00ccff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
-    });
-
-    trailMesh_P1 = new THREE.Mesh(geometry.clone(), material_P1);
-    trailMesh_P1.frustumCulled = false;
-    trailMesh_P1.visible = false;
-    scene.add(trailMesh_P1);
-
-
-    // Player 2 Trail (RED)
-    const material_P2 = new THREE.MeshBasicMaterial({
-        color: 0xff3333, transparent: true, opacity: 0.6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
-    });
-
-    trailMesh_P2 = new THREE.Mesh(geometry.clone(), material_P2);
-    trailMesh_P2.frustumCulled = false;
-    trailMesh_P2.visible = false;
-    scene.add(trailMesh_P2);
-
-}
-
-function updateLightTrail() {
-    // 如果不是在投球狀態，隱藏所有拖尾並清空歷史
-    if (!isBowling) {
-        if (typeof trailMesh_P1 !== 'undefined') trailMesh_P1.visible = false;
-        if (typeof trailMesh_P2 !== 'undefined') trailMesh_P2.visible = false;
-        trailHistory = [];
-        return;
-    }
-
-    // 1. 根據目前玩家身份選擇正確的 Mesh
-    const isPlayer2 = getLocalPlayerId() === 'p2';
-    const currentTrailMesh = isPlayer2 ? trailMesh_P2 : trailMesh_P1;
-
-    // Ice lane trail effect
-    if (isChaosMode && chaosModifiers.isIceLane) {
-        currentTrailMesh.material.color.setHex(0x4fc3f7); // Ice blue trail
-        currentTrailMesh.material.opacity = 0.4;
-        currentTrailMesh.material.transparent = true;
-        currentTrailMesh.visible = true;
-        // Add sparkling ice particles to trail
-        if (!currentTrailMesh.iceSparkles) {
-            const sparkleGeo = new THREE.BufferGeometry();
-            const sparklePos = [];
-            for (let i = 0; i < 20; i++) {
-                sparklePos.push((Math.random() - 0.5) * 0.8, Math.random() * 0.1, (Math.random() - 0.5) * 0.8);
-            }
-            sparkleGeo.setAttribute('position', new THREE.Float32BufferAttribute(sparklePos, 3));
-            const sparkleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.03, transparent: true, opacity: 0.6 });
-            currentTrailMesh.iceSparkles = new THREE.Points(sparkleGeo, sparkleMat);
-            currentTrailMesh.add(currentTrailMesh.iceSparkles);
-        }
-    } else {
-        currentTrailMesh.material.color.setHex(isPlayer2 ? 0xff0000 : 0x00ffff);
-        currentTrailMesh.material.opacity = 0.6;
-        currentTrailMesh.material.transparent = true;
-        if (currentTrailMesh.iceSparkles) {
-            currentTrailMesh.remove(currentTrailMesh.iceSparkles);
-            currentTrailMesh.iceSparkles = null;
-        }
-        currentTrailMesh.visible = true;
-    }
-
-    // 2. 動態更改顏色：Player 2 設為紅色，Player 1 保持青色
-    // 這樣即使兩個人並排玩，顏色也會是分開的
-    if (isPlayer2) {
-        currentTrailMesh.material.color.setHex(0xff0000); // 純紅色
-    } else {
-        currentTrailMesh.material.color.setHex(0x00ffff); // 原本的青色
-    }
-
-    // 3. 記錄球的當前位置
-    trailHistory.push({
-        x: ballBody.position.x,
-        y: ballBody.position.y,
-        z: ballBody.position.z
-    });
-
-    // 限制拖尾長度
-    if (trailHistory.length > TRAIL_MAX_POINTS) trailHistory.shift();
-
-    // 4. 更新頂點數據 (帶有錐形逐漸變細的效果)
-    const posAttr = currentTrailMesh.geometry.attributes.position;
-    const baseWidth = 0.12;
-
-    for (let i = 0; i < TRAIL_MAX_POINTS; i++) {
-        // 取得歷史記錄中的點，如果還沒記錄到那麼多點，就用球的當前位置填充
-        const pointIndex = Math.min(i, trailHistory.length - 1);
-        const point = trailHistory[pointIndex] || {
-            x: ballBody.position.x,
-            y: ballBody.position.y,
-            z: ballBody.position.z
-        };
-
-        // 計算拖尾寬度：越往後（索引越小）越細
-        const taper = (i / TRAIL_MAX_POINTS);
-        const currentWidth = baseWidth * taper;
-
-        // 拖尾高度：稍微高於地面防止閃爍 (Z-fighting)
-        const trailY = point.y - BALL_RADIUS + 0.02;
-
-        // 設定左邊和右邊的頂點，形成帶狀 (Ribbon)
-        posAttr.setXYZ(i * 2, point.x - currentWidth / 2, trailY, point.z);
-        posAttr.setXYZ(i * 2 + 1, point.x + currentWidth / 2, trailY, point.z);
-    }
-
-    // 告訴 Three.js 需要重新渲染頂點
-    posAttr.needsUpdate = true;
-}
-
-function spawnIceParticle(pos) {
-    const geometrySegments = isMobileClient() ? 4 : 8;
-    const part = new THREE.Mesh(
-        new THREE.SphereGeometry(0.015, geometrySegments, geometrySegments),
-        new THREE.MeshBasicMaterial({
-            color: 0xdef2ff,
-            transparent: true,
-            opacity: 0.8
-        })
-    );
-    part.position.copy(pos);
-
-    // Ice crystal velocity - trails behind/upward
-    const vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 0.08,
-        Math.random() * 0.12 + 0.05,
-        ballBody.velocity.z * 0.3
-    );
-
-    scene.add(part);
-    impactParticles.push({
-        mesh: part,
-        vel: vel,
-        life: 1.0,
-        isIce: true
-    });
-}
-
-function spawnImpact(pos, color, count, scale = 1.0) {
-    const reduceFor100Pins = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
-    const mobileClient = isMobileClient();
-    const particleCount = Math.max(2, Math.min(count, reduceFor100Pins || mobileClient ? 4 : count));
-    const geometrySegments = mobileClient ? 3 : 4;
-
-    for (let i = 0; i < particleCount; i++) {
-        const part = new THREE.Mesh(
-            new THREE.SphereGeometry(0.04 * scale, geometrySegments, geometrySegments),
-            new THREE.MeshBasicMaterial({ color: color, transparent: true })
-        );
-        part.position.set(pos.x, pos.y, pos.z);
-        const vx = (Math.random() - 0.5) * 0.1 * scale;
-        const vy = Math.random() * 0.3 * scale;
-        const vz = (Math.random() - 0.5) * 0.1 * scale;
-        scene.add(part);
-        impactParticles.push({ mesh: part, vel: new THREE.Vector3(vx, vy, vz), life: 1.0 });
-    }
-}
-
-function updateImpacts() {
-    for (let i = impactParticles.length - 1; i >= 0; i--) {
-        const p = impactParticles[i];
-        p.mesh.position.add(p.vel);
-        p.vel.y -= 0.02;
-        p.life -= 0.04;
-
-        // Ice particles fade slower + sparkle
-        if (p.isIce) {
-            p.mesh.material.opacity = Math.max(0, p.life * 1.5);
-            p.mesh.material.emissiveIntensity = Math.sin(Date.now() * 0.02 + i) * 0.3;
-            p.vel.multiplyScalar(0.98); // Gentle trailing
-        } else {
-            p.mesh.scale.setScalar(Math.max(0, p.life));
-            p.mesh.material.opacity = Math.max(0, p.life);
-        }
-
-        if (p.life <= 0) {
-            scene.remove(p.mesh);
-            impactParticles.splice(i, 1);
-        }
-    }
-}
-
-// ============================================
-// EXPLOSION VISUAL EFFECT UPDATE
-// ============================================
-
-// Animate active explosion effects each frame
-function updateExplosions() {
-    for (let i = activeExplosions.length - 1; i >= 0; i--) {
-        const exp = activeExplosions[i];
-        exp.life -= 0.025; // Fade over ~40 frames
-
-        if (exp.life <= 0) {
-            // Cleanup all explosion meshes
-            exp.meshes.forEach(m => scene.remove(m.mesh));
-            if (exp.points) scene.remove(exp.points.mesh);
-            exp.smokeParticles.forEach(s => scene.remove(s.mesh));
-            if (exp.light) scene.remove(exp.light);
-            activeExplosions.splice(i, 1);
-            continue;
-        }
-
-        const lifeRatio = exp.life / exp.maxLife;
-
-        // Update fireball core and shockwave
-        exp.meshes.forEach(m => {
-            if (m.type === 'fireball') {
-                const scale = (1.0 + (1.0 - lifeRatio) * 3) * m.scale;
-                m.mesh.scale.setScalar(scale);
-                m.mesh.material.opacity = lifeRatio * 0.9;
-            } else if (m.type === 'shockwave') {
-                const scale = (1.0 + (1.0 - lifeRatio) * 8) * m.scale;
-                m.mesh.scale.setScalar(scale);
-                m.mesh.material.opacity = lifeRatio * 0.7;
-            }
-        });
-
-        // Update Points-based burst particles (SOFT approach)
-        if (exp.points) {
-            const posAttr = exp.points.mesh.geometry.attributes.position;
-            const colorAttr = exp.points.mesh.geometry.attributes.color;
-            const positions = posAttr.array;
-            const colors = colorAttr.array;
-
-            for (let j = 0; j < exp.points.velocities.length; j++) {
-                const vel = exp.points.velocities[j];
-                positions[j * 3] += vel.x;
-                positions[j * 3 + 1] += vel.y;
-                positions[j * 3 + 2] += vel.z;
-                vel.y -= 0.003; // Gravity
-
-                // Fade vertex colors instead of material opacity
-                colors[j * 3] *= 0.985;
-                colors[j * 3 + 1] *= 0.985;
-                colors[j * 3 + 2] *= 0.985;
-            }
-
-            posAttr.needsUpdate = true;
-            colorAttr.needsUpdate = true;
-            exp.points.mesh.material.opacity = lifeRatio;
-        }
-
-        // Update smoke particles
-        exp.smokeParticles.forEach(s => {
-            s.mesh.position.add(s.velocity);
-            s.mesh.material.opacity = lifeRatio * 0.5;
-            const sScale = 1.0 + (1.0 - lifeRatio) * 2;
-            s.mesh.scale.setScalar(sScale);
-        });
-
-        // Update flash light intensity
-        if (exp.light) {
-            const baseIntensity = 5 * (exp.meshes[0]?.scale || 1);
-            exp.light.intensity = lifeRatio * baseIntensity;
-        }
-    }
-}
-
-function spawnExplosionEffect(pos, color, count, scale = 1.0) {
-    const isMobile = (typeof isMobileClient !== 'undefined' && isMobileClient());
-
-    // Physical force remains the same
-    const explosionRadius = 5.0 * scale;
-    const explosionForce = 100.0 * scale;
-
-    pins.forEach(pin => {
-        if (pin.body) {
-            const dx = pin.body.position.x - pos.x;
-            const dy = pin.body.position.y - pos.y;
-            const dz = pin.body.position.z - pos.z;
-            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (distance < explosionRadius && distance > 0) {
-                const factor = explosionForce / distance;
-                const force = new CANNON.Vec3((dx / distance) * factor, (dy / distance) * factor, (dz / distance) * factor);
-                pin.body.applyImpulse(force, pin.body.position);
-            }
-        }
-    });
-
-    // Flash dimmer logic
-    for (let i = 0; i < 3; i++) {
-        setTimeout(() => {
-            triggerDimmer(true);
-            setTimeout(() => triggerDimmer(false), 100);
-        }, i * 50);
-    }
-
-    const explosionGroup = {
-        meshes: [],
-        particles: [],
-        smokeParticles: [],
-        light: null,
-        life: 1.0,
-        maxLife: 1.0
-    };
-
-    // 1. Fireball Core (Reusing Geometry)
-    const fireballMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
-    const fireball = new THREE.Mesh(SHARED_FIRE_GEO, fireballMat);
-    fireball.scale.setScalar(0.1 * scale);
-    fireball.position.set(pos.x, pos.y, pos.z);
-    scene.add(fireball);
-    explosionGroup.meshes.push({ mesh: fireball, type: 'fireball', scale: scale });
-
-    // 2. Particle burst - SOFT POINTS APPROACH (1 draw call instead of 30+)
-    const pCount = isMobile ? 15 : 40;
-    const positions = new Float32Array(pCount * 3);
-    const colors = new Float32Array(pCount * 3);
-    const velocities = [];
-    const colorPalette = [new THREE.Color(0xff4500), new THREE.Color(0xff8c00), new THREE.Color(0xffd700), new THREE.Color(0xff2222), new THREE.Color(0xff6600)];
-
-    for (let i = 0; i < pCount; i++) {
-        positions[i * 3] = pos.x + (Math.random() - 0.5) * 0.2 * scale;
-        positions[i * 3 + 1] = pos.y + (Math.random() - 0.5) * 0.2 * scale;
-        positions[i * 3 + 2] = pos.z + (Math.random() - 0.5) * 0.2 * scale;
-
-        const c = colorPalette[Math.floor(Math.random() * colorPalette.length)];
-        colors[i * 3] = c.r;
-        colors[i * 3 + 1] = c.g;
-        colors[i * 3 + 2] = c.b;
-
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.random() * Math.PI;
-        const speed = (0.1 + Math.random() * 0.3) * scale;
-        velocities.push(new THREE.Vector3(
-            Math.sin(phi) * Math.cos(theta) * speed,
-            Math.sin(phi) * Math.sin(theta) * speed + 0.1 * scale,
-            Math.cos(phi) * speed
-        ));
-    }
-
-    const pGeo = new THREE.BufferGeometry();
-    pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    pGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    const points = new THREE.Points(pGeo, explosionPointMat.clone());
-    scene.add(points);
-    explosionGroup.points = { mesh: points, velocities: velocities };
-
-    // 3. Shockwave ring (Reusing Geometry)
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-    const ring = new THREE.Mesh(SHARED_RING_GEO, ringMat);
-    ring.scale.setScalar(0.2 * scale);
-    ring.position.set(pos.x, LANE_Y + 0.05, pos.z);
-    ring.rotation.x = -Math.PI / 2;
-    scene.add(ring);
-    explosionGroup.meshes.push({ mesh: ring, type: 'shockwave', scale: scale });
-
-    // 4. Point light - PC only (skip on mobile to avoid GPU lighting recalculation)
-    if (!isMobile) {
-        const flashLight = new THREE.PointLight(0xff6600, 5 * scale, 10 * scale);
-        flashLight.position.set(pos.x, pos.y + 0.5 * scale, pos.z);
-        scene.add(flashLight);
-        explosionGroup.light = flashLight;
-    }
-
-    // 5. Smoke particles - OPTIMIZED
-    const smokeCount = isMobile ? 4 : 8;
-    for (let i = 0; i < smokeCount; i++) {
-        const smoke = new THREE.Mesh(SHARED_S_GEO, SMOKE_MAT);
-        const s = (0.05 + Math.random() * 0.05) * scale;
-        smoke.scale.setScalar(s);
-
-        smoke.position.set(
-            pos.x + (Math.random() - 0.5) * 0.3 * scale,
-            pos.y + Math.random() * 0.2 * scale,
-            pos.z + (Math.random() - 0.5) * 0.3 * scale
-        );
-        const sVel = new THREE.Vector3(
-            (Math.random() - 0.5) * 0.02 * scale,
-            0.03 * scale + Math.random() * 0.02 * scale,
-            (Math.random() - 0.5) * 0.02 * scale
-        );
-        scene.add(smoke);
-        explosionGroup.smokeParticles.push({ mesh: smoke, velocity: sVel });
-    }
-
-    activeExplosions.push(explosionGroup);
-}
-
-function onTouchStart(e) {
-    unlockAudio(); // Ensure audio context is initialized on first user interaction
-    if (isBowling) return;
-    if (isMultiplayerActive && isPlayerComplete(getLocalPlayerId()) && !isPlayerComplete(getOpponentPlayerId())) return;
-    // Prevent interaction when a modal or matchmaking panel is shown
-    const panel = document.getElementById('matchmaking-panel');
-    const modeModal = document.getElementById('mode-select-modal');
-    const eventModal = document.getElementById('event-select-modal');
-    const joinPanel = document.getElementById('join-match-panel');
-    const modeSwitchModal = document.getElementById('mode-switch-modal');
-    if ((panel && panel.style.display === 'block') ||
-        (modeModal && modeModal.style.display !== 'none') ||
-        (eventModal && eventModal.style.display !== 'none') ||
-        (joinPanel && joinPanel.style.display !== 'none') ||
-        (modeSwitchModal && modeSwitchModal.style.display !== 'none')) {
-        return;
-    }
-    e.preventDefault();
-    isTouching = true;
-
-    const isPlayer2 = getLocalPlayerId() === 'p2';
-    if (isPlayer2) {
-        touchPathPoints_P2 = [];
-    } else {
-        touchPathPoints_P1 = [];
-    }
-    // Use correct touchpath lines based on current player
-    const clearPoint = [new THREE.Vector3(myPlayerOffset, 0, 0)];
-    if (isPlayer2) {
-        touchPathLine_P2.geometry.setFromPoints(clearPoint);
-        touchPathLine2_P2.geometry.setFromPoints(clearPoint);
-        touchPathLine3_P2.geometry.setFromPoints(clearPoint);
-        if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(clearPoint);
-        touchPathLine_P2.geometry.attributes.position.needsUpdate = true;
-        touchPathLine2_P2.geometry.attributes.position.needsUpdate = true;
-        touchPathLine3_P2.geometry.attributes.position.needsUpdate = true;
-        if (outerGlowLine_P2) outerGlowLine_P2.geometry.attributes.position.needsUpdate = true;
-    } else {
-        touchPathLine_P1.geometry.setFromPoints(clearPoint);
-        touchPathLine2_P1.geometry.setFromPoints(clearPoint);
-        touchPathLine3_P1.geometry.setFromPoints(clearPoint);
-        if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(clearPoint);
-        touchPathLine_P1.geometry.attributes.position.needsUpdate = true;
-        touchPathLine2_P1.geometry.attributes.position.needsUpdate = true;
-        touchPathLine3_P1.geometry.attributes.position.needsUpdate = true;
-        if (outerGlowLine_P1) outerGlowLine_P1.geometry.attributes.position.needsUpdate = true;
-    }
-
-    document.getElementById('hint').style.opacity = '0';
-    const t = (e.touches && e.touches[0]) || e;
-    touchStartPos.x = t.clientX;
-    touchStartPos.y = t.clientY;
-    lastTouchX = t.clientX;
-    touchStartTime = Date.now();
-    ballMesh.material.emissive.setHex(isPlayer2 ? 0xff3333 : 0x00ccff);
-    currentPlayerTouchPoints = isPlayer2 ? touchPathPoints_P2 : touchPathPoints_P1;
-}
-
-function onTouchMove(e) {
-    if (isBowling || !isTouching) return;
-    const t = (e.touches && e.touches[0]) || e;
-
-    const deltaX_Movement = (t.clientX - lastTouchX) * 0.015;
-
-    const movementLimit = (targetPinCount === 100) ? 3.0 : 1.5;
-    ballBody.position.x = Math.max(myPlayerOffset - movementLimit, Math.min(myPlayerOffset + movementLimit, ballBody.position.x + deltaX_Movement));
-    lastTouchX = t.clientX;
-
-    const mouseNDC = new THREE.Vector2(
-        (t.clientX / window.innerWidth) * 2 - 1,
-        -(t.clientY / window.innerHeight) * 2 + 1
-    );
-
-    raycaster.setFromCamera(mouseNDC, camera);
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.15);
-    const pos = new THREE.Vector3();
-    raycaster.ray.intersectPlane(groundPlane, pos);
-    if (!pos) return;
-
-    const MAX_PATH_POINTS = 100;
-    const isPlayer2 = getLocalPlayerId() === 'p2';
-
-    const laneLimit = (targetPinCount === 100) ? 3.0 : 1.5;
-    pos.x = Math.max(myPlayerOffset - laneLimit, Math.min(myPlayerOffset + laneLimit, pos.x));
-
-    // Use the current player's touchpath array
-    currentPlayerTouchPoints.push(pos);
-    if (currentPlayerTouchPoints.length > MAX_PATH_POINTS) currentPlayerTouchPoints.shift();
-
-    // Create offset point arrays for visual effect
-    const offsetPoints_pos = currentPlayerTouchPoints.map(p => {
-        const offsetPos = p.clone();
-        offsetPos.x += 0.02;
-        return offsetPos;
-    });
-    const offsetPoints_neg = currentPlayerTouchPoints.map(p => {
-        const offsetPos = p.clone();
-        offsetPos.x -= 0.02;
-        return offsetPos;
-    });
-
-    if (isPlayer2) {
-        touchPathLine_P2.geometry.setFromPoints(currentPlayerTouchPoints);
-        touchPathLine2_P2.geometry.setFromPoints(offsetPoints_pos);
-        touchPathLine3_P2.geometry.setFromPoints(offsetPoints_neg);
-        if (outerGlowLine_P2) outerGlowLine_P2.geometry.setFromPoints(currentPlayerTouchPoints);
-        touchPathLine_P2.geometry.attributes.position.needsUpdate = true;
-        touchPathLine2_P2.geometry.attributes.position.needsUpdate = true;
-        touchPathLine3_P2.geometry.attributes.position.needsUpdate = true;
-        if (outerGlowLine_P2) outerGlowLine_P2.geometry.attributes.position.needsUpdate = true;
-    } else {
-        touchPathLine_P1.geometry.setFromPoints(currentPlayerTouchPoints);
-        touchPathLine2_P1.geometry.setFromPoints(offsetPoints_pos);
-        touchPathLine3_P1.geometry.setFromPoints(offsetPoints_neg);
-        if (outerGlowLine_P1) outerGlowLine_P1.geometry.setFromPoints(currentPlayerTouchPoints);
-        touchPathLine_P1.geometry.attributes.position.needsUpdate = true;
-        touchPathLine2_P1.geometry.attributes.position.needsUpdate = true;
-        touchPathLine3_P1.geometry.attributes.position.needsUpdate = true;
-        if (outerGlowLine_P1) outerGlowLine_P1.geometry.attributes.position.needsUpdate = true;
-    }
-}
-
-function onTouchEnd(e) {
-    if (isBowling || !isTouching) return;
-    e.preventDefault();
-    isTouching = false;
-
-    const t = (e.changedTouches && e.changedTouches[0]) || e;
-    const deltaX = t.clientX - touchStartPos.x;
-    const deltaY = touchStartPos.y - t.clientY;
-    const duration = Date.now() - touchStartTime;
-
-    ballMesh.material.emissive.setHex(0x003366);
-
-    if (deltaY > 20) {
-        let speedScale = (deltaY / Math.max(duration, 5)) * 25;
-        let forwardSpeed = Math.max(25, Math.min(speedScale, 65)) * chaosModifiers.ballSpeedMult; let sideSpeed = deltaX * 0.05;
-        randomHookForce = (Math.random() - 0.5) * 5;
-        throwBall(forwardSpeed, sideSpeed);
-    } else {
-        document.getElementById('hint').style.opacity = '1';
-    }
-
-    // Clear appropriate touchpath lines for current player
-    const isPlayer2 = getLocalPlayerId() === 'p2';
-    if (isPlayer2) {
-        touchPathPoints_P2 = [];
-        currentPlayerTouchPoints = touchPathPoints_P2;
-        touchPathLine_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
-        touchPathLine2_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
-        touchPathLine3_P2.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
-        touchPathLine_P2.geometry.attributes.position.needsUpdate = true;
-        touchPathLine2_P2.geometry.attributes.position.needsUpdate = true;
-        touchPathLine3_P2.geometry.attributes.position.needsUpdate = true;
-    } else {
-        touchPathPoints_P1 = [];
-        currentPlayerTouchPoints = touchPathPoints_P1;
-        touchPathLine_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
-        touchPathLine2_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
-        touchPathLine3_P1.geometry.setFromPoints([new THREE.Vector3(0, 0, 0)]);
-        touchPathLine_P1.geometry.attributes.position.needsUpdate = true;
-        touchPathLine2_P1.geometry.attributes.position.needsUpdate = true;
-        touchPathLine3_P1.geometry.attributes.position.needsUpdate = true;
-    }
-}
-
-function arePinsSettled() {
-    const is100 = (targetPinCount === 100);
-    const laneMargin = is100 ? 3.8 : 2.5;
-    const playerPins = pins.filter(p =>
-        Math.abs(p.initialPos.x - myPlayerOffset) < laneMargin
-    );
-    const ballSpeed = ballBody ? ballBody.velocity.length() : 0;
-    const maxPinSpeed = is100 ? 0.08 : 0.14;
-    const maxAngSpeed = is100 ? 0.08 : 0.14;
-    const maxPinHeight = LANE_Y + 0.75;
-
-    if (ballSpeed > (is100 ? 0.08 : 0.15)) return false;
-
-    return playerPins.every(p => {
-        const pinSpeed = p.body.velocity.length();
-        const angSpeed = p.body.angularVelocity.length();
-        const pinHeight = p.body.position.y;
-        return pinSpeed <= maxPinSpeed && angSpeed <= maxAngSpeed && pinHeight <= maxPinHeight;
-    });
-}
-
-function checkPinsStability() {
-    const is100 = (targetPinCount === 100);
-    const maxWait = is100 ? 10000 : 5000;
-    const now = performance.now();
-    const settled = arePinsSettled();
-
-    if (settled) {
-        if (!pinSettleStableSince) {
-            pinSettleStableSince = now;
-        }
-        if (now - pinSettleStableSince >= 1000) {
-            checkPins();
-            return;
-        }
-    } else {
-        pinSettleStableSince = 0;
-    }
-
-    if (now - pinSettleStartTime >= maxWait) {
-        checkPins();
-        return;
-    }
-
-    resetTimer = setTimeout(checkPinsStability, 500);
-}
-
-// ============================================
-// BALL PHYSICS AND THROWING
-// ============================================
-
-// Initiates ball throw with physics simulation
-// Handles different ball masses and physics for 10-pin vs 100-pin modes
-// Sets up velocity, spin, and collision detection timers
-function throwBall(speed, sideSpeed = 0) {
-    isBowling = true;
-    document.getElementById('hint').style.opacity = '0';
-
-    // Auto-close chaos events box when ball is launched
-    if (typeof closeChaosInfoBox === 'function') {
-        closeChaosInfoBox();
-    }
-
-    const baseMass = (targetPinCount === 100) ? 680 : 500;
-    const ballMass = baseMass * (typeof chaosModifiers !== 'undefined' && chaosModifiers.ballMassMult ? chaosModifiers.ballMassMult : 1.0);
-    ballBody.mass = ballMass;
-    ballBody.type = CANNON.Body.DYNAMIC;
-    ballBody.updateMassProperties();
-    ballBody.allowSleep = false;
-    if (typeof ballBody.wakeUp === 'function') ballBody.wakeUp();
-
-    const forwardFactor = (targetPinCount === 100) ? 1.1 : 0.9;
-    const spinFactor = (targetPinCount === 100) ? 1.0 : 0.8;
-    ballBody.velocity.set(sideSpeed, 0, -speed * forwardFactor);
-    ballBody.angularVelocity.set(speed * spinFactor, randomHookForce * 2, (Math.random() - 0.5) * 15);
-
-    pinSettleStartTime = performance.now();
-    pinSettleStableSince = 0;
-    resetTimer = setTimeout(checkPinsStability, (targetPinCount === 100) ? 3000 : 1000);
-    playGameSound('ball_down');
-}
-
-// ============================================
-// PIN SCORING AND COLLISION DETECTION
-// ============================================
-
-// Analyzes pin positions after ball throw to determine score
-// Checks distance from initial position and tilt angle to count fallen pins
-// Updates visual indicators and calculates final score for the frame
-function checkPins() {
-    let fallen = 0;
-    const SCORE_RADIUS = 0.22;
-    const is100 = (targetPinCount === 100);
-    const laneMargin = is100 ? 3.8 : 2.5; // Half lane width plus margin
-
-    // Only count pins in the current player's lane
-    const playerPins = pins.filter(p =>
-        Math.abs(p.initialPos.x - myPlayerOffset) < laneMargin
-    );
-    const totalPinsInPlay = playerPins.length;
-
-    playerPins.forEach((p, index) => {
-        const dx = p.body.position.x - p.initialPos.x;
-        const dz = p.body.position.z - p.initialPos.z;
-        const distance = Math.sqrt(dx * dx + dz * dz);
-        const up = new CANNON.Vec3(0, 1, 0);
-        const pinUp = p.body.quaternion.vmult(up);
-        const angle = Math.acos(up.dot(pinUp));
-
-        if (distance > SCORE_RADIUS || angle > 0.78 || p.body.position.y < -0.5) {
-            fallen++;
-            const originalIndex = pins.indexOf(p);
-            if (pinCircles[originalIndex]) pinCircles[originalIndex].material.color.setHex(0x2ecc71);
-        } else {
-            const originalIndex = pins.indexOf(p);
-            if (pinCircles[originalIndex]) pinCircles[originalIndex].material.color.setHex(0xe74c3c);
-        }
-    });
-
-    playGameSound('ball_roll');
-
-    currentFallenPins = fallen;
-    document.getElementById('score-text').innerText = t('pinsLabel') + fallen + '/' + totalPinsInPlay;
-
-    let scoreToRecord = fallen;
-    const lastIndex = matchHistory.length - 1;
-    if (fallen === totalPinsInPlay) {
-        let consecutiveStrikes = 1;
-        for (let i = lastIndex; i >= 0; i--) {
-            if (matchHistory[i] >= totalPinsInPlay) consecutiveStrikes++;
-            else break;
-        }
-        scoreToRecord = totalPinsInPlay * consecutiveStrikes;
-    }
-
-    if (!isFreeplayMode) {
-        matchHistory.push(scoreToRecord);
-    }
-    recordRoundScore(scoreToRecord);
-
-
-    const msgBox = document.getElementById('msg-box');
-    const replayBtn = document.getElementById('watch-replay-btn');
-    const title = document.getElementById('msg-title');
-    const body = document.getElementById('msg-body');
-    const btn = document.getElementById('action-btn');
-
-    if (fallen === totalPinsInPlay) {
-        playerPins.forEach(p => {
-            const blastForce = 15;
-            const direction = p.body.position.clone().vsub(new CANNON.Vec3(myPlayerOffset, 0, -22));
-            direction.normalize();
-            p.body.applyImpulse(direction.scale(blastForce), p.body.position);
-        });
-
-        const strikePopup = document.getElementById('strike-popup');
-        const actionBtn = document.getElementById('action-btn');
-
-        // Disable button during strike animation
-        if (actionBtn) {
-            actionBtn.disabled = true;
-            actionBtn.style.opacity = '0.5';
-            actionBtn.style.cursor = 'not-allowed';
-        }
-
-        strikePopup.classList.add('show');
-        triggerDimmer(true);
-        spawnImpact(new CANNON.Vec3(myPlayerOffset, 1, -22), 0xf1c40f, 60, 4.0);
-
-        setTimeout(() => {
-            strikePopup.classList.remove('show');
-            triggerDimmer(false);
-            showResultMenu();
-
-            // Enable button after animation completes
-            if (actionBtn) {
-                actionBtn.disabled = false;
-                actionBtn.style.opacity = '1';
-                actionBtn.style.cursor = 'pointer';
-            }
-        }, 2000);
-    } else {
-        showResultMenu();
-    }
-}
-
-function showResultMenu() {
-    const msgBox = document.getElementById('msg-box');
-    const replayBtn = document.getElementById('watch-replay-btn');
-    const title = document.getElementById('msg-title');
-    const body = document.getElementById('msg-body');
-    const btn = document.getElementById('action-btn');
-    const existingFreeplayBtn = document.getElementById('temp-freeplay-btn');
-    if (existingFreeplayBtn) existingFreeplayBtn.remove();
-
-    if (isMultiplayerActive) {
-        const localDone = isPlayerComplete(getLocalPlayerId());
-        const opponentDone = isPlayerComplete(getOpponentPlayerId());
-        if (localDone && opponentDone) {
-            showMultiplayerFinalResult();
-            return;
-        }
-        if (localDone) {
-            showMultiplayerWaitMessage(true);
-            return;
-        }
-        if (opponentDone) {
-            showMultiplayerWaitMessage(false);
-            return;
-        }
-        // Neither done, show result message
-    }
-
-    if (!msgBox || !replayBtn || !title || !body || !btn) {
-        return;
-    }
-
-    const playerPins = pins.filter(p => Math.abs(p.initialPos.x - myPlayerOffset) < ((targetPinCount === 100) ? 3.8 : 2.5));
-    const totalPinsInPlay = playerPins.length;
-    const fallen = currentFallenPins;
-
-    msgBox.style.display = 'block';
-    replayBtn.style.display = 'block';
-
-    if (fallen !== totalPinsInPlay) {
-        btn.disabled = false;
-        btn.style.opacity = '1';
-        btn.style.cursor = 'pointer';
-    }
-
-    if (matchHistory.length >= MAX_MATCHES) {
-        if (!isMultiplayerActive) {
-            title.innerText = t('finalScore');
-            let total = matchHistory.reduce((a, b) => a + b, 0);
-            body.innerText = `本局擊倒 ${fallen} 瓶。\n總分：${total}`;
-            btn.innerText = "重新開始";
-            btn.onclick = fullReset;
-
-            if (isChaosMode && !isFreeplayMode) {
-                const freeplayBtn = document.createElement('button');
-                freeplayBtn.className = 'btn';
-                freeplayBtn.id = 'temp-freeplay-btn';
-                freeplayBtn.innerText = "無計分暢玩 (Freeplay)";
-                freeplayBtn.style.background = "#2ecc71";
-                freeplayBtn.style.marginTop = "10px";
-                freeplayBtn.onclick = () => {
-                    isFreeplayMode = true;
-                    matchHistory = [];
-                    scores = { p1: [], p2: [] };
-                    updateScoreTable();
-                    msgBox.style.display = 'none';
-                    // NO promptEventSelection() - freeplay skips event choice
-                    resetGame();
-                };
-                msgBox.appendChild(freeplayBtn);
-            }
-        }
-    } else if (isChaosMode && !isFreeplayMode) {
-        title.innerText = (fallen === totalPinsInPlay) ? t('msgTitleStrike') : t('msgTitleEnd');
-        body.innerText = t('knocked', fallen, totalPinsInPlay);
-        btn.innerText = "選擇下一個能力";
-        btn.onclick = () => {
-            msgBox.style.display = 'none';
-            promptEventSelection();
-        };
-    } else {
-        title.innerText = (fallen === totalPinsInPlay) ? t('msgTitleStrike') : t('msgTitleEnd');
-        body.innerText = t('knocked', fallen, totalPinsInPlay);
-        btn.innerText = t('nextFrame');
-        btn.onclick = handleMatchEnd;
-    }
-}
-
-
-// ============================================
-// GAME OVER & NEXT FRAME HANDLING
-// ============================================
-function handleMatchEnd() {
-    // 安全檢查：若按鈕被禁用則不執行
-    const actionBtn = document.getElementById('action-btn');
-    if (actionBtn && actionBtn.disabled) return;
-
-    if (matchHistory.length >= MAX_MATCHES) {
-        // 核心修正：如果是多人連線模式結束，直接完整重置並回到主選單
-        if (isMultiplayerActive) {
-            console.log('[Multiplayer] 5局結束，玩家請求返回主選單，正在中斷連線並重置...');
-
-            // 如果有建立好的資料庫參考或連線，將其移除以主動斷開房間
-            if (matchRef) {
-                try {
-                    matchRef.remove(); // 讓這間房間在網路上失效
-                } catch (e) {
-                    console.error('[Multiplayer] 移除房間節點失敗:', e);
-                }
-            }
-
-            // 關閉結算彈窗與遮罩
-            const msgBox = document.getElementById('msg-box');
-            if (msgBox) msgBox.style.display = 'none';
-            triggerDimmer(false);
-
-            // 執行完整重置（回到主選單、重置所有 UI、關閉多人狀態、清除球與保齡球瓶）
-            fullReset();
-        } else {
-            // 單人模式局數結束：同樣回到主畫面
-            fullReset();
-        }
-    } else {
-        // 未滿 5 局，正常進入下一局
-        recordAndReset();
-    }
-}
-
-function recordAndReset() {
-    resetGame();
-}
-
-// ============================================
-// REPLAY SYSTEM
-// ============================================
-
-// Starts replay playback of recorded ball trajectory and pin movements
-// Switches camera to follow the ball path from recorded frame data
-function startReplay() {
-    if (replayData.length === 0) return;
-    playGameSound('ui_click');
-
-    isReplaying = true;
-    replayFrameIndex = 0;
-    actionCamInitialized = false;
-
-    document.getElementById('msg-box').style.display = 'none';
-
-    const replayBtn = document.getElementById('watch-replay-btn');
-    replayBtn.innerText = "取消重播";
-    replayBtn.onclick = stopReplay;
-}
-
-// Stops replay playback and returns to normal game view
-// Resets camera position and restores game UI state
-function stopReplay() {
-    isReplaying = false;
-    playGameSound('ui_click');
-
-    document.getElementById('msg-box').style.display = 'block';
-
-    const replayBtn = document.getElementById('watch-replay-btn');
-    replayBtn.innerText = "觀看回放";
-    replayBtn.onclick = startReplay;
-
-    camera.lookAt(myPlayerOffset, 0, 0);
-}
-
-// ============================================
-// GAME RESET AND STATE MANAGEMENT
-// ============================================
-
-// Completely resets all game state for a new match
-// Clears scores, match history, and multiplayer flags
-// Updates UI and syncs state with Firebase if in multiplayer mode
-function fullReset() {
-    // Reset chaos mode completely
-    if (typeof window !== 'undefined' && typeof window.isChaosMode !== 'undefined') {
-        window.isChaosMode = false;
-    }
-    if (typeof resetChaosState === 'function') {
-        resetChaosState();
-    }
-
-    matchHistory = [];
-    scores = { p1: [], p2: [] };
-    hasShownLocalCompleteMessage = false;
-    hasShownOpponentCompleteMessage = false;
-    hasRecordedScoreInCurrentGame = false;
-    const msgBox = document.getElementById('msg-box');
-    if (msgBox) {
-        msgBox.style.display = 'none';
-        const body = document.getElementById('msg-body');
-        if (body) body.innerText = '';
-    }
-    updateScoreTable();
-    resetSinglePlayerUI();
-    if (!isMultiplayerActive) {
-        showMatchmakingPanel();
-    } else if (matchRef) {
-        matchRef.child('scores').set(scores).catch((err) => { });
-    }
-    resetGame();
-}
-
-function updateScoreTable(player) {
-    if (!player) {
-        updateScoreTable('p1');
-        updateScoreTable('p2');
-        return;
-    }
-    if (!scores[player]) scores[player] = [];
-
-    const history = scores[player];
-    let total = 0;
-
-    for (let i = 0; i < MAX_MATCHES; i++) {
-        const cell = document.getElementById(`${player}-m${i}`);
-        if (cell) {
-            if (history[i] !== undefined) {
-                cell.innerText = history[i];
-                total += history[i];
-                cell.style.background = "rgba(255, 255, 255, 0.2)";
-            } else {
-                cell.innerText = "-";
-                cell.style.background = "rgba(255, 255, 255, 0.05)";
-            }
-        }
-    }
-
-    const totalCell = document.getElementById(`${player}-total`);
-    if (totalCell) {
-        totalCell.innerText = total;
-    }
-}
-
-// ============================================
-// GAME STATE RESET
-// ============================================
-
-// Reset all game state variables and UI elements for a new frame/turn
-// Clears physics state, touch paths, camera position, and prepares for next throw
-function resetGame() {
-    isBowling = false;
-    randomHookForce = 0;
-    currentFallenPins = 0;
-    impactOccurred = false;
-    isCinematicMode = false;
-    cinematicTargetPin = null;
-    timeScale = 1.0;
-
-    replayData = [];
-    isReplaying = false;
-
-    touchPathPoints_P1 = [];
-    touchPathPoints_P2 = [];
-    currentPlayerTouchPoints = getLocalPlayerId() === 'p2' ? touchPathPoints_P2 : touchPathPoints_P1;
-    const clearPoint = [new THREE.Vector3(myPlayerOffset, 0, 0)];
-    // Clear appropriate player's touchpath
-    const isPlayer2 = getLocalPlayerId() === 'p2';
-    if (isPlayer2) {
-        [touchPathLine_P2, touchPathLine2_P2, touchPathLine3_P2, outerGlowLine_P2].forEach(line => {
-            if (line && line.geometry) {
-                line.geometry.setFromPoints(clearPoint);
-                line.geometry.attributes.position.needsUpdate = true;
-            }
-        });
-    } else {
-        [touchPathLine_P1, touchPathLine2_P1, touchPathLine3_P1, outerGlowLine_P1].forEach(line => {
-            if (line && line.geometry) {
-                line.geometry.setFromPoints(clearPoint);
-                line.geometry.attributes.position.needsUpdate = true;
-            }
-        });
-    }
-
-    actionTargetPin = null;
-    lastTargetSwitchTime = 0;
-
-    camera.position.set(myPlayerOffset, 4, 12);
-    camera.lookAt(myPlayerOffset, 1, -5);
-
-    // Reset camera look target for current player offset
-    if (typeof cameraLookAtTarget !== 'undefined' && cameraLookAtTarget) {
-        cameraLookAtTarget.set(myPlayerOffset, 1, 0);
-    }
-
-    if (resetTimer) clearTimeout(resetTimer);
-    resetTimer = null;
-
-    triggerDimmer(false);
-
-    const strikePopup = document.getElementById('strike-popup');
-    if (strikePopup) {
-        strikePopup.innerText = 'STRIKE!';
-        strikePopup.classList.remove('show');
-    }
-
-    document.getElementById('score-text').innerText = t('scoreText') + '0';
-    document.getElementById('msg-box').style.display = 'none';
-    const tempFreeplayBtn = document.getElementById('temp-freeplay-btn');
-    if (tempFreeplayBtn) tempFreeplayBtn.remove();
-    document.getElementById('hint').style.opacity = '1';
-    document.getElementById('watch-replay-btn').style.display = 'none';
-
-    ballBody.type = CANNON.Body.STATIC;
-    ballBody.mass = 0;
-    ballBody.updateMassProperties();
-    ballBody.allowSleep = false;
-    if (typeof ballBody.wakeUp === 'function') ballBody.wakeUp();
-    ballBody.velocity.set(0, 0, 0);
-    ballBody.angularVelocity.set(0, 0, 0);
-    ballBody.force.set(0, 0, 0);
-    ballBody.torque.set(0, 0, 0);
-    ballBody.position.set(myPlayerOffset, LANE_Y + BALL_RADIUS * chaosModifiers.ballSizeMult + 0.05, 5);
-    ballBody.quaternion.set(0, 0, 0, 1);
-
-    ballMesh.position.copy(ballBody.position);
-    ballMesh.quaternion.copy(ballBody.quaternion);
-
-    trailHistory = [];
-    if (trailMesh_P1) trailMesh_P1.visible = false;
-    if (trailMesh_P2) trailMesh_P2.visible = false;
-
-    stopAllGameSounds();
-
-    // Properly dispose of pin meshes and bodies
-    pins.forEach(p => {
-        scene.remove(p.mesh);
-        world.removeBody(p.body);
-
-        // Dispose GPU memory for mesh and its children
-        if (p.mesh.geometry) p.mesh.geometry.dispose();
-        if (p.mesh.material) p.mesh.material.dispose();
-
-        // Dispose children (pin body parts: white, black stripe, red line)
-        p.mesh.children.forEach(child => {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-        });
-    });
-    pins = [];
-
-    // Dispose pin circle outlines (separate from pin groups, dispose explicitly)
-    pinCircles.forEach(circle => {
-        scene.remove(circle);
-        if (circle.geometry) circle.geometry.dispose();
-        if (circle.material) circle.material.dispose();
-    });
-    pinCircles = [];
-
-    // Dispose opponent ghost pins
-    opponentGhostPins.forEach(pin => {
-        scene.remove(pin);
-        if (pin.geometry) pin.geometry.dispose();
-        if (pin.material) pin.material.dispose();
-    });
-    opponentGhostPins = [];
-
-    // Cleanup any active explosion visual effects
-    activeExplosions.forEach(exp => {
-        exp.meshes.forEach(m => scene.remove(m.mesh));
-        if (exp.points) scene.remove(exp.points.mesh);
-        exp.smokeParticles.forEach(s => scene.remove(s.mesh));
-        if (exp.light) scene.remove(exp.light);
-    });
-    activeExplosions = [];
-
-    createPins(myPlayerOffset);
-    if (isMultiplayerActive) {
-        const offsetDistance = (targetPinCount === 100) ? offsetDistance100 : offsetDistance10;
-        const remoteOffset = isHost ? offsetDistance : 0;
-        if (targetPinCount !== 100) {
-            createGhostPins(remoteOffset);
-        }
-    }
-
-    if (leftWallMesh) leftWallMesh.visible = true;
-    if (rightWallMesh) rightWallMesh.visible = true;
-
-    document.getElementById('action-cam-container').style.display = 'none';
-}
-
-function stopAllGameSounds() {
-    if (typeof sounds !== 'undefined' && sounds) {
-        Object.values(sounds).forEach(sound => {
-            if (sound && sound.isPlaying) sound.stop();
-        });
-    }
-    if (typeof gameSounds !== 'undefined' && gameSounds) {
-        Object.values(gameSounds).forEach(sound => {
-            if (sound && sound.isPlaying) sound.stop();
-        });
-    }
-    if (ballPathSound && ballPathSound.isPlaying) ballPathSound.stop();
-    if (pinKnockSound && pinKnockSound.isPlaying) pinKnockSound.stop();
-}
-
-let audioCtx; // Declare audioCtx, will be created after user gesture
-let audioContextResuming = false; // Track if audio context is currently resuming
-
-function playGameSound(soundName) {
-    if (!audioCtx) return; // Wait for audio context to be initialized
-    const sound = sounds[soundName];
-    if (sound && sound.buffer) {
-        if (audioCtx.state === 'suspended' && !audioContextResuming) {
-            audioContextResuming = true;
-            audioCtx.resume().then(() => {
-                audioContextResuming = false;
-                if (!sound.isPlaying) sound.play();
-            });
-        } else if (audioCtx.state !== 'suspended') {
-            if (sound.isPlaying) sound.stop();
-            sound.play();
-        }
-    }
-}
-
-let audioContextStarted = false;
-function unlockAudio() {
-    if (audioContextStarted) return;
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume().then(() => {
-            audioContextStarted = true;
-        });
-    } else {
-        audioContextStarted = true;
-    }
-}
-
-window.addEventListener('click', unlockAudio);
-window.addEventListener('touchstart', unlockAudio);
-
-let actionCamInitialized = false; // Add this global variable at the top of your script
-
-function updateActionCam() {
-    // Show action cam during active bowling OR replay playback
-    if (!isBowling && !isReplaying) {
-        document.getElementById('action-cam-container').style.display = 'none';
-        actionTargetPin = null;
-        actionCamInitialized = false; // Reset for the next throw
-        return;
-    }
-
-    document.getElementById('action-cam-container').style.display = 'block';
-    const currentTime = performance.now();
-
-    // Determine if we're in pre-impact or post-impact phase.
-    // During replay, infer impact phase from ball position in replay data.
-    let inImpactPhase = impactOccurred;
-    if (isReplaying && replayData.length > 0) {
-        const frame = replayData[Math.min(replayFrameIndex, replayData.length - 1)];
-        inImpactPhase = frame && frame.ball.pos.z < -15;
-    }
-
-    if (!inImpactPhase) {
-        // Pre-impact: follow the ball
-        const ballPos = ballMesh.position;
-        const targetPos = new THREE.Vector3(ballPos.x + 1.2, 0.6, ballPos.z + 3);
-        const lookAtTarget = new THREE.Vector3(ballPos.x, 0.4, ballPos.z - 2);
-
-        // FIX: If this is the first frame of the throw, snap the camera
-        // immediately so it doesn't "fly" from the center of the world.
-        if (!actionCamInitialized) {
-            actionCamera.position.copy(targetPos);
-            actionCamera.lookAt(lookAtTarget);
-            actionCamInitialized = true;
-        } else {
-            actionCamera.position.lerp(targetPos, 0.1);
-            actionCamera.lookAt(lookAtTarget);
-        }
-    } else {
-        // --- Impact Logic ---
-        let bestPin = null;
-        let highestPriority = -1;
-        const is100 = (targetPinCount === 100);
-        const gutterLimit = is100 ? 3.8 : 2.25;
-
-        pins.forEach(p => {
-            // Use mesh position (already updated from replay data during replay)
-            const pinPos = p.mesh.position;
-            let v;
-            if (isReplaying) {
-                // During replay, estimate activity from displacement
-                const dx = pinPos.x - p.initialPos.x;
-                const dz = pinPos.z - p.initialPos.z;
-                v = Math.sqrt(dx * dx + dz * dz) > 0.05 ? 3.0 : 0;
-            } else {
-                v = p.body.velocity.length();
-            }
-            const isOnLane = pinPos.y > 0.1 && Math.abs(pinPos.x - myPlayerOffset) < gutterLimit;
-
-            if (isOnLane && v > 0.8) {
-                const distFromCenter = Math.sqrt(
-                    Math.pow(pinPos.x - myPlayerOffset, 2) + Math.pow(pinPos.z - DECK_CENTER_Z, 2)
-                );
-                const priority = v / (distFromCenter + 1);
-                if (priority > highestPriority) {
-                    highestPriority = priority;
-                    bestPin = p;
-                }
-            }
-        });
-
-        // During replay, don't clear target immediately when pin goes out of lane.
-        // Keep following it for dramatic effect, only clear if it's very far gone.
-        if (actionTargetPin) {
-            const pinPos = actionTargetPin.mesh.position;
-            if (isReplaying) {
-                const targetIsFarGone = pinPos.y < -2 || Math.abs(pinPos.x - myPlayerOffset) > gutterLimit + 3;
-                if (targetIsFarGone) actionTargetPin = null;
-            } else {
-                const targetIsFallen = actionTargetPin.body.position.y < 0.1 ||
-                    Math.abs(actionTargetPin.body.position.x - myPlayerOffset) > gutterLimit;
-                if (targetIsFallen) actionTargetPin = null;
-            }
-        }
-
-        // Switch targets with cooldown
-        if (!actionTargetPin || (currentTime - lastTargetSwitchTime > SWITCH_COOLDOWN)) {
-            if (bestPin && bestPin !== actionTargetPin) {
-                actionTargetPin = bestPin;
-                lastTargetSwitchTime = currentTime;
-            }
-        }
-
-        if (actionTargetPin) {
-            const pinPos = actionTargetPin.mesh.position;
-            const offsetX = is100 ? 3.2 : 1.8;
-            const offsetY = is100 ? 2.5 : 1.3;
-            const offsetZ = is100 ? 5.5 : 2.5;
-
-            let targetX = pinPos.x + offsetX;
-            const targetY = offsetY;
-            const targetZ = pinPos.z + offsetZ;
-
-            const currentLaneWidth = is100 ? 7.6 : 4.5;
-            const safetyMargin = 0.8;
-            const maxX = (currentLaneWidth / 2) - safetyMargin;
-
-            // Clamp to player's lane bounds
-            targetX = Math.max(myPlayerOffset - maxX, Math.min(myPlayerOffset + maxX, targetX));
-
-            const targetCamPos = new THREE.Vector3(targetX, targetY, targetZ);
-            actionCamera.position.lerp(targetCamPos, 0.04);
-            actionCamera.lookAt(pinPos);
-        } else {
-            // Smooth fallback: follow the ball instead of snapping to fixed deck view
-            const ballPos = ballMesh.position;
-            const fallbackPos = new THREE.Vector3(
-                ballPos.x + (is100 ? 2.0 : 1.0),
-                is100 ? 3.0 : 2.0,
-                ballPos.z + (is100 ? 5.0 : 3.0)
-            );
-            actionCamera.position.lerp(fallbackPos, 0.03);
-            actionCamera.lookAt(ballPos.x, 0.5, ballPos.z - 2);
-        }
-    }
-
-    // Ensure the small window renderer actually renders the frame
-    actionRenderer.render(scene, actionCamera);
-}
-
-// ============================================
-// MAIN ANIMATION LOOP
-// ============================================
-
-// Main game loop that runs every frame
-// Handles physics simulation, rendering, and multiplayer synchronization
-function animate() {
-    requestAnimationFrame(animate);
-
-    // FIXED: Dynamic world gravity update EVERY FRAME (prevents low gravity bounce)
-    if (typeof world !== 'undefined' && typeof chaosModifiers !== 'undefined' && typeof chaosModifiers.gravityMult !== 'undefined') {
-        const gravityY = chaosModifiers.gravityMult * -23;
-        world.gravity.y = Math.max(-15, gravityY); // Clamp to prevent extreme instability
-    }
-
-    // REMOVED: No ice timer (persistent effect per user feedback)
-
-    // Save pin velocities before physics step (for ice lane pin slow motion)
-    const pinPreStepVelocities = [];
-    const pinPreStepAngularVelocities = [];
-    if (typeof chaosModifiers !== 'undefined' && chaosModifiers.isIceLane && chaosModifiers.pinTimeScale < 1 && pins.length > 0) {
-        pins.forEach(pin => {
-            pinPreStepVelocities.push(pin.body.velocity.clone());
-            pinPreStepAngularVelocities.push(pin.body.angularVelocity.clone());
-        });
-    }
-
-    if (world && !isReplaying) {
-        const currentScale = (typeof timeScale !== 'undefined') ? timeScale : 1;
-        world.step(1 / 60 * currentScale);
-
-        // Apply pin slow motion after physics step (ice lane effect - pins only, not ball)
-        if (typeof chaosModifiers !== 'undefined' && chaosModifiers.isIceLane && chaosModifiers.pinTimeScale < 1 && pins.length > 0) {
-            const s = chaosModifiers.pinTimeScale;
-            pins.forEach((pin, i) => {
-                const v0 = pinPreStepVelocities[i];
-                const v1 = pin.body.velocity;
-                v1.x = v0.x * (1 - s) + v1.x * s;
-                v1.y = v0.y * (1 - s) + v1.y * s;
-                v1.z = v0.z * (1 - s) + v1.z * s;
-
-                const av0 = pinPreStepAngularVelocities[i];
-                const av1 = pin.body.angularVelocity;
-                av1.x = av0.x * (1 - s) + av1.x * s;
-                av1.y = av0.y * (1 - s) + av1.y * s;
-                av1.z = av0.z * (1 - s) + av1.z * s;
-            });
-        }
-
-        // NEW: Dynamic damping update (persists during throw)
-        if (ballBody && typeof chaosModifiers !== 'undefined' && typeof chaosModifiers.linearDampingMult !== 'undefined') {
-            const dampingScale = chaosModifiers.linearDampingMult;
-            ballBody.linearDamping = 0.1 * dampingScale;
-            ballBody.angularDamping = 0.1 * dampingScale;
-        }
-    }
-
-    const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
-
-    if (typeof sunLight !== 'undefined' && sunLight) {
-        sunLight.position.x = currentOffset + 15;
-    }
-
-    if (ballMesh && ballBody) {
-        if (isReplaying && replayData.length > 0) {
-            // REPLAY PLAYBACK
-            if (typeof replayFrameIndex !== 'undefined' && replayFrameIndex < replayData.length) {
-                const frame = replayData[replayFrameIndex];
-                ballMesh.position.copy(frame.ball.pos);
-                ballMesh.quaternion.copy(frame.ball.quat);
-                pins.forEach((p, i) => {
-                    if (frame.pins[i]) {
-                        p.mesh.position.copy(frame.pins[i].pos);
-                        p.mesh.quaternion.copy(frame.pins[i].quat);
-                    }
-                });
-                replayFrameIndex++;
-            } else if (typeof stopReplay === 'function') {
-                stopReplay();
-            }
-        } else {
-            // NORMAL GAMEPLAY
-            ballMesh.position.copy(ballBody.position);
-            ballMesh.quaternion.copy(ballBody.quaternion);
-
-            // NEW: Dynamic ice visual update (persistent during entire effect)
-            if (typeof chaosModifiers !== 'undefined' && chaosModifiers.isIceLane) {
-                // Ice glow effect - update emissive for sparkling
-                if (ballMesh.material) {
-                    ballMesh.material.emissive.setHex(0x4fc3f7 + Math.floor(Math.random() * 0x202020)); // Sparkle variation
-                    ballMesh.material.emissiveIntensity = 0.4 + Math.sin(Date.now() * 0.01) * 0.1;
-                }
-
-                // Ice particle trail (spawn occasionally)
-                if (Math.random() < 0.3 && chaosModifiers.iceParticlesActive) {
-                    spawnIceParticle(ballBody.position);
-                }
-            }
-
-            // NEW: Update ice lane overlay
-            if (typeof updateIceLaneOverlay === 'function') {
-                updateIceLaneOverlay(myPlayerOffset);
-            }
-
-            if (isMultiplayerActive && matchRef) {
-                ballSyncCounter += 1;
-                if (ballSyncCounter % 3 === 0) {
-                    const activeBall = isBowling || ballBody.velocity.length() > 0.04;
-                    matchRef.child('ballUpdate').set({
-                        active: activeBall,
-                        pos: { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z },
-                        quat: { x: ballBody.quaternion.x, y: ballBody.quaternion.y, z: ballBody.quaternion.z, w: ballBody.quaternion.w },
-                        from: getLocalPlayerId(),
-                        timestamp: Date.now()
-                    }).catch((err) => {
-                    });
-                }
-
-                if (ballSyncCounter % 3 === 0 && pins.length > 0) {
-                    const pinPayload = pins.map(p => ({
-                        pos: {
-                            x: p.body.position.x,
-                            y: p.body.position.y,
-                            z: p.body.position.z
-                        },
-                        quat: {
-                            x: p.body.quaternion.x,
-                            y: p.body.quaternion.y,
-                            z: p.body.quaternion.z,
-                            w: p.body.quaternion.w
-                        }
-                    }));
-                    matchRef.child('pinUpdate').set({
-                        from: getLocalPlayerId(),
-                        timestamp: Date.now(),
-                        pins: pinPayload
-                    }).catch((err) => {
-                    });
-                }
-            }
-
-            if (pins && pins.length > 0) {
-                pins.forEach(p => {
-                    if (p.mesh && p.body) {
-                        p.mesh.position.copy(p.body.position);
-                        p.mesh.quaternion.copy(p.body.quaternion);
-                    }
-                });
-            }
-
-            // REPLAY RECORDING: Capture frame data during gameplay
-            if (isBowling && replayData.length < 900) {
-                replayData.push({
-                    ball: {
-                        pos: ballBody.position.clone(),
-                        quat: ballBody.quaternion.clone()
-                    },
-                    pins: pins.map(p => ({
-                        pos: p.body.position.clone(),
-                        quat: p.body.quaternion.clone()
-                    }))
-                });
-            }
-        }
-    }
-
-
-    // --- Sound Logic: Play rolling sound only when ball is on lane ---
-    if (isBowling && typeof ballPathSound !== 'undefined' && ballPathSound && ballPathSound.buffer) {
-        const { x, y, z } = ballBody.position;
-        const is100 = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
-        const laneMargin = is100 ? 3.8 : 2.25; // Lane width
-        const currentBallRadius = typeof window.currentBallRadius !== 'undefined' ? window.currentBallRadius : BALL_RADIUS;
-
-        // Check conditions for playing sound
-        const isOnLane = Math.abs(x - currentOffset) < laneMargin; // Ball within lane x bounds
-        const isTouchingFloor = y < (LANE_Y + currentBallRadius + 0.4) && y > (LANE_Y + currentBallRadius - 0.3); // Ball near floor (dynamic for scaled ball)
-        const isBeforeBackdrop = z > -65; // Ball hasn't hit backdrop
-        const isMoving = ballBody.velocity.length() > 0.15; // Ball is actually moving
-
-        if (isOnLane && isTouchingFloor && isBeforeBackdrop && isMoving) {
-            // Play sound if not already playing
-            if (!ballPathSound.isPlaying) {
-                ballPathSound.play();
-            }
-        } else {
-            // Mute sound: ball in air, off lane, or at backdrop
-            if (ballPathSound.isPlaying) {
-                ballPathSound.stop();
-            }
-        }
-    }
-
-    if (camera) {
-        if (typeof isBowling !== 'undefined' && isBowling) {
-            const isPortrait = window.innerHeight > window.innerWidth;
-            const pinAreaZ = -22;
-            const is100 = (typeof targetPinCount !== 'undefined' && targetPinCount === 100);
-            const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
-
-            let desiredPosition = new THREE.Vector3();
-            let desiredLookAt = new THREE.Vector3();
-
-            if (typeof isCinematicMode !== 'undefined' && isCinematicMode) {
-                // Cinematic slow-motion view
-                const yOffset = is100 ? (isPortrait ? 7.5 : 4.5) : (isPortrait ? 5.5 : 3.5);
-                const zOffset = is100 ? (isPortrait ? 10 : 7) : (isPortrait ? 9 : 6);
-                const lookZ = is100 ? pinAreaZ - 4 : pinAreaZ;
-                desiredPosition.set(currentOffset, yOffset, pinAreaZ + zOffset);
-                desiredLookAt.set(currentOffset, 0.5, lookZ);
-            }
-            else if (typeof impactOccurred !== 'undefined' && impactOccurred) {
-                // Fixed camera focused on pins after impact
-                const lookZ = is100 ? -26 : -24;
-                const camY = is100 ? 6 : 5;
-                const camZ = is100 ? -12 : -14;
-                desiredPosition.set(currentOffset, camY, camZ);
-                desiredLookAt.set(currentOffset, 1, lookZ);
-            }
-            else if (ballBody) {
-                // Follow the ball during throw
-                const camY = is100 ? 5.5 : 4;
-                const targetZ = Math.max(ballBody.position.z + 8, -12);
-                // Keep camera in player's lane, slightly offset for viewing angle
-                const camOffsetX = currentOffset + (ballBody.position.x - currentOffset) * 0.3;
-                desiredPosition.set(camOffsetX, camY, targetZ);
-                desiredLookAt.set(ballBody.position.x, 1, ballBody.position.z - 10);
-            }
-
-            if (typeof cameraLookAtTarget !== 'undefined' && cameraLookAtTarget) {
-                camera.position.lerp(desiredPosition, 0.04);
-                cameraLookAtTarget.lerp(desiredLookAt, 0.04);
-                camera.lookAt(cameraLookAtTarget);
-            } else {
-                // Fallback if cameraLookAtTarget is not initialized
-                camera.position.lerp(desiredPosition, 0.04);
-                camera.lookAt(desiredLookAt);
-            }
-        } else {
-            // Idle/Menu camera
-            const currentOffset = (typeof myPlayerOffset !== 'undefined') ? myPlayerOffset : 0;
-            camera.position.lerp(new THREE.Vector3(currentOffset, 4, 12), 0.05);
-            camera.lookAt(currentOffset, 1, 0);
-        }
-    }
-
-    if (typeof updateActionCam === 'function') updateActionCam();
-    if (typeof updateLightTrail === 'function') updateLightTrail();
-    if (typeof updateImpacts === 'function') updateImpacts();
-    if (typeof updateExplosions === 'function') updateExplosions();
-
-    if (renderer && scene && camera) {
-        renderer.render(scene, camera);
-    }
-}
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-window.onload = () => {
-    init();
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const roomId = urlParams.get('room');
-
-    if (roomId) {
-        setTimeout(() => {
-            window.db.goOnline();
-            joinGame(roomId);
         }, 1000);
     }
-};
 
-// NEW: Ice lane overlay mesh (global for reuse)
-let iceLaneOverlay = null;
+    // Log available debug commands
+    console.log("%c[UHCC] Match started! Available debug commands:", "color: #00f2fe; font-weight: bold;");
+    console.log("  forceStartMatch()   - Force start match (host only)");
+    console.log("  forceHostResetLobby() - Reset lobby (host only)");
+    console.log("  status()            - Show player status (alive/dead, reason, score, position)");
+}
 
-// Function to toggle ice lane visual overlay
-function updateIceLaneOverlay(offset = 0) {
-    if (chaosModifiers.isIceLane && !iceLaneOverlay) {
-        // Create frosty overlay
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-
-        // Ice blue base with cracks
-        const gradient = ctx.createLinearGradient(0, 0, 512, 512);
-        gradient.addColorStop(0, '#a5d8ff');
-        gradient.addColorStop(0.5, '#74c0fc');
-        gradient.addColorStop(1, '#4dabf7');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 512, 512);
-
-        // Ice cracks
-        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        for (let i = 0; i < 15; i++) {
-            ctx.beginPath();
-            ctx.moveTo(Math.random() * 512, Math.random() * 512);
-            ctx.lineTo(Math.random() * 512, Math.random() * 512);
-            ctx.stroke();
+function checkAndProcessRaceFinish() {
+    if (!isHost || currentEngineMode !== 'GAME' || !raceStarted) return;
+    for (let id in players) {
+        const pl = players[id];
+        if (pl.eliminated || pl.finished) continue;
+        if (!checkCollision(pl, finishLine)) continue;
+        pl.finished = true;
+        pl.finishTime = Date.now();
+        finishPositions.push(id);
+        if (firstPlayerFinishTime === -1) {
+            firstPlayerFinishTime = Date.now();
+            raceCountdownVal = 30;
+            playSound('door');
+            broadcastToRoom('sync_race_start', { raceCountdownVal });
+            if (raceTimerId) clearInterval(raceTimerId);
+            raceTimerId = setInterval(() => {
+                raceCountdownVal--;
+                broadcastToRoom('sync_race_countdown', { value: raceCountdownVal });
+                if (raceCountdownVal <= 0) {
+                    clearInterval(raceTimerId);
+                    raceTimerId = null;
+                    let points = [3, 2, 1];
+                    for (let i = 0; i < Math.min(finishPositions.length, 3); i++)
+                        if (players[finishPositions[i]]) players[finishPositions[i]].score += points[i];
+                    if (gameTimer) clearInterval(gameTimer);
+                    gameTimer = null;
+                    let results = [];
+                    for (let id in players) results.push({ id, nameTag: players[id].nameTag, score: players[id].score, position: finishPositions.indexOf(id) + 1 || -1 });
+                    broadcastToRoom('match_over', { summary: results });
+                    executeMatchEndingSequence(results);
+                }
+            }, 1000);
         }
-
-        const iceTexture = new THREE.CanvasTexture(canvas);
-        const overlayGeo = new THREE.PlaneGeometry(8, 100);
-        const overlayMat = new THREE.MeshBasicMaterial({
-            map: iceTexture,
-            transparent: true,
-            opacity: 0.4,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-
-        iceLaneOverlay = new THREE.Mesh(overlayGeo, overlayMat);
-        iceLaneOverlay.rotation.x = -Math.PI / 2;
-        iceLaneOverlay.position.set(offset, LANE_Y + 0.11, -35);
-        scene.add(iceLaneOverlay);
-    } else if (!chaosModifiers.isIceLane && iceLaneOverlay) {
-        scene.remove(iceLaneOverlay);
-        iceLaneOverlay.material.dispose();
-        iceLaneOverlay.geometry.dispose();
-        iceLaneOverlay = null;
-    } else if (iceLaneOverlay && chaosModifiers.isIceLane) {
-        // Animate existing overlay
-        iceLaneOverlay.material.opacity = 0.3 + Math.sin(Date.now() * 0.005) * 0.1;
     }
 }
+
+let lobbyReturnTimeout = null;
+
+function executeMatchEndingSequence(summary) {
+    // Stop match timers
+    if (gameTimer) {
+        clearInterval(gameTimer);
+        gameTimer = null;
+    }
+    if (raceTimerId) {
+        clearInterval(raceTimerId);
+        raceTimerId = null;
+    }
+
+    const overlay = document.getElementById('gameover-overlay');
+    const resText = document.getElementById('match-result');
+    const waitingMsg = document.getElementById('waiting-for-host');
+    const backBtn = document.getElementById('back-to-lobby-btn');
+
+    overlay.classList.remove('hidden');
+
+    // Sort and display results
+    summary.sort((a, b) => b.score - a.score);
+    let resultText = "🏁 MATCH OVER\n";
+    resultText += summary.slice(0, 3).map((s, i) => `${['🥇', '🥈', '🥉'][i]} ${s.nameTag}: ${s.score} pts`).join('\n');
+    resText.innerText = resultText;
+
+    if (isHost) {
+        // Host shows the button, hides waiting message
+        waitingMsg.classList.add('hidden');
+        backBtn.classList.remove('hidden');
+        if (lobbyReturnTimeout) clearTimeout(lobbyReturnTimeout);
+        lobbyReturnTimeout = setTimeout(() => backToInteractiveLobby(), 5000);
+    } else {
+        // Client: hide the button, show waiting message
+        backBtn.classList.add('hidden');
+        waitingMsg.classList.remove('hidden');
+    }
+}
+
+function backToInteractiveLobby() {
+    if (!isHost) return;
+    if (lobbyReturnTimeout) clearTimeout(lobbyReturnTimeout);
+    lobbyReturnTimeout = null;
+    broadcastToRoom('return_to_lobby');
+    executeLobbyReturnSequence();
+}
+
+function executeLobbyReturnSequence() {
+    // Prevent re‑entrancy
+    if (isReturningToLobby) return;
+    isReturningToLobby = true;
+
+    matchEndingInProgress = false;
+
+    // Hide game over overlay
+    document.getElementById('gameover-overlay').classList.add('hidden');
+
+    // Stop any remaining match timers
+    if (gameTimer) {
+        clearInterval(gameTimer);
+        gameTimer = null;
+    }
+    if (raceTimerId) {
+        clearInterval(raceTimerId);
+        raceTimerId = null;
+    }
+
+    // Reset match-specific flags
+    raceStarted = false;
+    firstPlayerFinishTime = -1;
+    raceCountdownVal = -1;
+    finishPositions = [];
+
+    // Reset all players for lobby
+    for (let id in players) {
+        players[id].eliminated = false;
+        players[id].finished = false;
+        players[id].finishTime = -1;
+        players[id].score = 0;
+        players[id].item = null;
+        players[id].itemType = null;
+        players[id].ammo = 0;
+        players[id].knockbackTimer = 0;
+        players[id].knockbackVx = 0;
+        players[id].knockbackVy = 0;
+        players[id].deathReason = null;
+        players[id].grabbedBy = null;
+    }
+
+    // Reset spectator mode
+    spectatorMode = false;
+    spectatorTargetId = null;
+
+    // Enter lobby state (reloads map, positions players, etc.)
+    enterLobbyState();
+
+    // Ensure the host broadcasts the reset state to any clients
+    if (isHost) {
+        broadcastToRoom('sync_players', { allPlayers: players, reset: true });
+        broadcastToRoom('sync_lobby_countdown', { value: -1 });
+    }
+
+    updateResetButtonVisibility();
+
+    // Release the lock after a short delay
+    setTimeout(() => { isReturningToLobby = false; }, 500);
+}
+
+// ============================================================================
+//  PHYSICS & COLLISIONS
+// ============================================================================
+
+function checkCollision(r1, r2) {
+    return r1.x < r2.x + r2.w && r1.x + r1.width > r2.x &&
+        r1.y < r2.y + r2.h && r1.y + r1.height > r2.y;
+}
+
+function checkCircleCollision(player, gem) {
+    const cx = player.x + player.width / 2, cy = player.y + player.height / 2;
+    return Math.hypot(cx - gem.x, cy - gem.y) < (player.width / 2 + 15);
+}
+
+function resolvePlayerCollisions() {
+    const ids = Object.keys(players);
+    for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+            let p1 = players[ids[i]], p2 = players[ids[j]];
+            if (p1.eliminated || p2.eliminated) continue;
+
+            if (p1.x < p2.x + p2.width && p1.x + p1.width > p2.x &&
+                p1.y < p2.y + p2.height && p1.y + p1.height > p2.y) {
+
+                const overlapLeft = p1.x + p1.width - p2.x;
+                const overlapRight = p2.x + p2.width - p1.x;
+                const overlapTop = p1.y + p1.height - p2.y;
+                const overlapBottom = p2.y + p2.height - p1.y;
+                const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+
+                const DASH_PUSH = 6;
+                const MAX_VICTIM_SPEED = 12;
+
+                if (p1.isDashing && !p2.isDashing && p2.dashPushedBy !== p1.id) {
+                    const dir = (p1.x + p1.width / 2) > (p2.x + p2.width / 2) ? 1 : -1;
+                    p2.vx += dir * DASH_PUSH;
+                    p2.vx = Math.min(MAX_VICTIM_SPEED, Math.max(-MAX_VICTIM_SPEED, p2.vx));
+                    p2.dashPushedBy = p1.id;
+                } else if (p2.isDashing && !p1.isDashing && p1.dashPushedBy !== p2.id) {
+                    const dir = (p2.x + p2.width / 2) > (p1.x + p1.width / 2) ? 1 : -1;
+                    p1.vx += dir * DASH_PUSH;
+                    p1.vx = Math.min(MAX_VICTIM_SPEED, Math.max(-MAX_VICTIM_SPEED, p1.vx));
+                    p1.dashPushedBy = p2.id;
+                } else if (p1.isDashing && p2.isDashing && p1.dashPushedBy !== p2.id && p2.dashPushedBy !== p1.id) {
+                    const dir = (p1.x + p1.width / 2) > (p2.x + p2.width / 2) ? 1 : -1;
+                    p1.vx -= dir * DASH_PUSH * 0.7;
+                    p2.vx += dir * DASH_PUSH * 0.7;
+                    p1.vx = Math.min(MAX_VICTIM_SPEED, Math.max(-MAX_VICTIM_SPEED, p1.vx));
+                    p2.vx = Math.min(MAX_VICTIM_SPEED, Math.max(-MAX_VICTIM_SPEED, p2.vx));
+                    p1.dashPushedBy = p2.id;
+                    p2.dashPushedBy = p1.id;
+                }
+
+                const sep = minOverlap / 2;
+                if (minOverlap === overlapLeft || minOverlap === overlapRight) {
+                    if (minOverlap === overlapLeft) {
+                        p1.x -= sep;
+                        p2.x += sep;
+                    } else {
+                        p1.x += sep;
+                        p2.x -= sep;
+                    }
+                } else {
+                    if (minOverlap === overlapTop) {
+                        p1.y -= sep;
+                        p2.y += sep;
+                    } else {
+                        p1.y += sep;
+                        p2.y -= sep;
+                    }
+                    if (p1.vy > 0 && p2.vy < 0) { p1.vy = 0; p2.vy = 0; }
+                }
+
+                const MAX_PUSH = 18;
+                p1.vx = Math.min(MAX_PUSH, Math.max(-MAX_PUSH, p1.vx));
+                p2.vx = Math.min(MAX_PUSH, Math.max(-MAX_PUSH, p2.vx));
+            }
+        }
+    }
+}
+
+// ============================================================================
+//  KNOCKBACK PRIORITY (overrides movement, dash, jump)
+// ============================================================================
+
+function resolvePlatformCollision(player) {
+    for (let plat of platforms) {
+        if (player.x < plat.x + plat.w && player.x + player.width > plat.x &&
+            player.y < plat.y + plat.h && player.y + player.height > plat.y) {
+            // Vertical overlap handling (most common after grab)
+            const topOverlap = (player.y + player.height) - plat.y;
+            const bottomOverlap = (plat.y + plat.h) - player.y;
+            const leftOverlap = (player.x + player.width) - plat.x;
+            const rightOverlap = (plat.x + plat.w) - player.x;
+            const minOverlap = Math.min(topOverlap, bottomOverlap, leftOverlap, rightOverlap);
+
+            if (minOverlap === topOverlap && player.vy >= 0) {
+                // Land on top of platform
+                player.y = plat.y - player.height;
+                player.isGrounded = true;
+                player.vy = 0;
+            } else if (minOverlap === bottomOverlap && player.vy <= 0) {
+                player.y = plat.y + plat.h;
+                player.vy = 0;
+            } else if (minOverlap === leftOverlap) {
+                player.x = plat.x - player.width;
+            } else if (minOverlap === rightOverlap) {
+                player.x = plat.x + plat.w;
+            }
+        }
+    }
+    // Additional safety: if still overlapping, force a simple upward push
+    for (let plat of platforms) {
+        if (player.x < plat.x + plat.w && player.x + player.width > plat.x &&
+            player.y < plat.y + plat.h && player.y + player.height > plat.y) {
+            player.y = plat.y - player.height;
+            player.isGrounded = true;
+            player.vy = 0;
+        }
+    }
+}
+
+function updateCharacterPhysics(player, dt) {
+    if (player.eliminated) return;
+
+    // If grabbed by robot hand, host controls everything – freeze completely
+    if (player.grabbedBy) {
+        player.vx = 0;
+        player.vy = 0;
+        return;
+    }
+
+    const isGrabbed = false; // keep for compatibility
+
+    // --- KNOCKBACK TAKES PRIORITY ---
+    let isKnockedBack = false;
+    if (player.knockbackTimer > 0) {
+        player.knockbackTimer -= dt;
+        player.vx = player.knockbackVx;
+        player.vy = player.knockbackVy;
+        player.knockbackVx *= 0.95;
+        player.knockbackVy *= 0.95;
+        if (player.knockbackTimer <= 0) {
+            player.knockbackTimer = 0;
+            player.knockbackVx = 0;
+            player.knockbackVy = 0;
+        }
+        isKnockedBack = true;
+    }
+
+    // --- Input / Dash / Jump ---
+    if (!isKnockedBack) {
+        if (player.dashCooldown > 0) player.dashCooldown -= dt;
+
+        let left = keys.ArrowLeft || touchState.left;
+        let right = keys.ArrowRight || touchState.right;
+        let jump = keys.ArrowUp || touchState.jump;
+        let shift = keys.ShiftLeft;
+        let dashJustPressed = shift && !player.wasDashPressed;
+        player.wasDashPressed = shift;
+
+        if (dashJustPressed && player.dashCooldown <= 0 && !player.isDashing) {
+            player.isDashing = true;
+            player.dashTimer = 10;
+            player.dashCooldown = 90;
+        }
+
+        let dashMovementApplied = false;
+        if (player.isDashing) {
+            player.vx = player.facingRight ? DASH_SPEED : -DASH_SPEED;
+            const totalMove = player.vx * dt;
+            const stepSize = 3;
+            let moved = 0;
+
+            while (Math.abs(moved) < Math.abs(totalMove)) {
+                let remaining = Math.abs(totalMove) - Math.abs(moved);
+                let step = Math.min(stepSize, remaining);
+                let stepX = (totalMove > 0 ? step : -step);
+                let newX = player.x + stepX;
+
+                let tempPlayer = {
+                    x: newX,
+                    y: player.y,
+                    width: player.width,
+                    height: player.height
+                };
+
+                let collision = false;
+                for (let id in players) {
+                    if (id === player.id) continue;
+                    let other = players[id];
+                    if (checkCollision(tempPlayer, other)) {
+                        collision = true;
+                        break;
+                    }
+                }
+                if (!collision) {
+                    for (let plat of platforms) {
+                        if (checkCollision(tempPlayer, plat)) {
+                            collision = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (collision) {
+                    player.isDashing = false;
+                    player.dashTimer = 0;
+                    player.vx = 0;
+                    dashMovementApplied = true;
+                    break;
+                } else {
+                    player.x = newX;
+                    moved += stepX;
+                    dashMovementApplied = true;
+                }
+            }
+
+            player.dashTimer -= dt;
+            if (player.dashTimer <= 0 && player.isDashing) {
+                player.isDashing = false;
+                player.vx *= 0.4;
+                player.dashPushedBy = null;
+            }
+        }
+
+        if (!player.isDashing && !dashMovementApplied) {
+            if (left) {
+                player.vx = -MOVE_SPEED;
+                player.facingRight = false;
+            } else if (right) {
+                player.vx = MOVE_SPEED;
+                player.facingRight = true;
+            } else {
+                player.vx *= Math.pow(FRICTION, dt);
+                if (Math.abs(player.vx) < 0.1) player.vx = 0;
+            }
+            player.x += player.vx * dt;
+        }
+
+        // Jump
+        let dynGravity = GRAVITY;
+        if (jump && player.vy < 0) dynGravity = GRAVITY * 0.4;
+        player.vy += dynGravity * dt;
+        if (player.vy > MAX_FALL_SPEED) player.vy = MAX_FALL_SPEED;
+        if (player.isGrounded) player.jumpsLeft = 2;
+        let jumpJustPressed = jump && !player.wasJumpPressed;
+        player.wasJumpPressed = jump;
+        if (jumpJustPressed) {
+            if (player.isGrounded) {
+                player.vy = -6;
+                player.isGrounded = false;
+                player.jumpsLeft = 1;
+                playSound('jump');
+                spawnJumpParticles(player.x + player.width / 2, player.y + player.height, true);
+            } else if (player.jumpsLeft > 0) {
+                player.vy = -6;
+                player.jumpsLeft = 0;
+                playSound('jump');
+                spawnJumpParticles(player.x + player.width / 2, player.y + player.height, false);
+            }
+        }
+    }
+
+    // --- Platform collisions (horizontal sides) ---
+    platforms.forEach(plat => {
+        if (checkCollision(player, plat)) {
+            const verticalOverlap = (player.y + player.height > plat.y && player.y < plat.y + plat.h);
+            if (verticalOverlap && player.vx !== 0) {
+                const oldX = player.x;
+                let newX = player.x;
+                if (player.vx > 0) {
+                    newX = plat.x - player.width;
+                } else if (player.vx < 0) {
+                    newX = plat.x + plat.w;
+                }
+                if (Math.abs(newX - oldX) <= 30) {
+                    player.x = newX;
+                    player.vx = 0;
+                    if (player.isDashing) player.isDashing = false;
+                }
+            }
+        }
+    });
+
+    // --- Vertical movement and landing ---
+    player.y += player.vy * dt;
+    let landed = false;
+    platforms.forEach(plat => {
+        if (checkCollision(player, plat)) {
+            if (player.vy > 0) {
+                const bottomDiff = (player.y + player.height) - plat.y;
+                if (bottomDiff >= 0 && bottomDiff <= 10) {
+                    const horizontalOverlap = Math.min(player.x + player.width - plat.x, plat.x + plat.w - player.x);
+                    if (horizontalOverlap > player.width * 0.3) {
+                        player.y = plat.y - player.height;
+                        player.isGrounded = true;
+                        landed = true;
+                        player.vy = 0;
+                    }
+                }
+            } else if (player.vy < 0) {
+                const topDiff = plat.y + plat.h - player.y;
+                if (topDiff >= 0 && topDiff <= 10) {
+                    player.y = plat.y + plat.h;
+                    player.vy = 0;
+                }
+            }
+        }
+    });
+
+    // WORLD BOUNDARIES
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > WORLD_WIDTH) player.x = WORLD_WIDTH - player.width;
+
+    // VOID CHECK
+    const BOTTOM_DEATH_Y = 2200;
+    if (player.y > BOTTOM_DEATH_Y) {
+        if (currentEngineMode === 'GAME') {
+            if (!player.eliminated) voidEliminateGame(player, 'fell into void');
+            player.vx = 0;
+            player.vy = 0;
+        } else {
+            voidRespawnLobby(player);
+        }
+        return;
+    }
+
+    // HAZARDS
+    hazards.forEach(h => {
+        if (checkCollision(player, h)) {
+            player.isDashing = false;
+            if (currentEngineMode === 'GAME') voidEliminateGame(player, 'touched a hazard');
+            else respawnMatchEntity(player);
+        }
+    });
+
+    // GEMS
+    gems.forEach(g => {
+        if (!g.collected && checkCircleCollision(player, g)) {
+            if (isHost) processGemCapture(g.id, player.id);
+            else hostConnection.send({ type: 'request_collect_gem', senderId: localPlayerId, payload: { gemId: g.id } });
+        }
+    });
+
+    // PLAYER-ON-PLAYER LANDING
+    for (let otherId in players) {
+        if (otherId === player.id) continue;
+        let target = players[otherId];
+        if (player.vy > 0 && player.x + player.width > target.x && player.x < target.x + target.width &&
+            player.y + player.height <= target.y + 5 && player.y + player.height + player.vy * dt >= target.y) {
+            player.y = target.y - player.height;
+            player.vy = 0;
+            player.isGrounded = true;
+            landed = true;
+        }
+    }
+
+    if (!player.isGrounded && landed) {
+        spawnDustParticles(player.x + player.width / 2, player.y + player.height);
+        playSound('spike');
+    }
+}
+
+function processGemCapture(gemId, targetId) {
+    if (!isHost) return;
+    const gem = gems.find(g => g.id === gemId);
+    if (gem && !gem.collected) {
+        gem.collected = true;
+        if (players[targetId]) players[targetId].score += 10;
+        playSound('gem');
+        broadcastToRoom('sync_map', { platforms, hazards, gems, cameraBounds, voidYThreshold });
+        broadcastToRoom('sync_players', { allPlayers: players });
+        updateHudDisplays();
+    }
+}
+
+function respawnMatchEntity(player) {
+    if (spawnPoints.length === 0) {
+        player.x = 100;
+        player.y = 200;
+    } else {
+        const playerIds = Object.keys(players);
+        const playerIndex = playerIds.indexOf(player.id);
+        const idx = playerIndex % spawnPoints.length;
+        const sp = spawnPoints[idx];
+        player.x = sp.x;
+        player.y = sp.y;
+    }
+    player.vx = 0;
+    player.vy = 0;
+    player.score = Math.max(0, player.score - 5);
+    player.knockbackTimer = 0;
+    player.knockbackVx = 0;
+    player.knockbackVy = 0;
+    playSound('spike');
+    if (isHost) {
+        broadcastToRoom('sync_players', { allPlayers: players });
+        updateHudDisplays();
+    }
+}
+
+// ============================================================================
+//  PARTICLES
+// ============================================================================
+
+const PARTICLE_CAP = 250;
+function pushParticle(p) {
+    if (particles.length >= PARTICLE_CAP) particles.shift();
+    if (p.alpha === undefined) p.alpha = 1;
+    particles.push(p);
+}
+
+function spawnJumpParticles(spawnX, spawnY, grounded) {
+    if (grounded) {
+        const outward = 2.2, upward = -1.6;
+        for (let i = 0; i < 6; i++) {
+            pushParticle({
+                type: 'jump_side', x: spawnX + 6 + Math.random() * 6, y: spawnY + 2 + (Math.random() - 0.5) * 4,
+                vx: outward + Math.random() * 0.8, vy: upward + (Math.random() - 0.5) * 0.6, life: 0.6 + Math.random() * 0.2, age: 0,
+                size: Math.random() * 2 + 1.2, radius: 4, bounce: 0.18, friction: 0.88, onGround: false, color: '#d0d0d0', alpha: 1
+            });
+            pushParticle({
+                type: 'jump_side', x: spawnX - 6 + (Math.random() - 0.5) * 6, y: spawnY + 2 + (Math.random() - 0.5) * 4,
+                vx: -outward - Math.random() * 0.8, vy: upward + (Math.random() - 0.5) * 0.6, life: 0.6 + Math.random() * 0.2, age: 0,
+                size: Math.random() * 2 + 1.2, radius: 4, bounce: 0.18, friction: 0.88, onGround: false, color: '#d0d0d0', alpha: 1
+            });
+        }
+        for (let i = 0; i < 4; i++) pushParticle({
+            type: 'spark', x: spawnX + (Math.random() - 0.5) * 8, y: spawnY,
+            vx: (Math.random() - 0.5) * 0.6, vy: -0.6 + Math.random() * 0.4, life: 0.45, age: 0, size: Math.random() * 1.2 + 0.6, color: '#ffffff', alpha: 1
+        });
+    } else {
+        for (let i = 0; i < 8; i++) pushParticle({
+            type: 'dust_down', x: spawnX + (Math.random() - 0.5) * 14, y: spawnY + 2,
+            vx: (Math.random() - 0.5) * 1.2, vy: Math.random() * 0.6 + 0.6, life: 0.45, age: 0, size: Math.random() * 3 + 1.2,
+            radius: 5, bounce: 0.12, friction: 0.9, onGround: false, color: '#bfbfbf', alpha: 1
+        });
+        for (let i = 0; i < 4; i++) pushParticle({
+            type: 'spark', x: spawnX + (Math.random() - 0.5) * 8, y: spawnY,
+            vx: (Math.random() - 0.5) * 1.0, vy: Math.random() * 0.6 + 0.2, life: 0.5, age: 0, size: Math.random() * 1.6 + 0.8, color: '#ffffff', alpha: 1
+        });
+    }
+}
+
+function spawnDustParticles(spawnX, spawnY) {
+    for (let i = 0; i < 12; i++) {
+        const dir = i % 2 === 0 ? 1 : -1;
+        pushParticle({
+            type: 'dust_up', x: spawnX + (Math.random() - 0.5) * 8, y: spawnY + 2,
+            vx: dir * (1.6 + Math.random() * 1.2) + (Math.random() - 0.5) * 0.6, vy: -0.8 - Math.random() * 0.8 + (Math.random() - 0.3) * 0.4,
+            life: 0.8 + Math.random() * 0.4, age: 0, size: Math.random() * 2 + 1.6, radius: 5, bounce: 0.22, friction: 0.86,
+            onGround: false, color: '#888888', alpha: 1
+        });
+    }
+}
+
+function updateParticles(dt) {
+    const seconds = dt / 60;
+    const GRAV = 18;
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.age += seconds;
+        if (p.age >= p.life) { particles.splice(i, 1); continue; }
+        if (!p.onGround) p.vy += GRAV * seconds;
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        for (let plat of platforms) {
+            if (p.x + p.radius < plat.x || p.x - p.radius > plat.x + plat.w || p.y + p.radius < plat.y || p.y - p.radius > plat.y + plat.h) continue;
+            const nx = Math.max(plat.x, Math.min(p.x, plat.x + plat.w));
+            const ny = Math.max(plat.y, Math.min(p.y, plat.y + plat.h));
+            const dx = p.x - nx, dy = p.y - ny;
+            const d2 = dx * dx + dy * dy;
+            if (d2 <= p.radius * p.radius) {
+                const d = Math.sqrt(d2) || 0.0001;
+                const pen = p.radius - d;
+                p.x += (dx / d) * pen; p.y += (dy / d) * pen;
+                if (dy < 0) {
+                    if (Math.abs(p.vy) > 1.0) { p.vy = -p.vy * (p.bounce || 0.2); p.vx *= 0.7; }
+                    else { p.vy = 0; p.onGround = true; p.vx *= (p.friction || 0.85); }
+                } else { p.vx *= 0.6; p.vy *= 0.6; }
+            }
+        }
+        for (let id in players) {
+            const pl = players[id];
+            if (!pl) continue;
+            if (p.x + p.radius > pl.x && p.x - p.radius < pl.x + pl.width && p.y + p.radius > pl.y && p.y - p.radius < pl.y + pl.height) {
+                const cx = pl.x + pl.width / 2, cy = pl.y + pl.height / 2;
+                let dx = p.x - cx, dy = p.y - cy;
+                const d = Math.hypot(dx, dy) || 0.0001;
+                dx /= d; dy /= d;
+                p.x += dx * (p.radius + Math.max(pl.width, pl.height) * 0.1);
+                p.y += dy * (p.radius + Math.max(pl.width, pl.height) * 0.1);
+                p.vx = p.vx * 0.4 + dx * 0.6;
+                p.vy = p.vy * 0.4 + dy * 0.6;
+            }
+        }
+        for (let h of hazards) {
+            if (p.x + p.radius > h.x && p.x - p.radius < h.x + h.w && p.y + p.radius > h.y && p.y - p.radius < h.y + h.h) {
+                const hx = h.x + h.w / 2, hy = h.y + h.h / 2;
+                let dx = p.x - hx, dy = p.y - hy;
+                const d = Math.hypot(dx, dy) || 0.0001;
+                dx /= d; dy /= d;
+                p.x += dx * (p.radius + Math.max(h.w, h.h) * 0.1);
+                p.y += dy * (p.radius + Math.max(h.w, h.h) * 0.1);
+                p.vx = p.vx * 0.3 + dx * 0.6;
+                p.vy = p.vy * 0.3 + dy * 0.6;
+            }
+        }
+        p.alpha = Math.max(0, 1 - p.age / p.life);
+        p.renderSize = (p.size || 2) * (0.6 + 0.4 * (1 - p.age / p.life));
+    }
+}
+
+// ============================================================================
+//  RENDERING
+// ============================================================================
+
+function drawParticles() {
+    particles.forEach(p => {
+        if (p.type === 'dust_down') {
+            ctx.globalAlpha = p.alpha * 0.9;
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x - p.renderSize, p.y - p.renderSize * 0.15, p.renderSize * 2, p.renderSize * 0.35);
+        } else if (p.type === 'dust_up') {
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y, p.renderSize * 1.2, p.renderSize * 0.9, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+    ctx.globalAlpha = 1;
+}
+
+function drawLobbyScoreboard() {
+    // Use canvas pixel coordinates (0-1280, 0-720)
+    const pos = window.lobbyScoreboardPos || { x: 50, y: 50, w: 250, h: 200 };
+    let x = pos.x, y = pos.y, w = pos.w, h = pos.h;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00f2fe';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = '#00f2fe';
+    ctx.font = 'bold 14px "Orbitron"';
+    ctx.textAlign = 'left';
+    ctx.fillText('📊 Scoreboard', x + 10, y + 25);
+
+    const sorted = Object.values(players).sort((a, b) => b.score - a.score);
+    ctx.font = '12px "Orbitron"';
+    sorted.slice(0, 5).forEach((pl, idx) => {
+        const yy = y + 45 + idx * 30;
+        ctx.fillStyle = pl.color;
+        ctx.beginPath();
+        ctx.arc(x + 15, yy, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(`${pl.nameTag}:`, x + 30, yy + 4);
+        ctx.fillStyle = '#ffff00';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${pl.score} pt`, x + w - 15, yy + 4);
+        ctx.textAlign = 'left';
+    });
+}
+
+// Robot hand stretched parts (global, used in drawCanvasLevelLayout)
+let robotHandBaseImg = new Image();
+robotHandBaseImg.src = 'assets/items/robot_hand_base.svg';
+let robotHandArmImg = new Image();
+robotHandArmImg.src = 'assets/items/robot_hand_arm.svg';
+let robotHandClawImg = new Image();
+robotHandClawImg.src = 'assets/items/robot_hand_claw.svg';
+
+function drawCanvasLevelLayout() {
+    platforms.forEach(plat => {
+        ctx.fillStyle = '#170c30';
+        ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+        ctx.strokeStyle = '#7f00ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(plat.x, plat.y, plat.w, plat.h);
+    });
+
+    hazards.forEach(h => {
+        ctx.fillStyle = '#ff003c';
+        ctx.fillRect(h.x, h.y, h.w, h.h);
+    });
+
+    gems.forEach(g => {
+        if (!g.collected) {
+            ctx.fillStyle = '#00ff66';
+            ctx.beginPath();
+            ctx.arc(g.x, g.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+
+    if (currentEngineMode === 'GAME') {
+        ctx.fillStyle = '#00ff66';
+        ctx.fillRect(finishLine.x, finishLine.y, finishLine.w, finishLine.h);
+        ctx.strokeStyle = '#00cc44';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(finishLine.x, finishLine.y, finishLine.w, finishLine.h);
+        ctx.fillStyle = '#ffff00';
+        ctx.fillRect(finishLine.x + finishLine.w / 2 - 2, finishLine.y - 30, 4, 30);
+        const time = Date.now() * 0.001;
+        const flagWave = Math.sin(time * 3) * 8;
+        ctx.fillStyle = '#ff007f';
+        ctx.beginPath();
+        ctx.moveTo(finishLine.x + finishLine.w / 2 + 2, finishLine.y - 20);
+        ctx.lineTo(finishLine.x + finishLine.w / 2 + 20 + flagWave, finishLine.y - 25);
+        ctx.lineTo(finishLine.x + finishLine.w / 2 + 20 + flagWave, finishLine.y - 10);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px "Orbitron"';
+        ctx.textAlign = 'center';
+        ctx.fillText('FINISH', finishLine.x + finishLine.w / 2, finishLine.y + finishLine.h / 2 + 3);
+    } else if (currentEngineMode === 'LOBBY') {
+        ctx.shadowColor = skinDoor.color;
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#1c0515';
+        ctx.fillRect(skinDoor.x, skinDoor.y, skinDoor.w, skinDoor.h);
+        ctx.strokeStyle = skinDoor.color;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(skinDoor.x, skinDoor.y, skinDoor.w, skinDoor.h);
+        ctx.shadowBlur = 0;
+
+        ctx.shadowColor = lobbyDoor.color;
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#2a1a00';
+        ctx.fillRect(lobbyDoor.x, lobbyDoor.y, lobbyDoor.w, lobbyDoor.h);
+        ctx.strokeStyle = lobbyDoor.color;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(lobbyDoor.x, lobbyDoor.y, lobbyDoor.w, lobbyDoor.h);
+        ctx.shadowBlur = 0;
+    }
+
+    projectiles.forEach(p => {
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        const angle = Math.atan2(p.vy, p.vx);
+        const trailLength = 36;
+        const backX = p.x - Math.cos(angle) * trailLength;
+        const backY = p.y - Math.sin(angle) * trailLength;
+        ctx.moveTo(backX, backY);
+        ctx.lineTo(p.x, p.y);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.stroke();
+        ctx.restore();
+
+        if (bulletImage.complete) {
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(angle);
+            ctx.drawImage(bulletImage, -p.radius, -p.radius, p.radius * 2, p.radius * 2);
+            ctx.restore();
+        } else {
+            ctx.fillStyle = '#ffaa44';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ff6600';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius - 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+
+    const MAX_THROWABLE_LIFE = 150;
+    for (let t of throwables) {
+        ctx.save();
+        ctx.translate(t.x, t.y);
+        ctx.rotate(t.angle);
+        const preview = itemManager.getPreviewImage(t.itemType);
+        if (preview?.complete) {
+            ctx.drawImage(preview, -18, -18, 36, 36);
+        } else {
+            ctx.fillStyle = '#ffaa44';
+            ctx.fillRect(-18, -18, 36, 36);
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px monospace';
+            ctx.fillText('?', -4, 4);
+        }
+        ctx.restore();
+
+        const percent = Math.max(0, Math.min(1, (MAX_THROWABLE_LIFE - t.life) / MAX_THROWABLE_LIFE));
+        const barX = t.x - 12, barY = t.y - 14;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(barX, barY, 24, 4);
+        ctx.fillStyle = t.itemType === 'pistol' ? '#ffaa44' : '#88ff88';
+        ctx.fillRect(barX, barY, 24 * percent, 4);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(barX, barY, 24, 4);
+        ctx.font = 'bold 8px monospace';
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 0;
+        ctx.fillText(`${Math.floor(percent * 100)}%`, t.x, barY - 2);
+    }
+
+    if (itemManager) {
+        for (let wi of itemManager.worldItems) {
+            wi.draw(ctx, itemManager);
+        }
+    }
+
+    // Draw active robot hands using SVG parts (BASE PART REMOVED)
+    for (let grab of activeRobotHands) {
+        const holder = players[grab.holderId];
+        if (!holder) continue;
+
+        const startX = holder.x + holder.width * 0.5;
+        const startY = holder.y + 32;
+        const endX = grab.headX || (startX + Math.cos(grab.angle) * 400 * (grab.progress ?? 0));
+        const endY = grab.headY || (startY + Math.sin(grab.angle) * 400 * (grab.progress ?? 0));
+        const angle = Math.atan2(endY - startY, endX - startX);
+        const length = Math.hypot(endX - startX, endY - startY);
+
+        ctx.save();
+
+        // Part 2: stretchable arm (scaled horizontally to length)
+        if (robotHandArmImg.complete && robotHandArmImg.naturalWidth > 0 && length > 0) {
+            ctx.save();
+            ctx.translate(startX, startY);
+            ctx.rotate(angle);
+            const imgW = robotHandArmImg.width;
+            const imgH = robotHandArmImg.height / 10;
+            const scaleX = length / imgW;
+            ctx.scale(scaleX, 1);
+            ctx.drawImage(robotHandArmImg, 0, -imgH / 2, imgW, imgH);
+            ctx.restore();
+        }
+
+        // Part 3: claw at the tip
+        if (robotHandClawImg.complete && robotHandClawImg.naturalWidth > 0) {
+            ctx.save();
+            ctx.translate(endX, endY);
+            ctx.rotate(angle - 90 * Math.PI / 180);
+            ctx.drawImage(robotHandClawImg, -38, -16, 64, 32);
+            ctx.restore();
+        } else {
+            // fallback (if image missing)
+            ctx.fillStyle = '#ff66cc';
+            ctx.beginPath();
+            ctx.arc(endX, endY, 12, 0, Math.PI * 2);
+            ctx.fill();
+            for (let ang = 0; ang < Math.PI * 2; ang += Math.PI / 4) {
+                const spikeX = endX + Math.cos(ang) * 16;
+                const spikeY = endY + Math.sin(ang) * 16;
+                ctx.beginPath();
+                ctx.moveTo(endX, endY);
+                ctx.lineTo(spikeX, spikeY);
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    }
+}
+
+function calculateHandAngle(player) {
+    const handX = player.x + player.width / 2, handY = player.y + 32;
+    const mouse = getMouseWorldPos();
+    const cursorAngle = Math.atan2(mouse.y - handY, mouse.x - handX);
+    const facingAngle = player.facingRight ? 0 : Math.PI;
+    let diff = cursorAngle - facingAngle;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    const maxAngle = (150 * Math.PI) / 360;
+    if (Math.abs(diff) <= maxAngle) return cursorAngle;
+    return facingAngle + (diff > 0 ? maxAngle : -maxAngle);
+}
+
+function getAdaptiveOutlineColor(hex) {
+    let r, g, b;
+    if (hex.startsWith('#')) { r = parseInt(hex.slice(1, 3), 16); g = parseInt(hex.slice(3, 5), 16); b = parseInt(hex.slice(5, 7), 16); }
+    else return 'rgba(255,255,255,0.8)';
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return lum > 0.7 ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.9)';
+}
+
+function roundedRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+
+function drawCharacterModel(p) {
+    const OUTLINE = 3;
+    let outlineColor = getAdaptiveOutlineColor(p.color);
+    const bodyRatio = 0.58;
+    const bodyH = Math.max(12, Math.round(p.height * bodyRatio));
+    const bodyX = p.x, bodyY = p.y + 10, bodyW = p.width;
+    const hipY = bodyY + bodyH - 2;
+    const hipCenterX = p.x + p.width / 2;
+    const HIP_OFFSET_X = Math.max(4, Math.round(p.width * 0.22));
+    const LEG_H = 22, LEG_W = 6;
+    const now = Date.now();
+    const LEG_SPEED = 0.012, LEG_AMP = 0.6;
+    const JUMP_R = 0.3, JUMP_L = -0.3, DOUBLE_R = 0.45, DOUBLE_L = -0.45, FALL_R = 0.1, FALL_L = -0.1;
+    let leftLeg = 0, rightLeg = 0;
+    const facingRight = p.facingRight !== undefined ? p.facingRight : p.vx >= 0;
+    const animateLocally = p.id === localPlayerId;
+    if (p.isGrounded) {
+        if (Math.abs(p.vx) > 0.15) {
+            let phase = Math.sin(now * LEG_SPEED);
+            const maxRef = animateLocally ? MOVE_SPEED : Math.max(0.15, Math.abs(p.vx));
+            const factor = Math.min(Math.abs(p.vx) / maxRef, 1);
+            const swing = LEG_AMP * factor * phase;
+            if (p.vx < -0.01) { leftLeg = -swing; rightLeg = swing; }
+            else { leftLeg = swing; rightLeg = -swing; }
+        } else {
+            if (animateLocally) { const sway = Math.sin(now * 0.004) * 0.06; leftLeg = sway; rightLeg = -sway; }
+            else { leftLeg = rightLeg = 0; }
+        }
+    } else {
+        const rising = p.vy < 0;
+        const doubleJump = p.jumpsLeft === 0;
+        if (rising) {
+            if (doubleJump) {
+                const spread = 0.45;
+                if (facingRight) {
+                    leftLeg = spread - 0.1;
+                    rightLeg = -spread - 0.3;
+                } else {
+                    leftLeg = spread + 0.3;
+                    rightLeg = -spread + 0.1;
+                }
+            } else {
+                leftLeg = rightLeg = facingRight ? JUMP_R : JUMP_L;
+            }
+        } else {
+            leftLeg = rightLeg = facingRight ? FALL_R : FALL_L;
+        }
+    }
+    const drawLeg = (angle, offX) => {
+        ctx.save(); ctx.translate(hipCenterX + offX, hipY); ctx.rotate(Math.PI / 2 + angle);
+        ctx.fillStyle = p.color; ctx.lineWidth = OUTLINE; ctx.strokeStyle = outlineColor;
+        ctx.fillRect(0, -LEG_W / 2, LEG_H, LEG_W); ctx.strokeRect(0, -LEG_W / 2, LEG_H, LEG_W);
+        ctx.restore();
+    };
+    drawLeg(leftLeg, -HIP_OFFSET_X); drawLeg(rightLeg, HIP_OFFSET_X);
+    ctx.fillStyle = p.color; ctx.fillRect(bodyX, bodyY, bodyW, bodyH);
+    ctx.lineWidth = OUTLINE; ctx.strokeStyle = outlineColor; ctx.strokeRect(bodyX, bodyY, bodyW, bodyH);
+    const headR = p.width / 1.4;
+    const headX = p.x + p.width / 2, headY = p.y + 20;
+    ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(headX, headY, headR, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    const hasFace = localStorage.getItem('playerHasCustomFace_' + p.id) === 'true';
+    if (hasFace) {
+        const faceData = localStorage.getItem('playerFaceDrawing_' + p.id);
+        if (faceData) {
+            if (!faceImageCache[p.id] || faceImageCache[p.id].src !== faceData) {
+                faceImageCache[p.id] = new Image(); faceImageCache[p.id].src = faceData;
+            }
+            const faceImg = faceImageCache[p.id];
+            if (faceImg.complete) {
+                ctx.save(); ctx.beginPath(); ctx.arc(headX, headY, headR, 0, Math.PI * 2); ctx.clip();
+                const size = headR * 2 * 0.95; ctx.drawImage(faceImg, headX - size / 2, headY - size / 2, size, size);
+                ctx.restore();
+            }
+        }
+    }
+    const handPivotX = p.x + p.width / 2;
+    const handPivotY = p.y + (bodyH * 0.22) + 30;
+    let handAngle;
+    if (p.id === localPlayerId && !spectatorMode) {
+        handAngle = calculateHandAngle(p);
+    } else {
+        handAngle = p.handAngle !== undefined ? p.handAngle : (facingRight ? 0 : Math.PI);
+    }
+    ctx.save(); ctx.translate(handPivotX, handPivotY); ctx.rotate(handAngle);
+    ctx.fillStyle = p.color; roundedRect(ctx, 0, -3, 18, 6, 3); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(24, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    if (p.item && !p.eliminated) {
+        const handX = handPivotX + Math.cos(handAngle) * 33;
+        const handY = handPivotY + Math.sin(handAngle) * 33;
+        p.item.draw(ctx, handX, handY, handAngle, p.facingRight);
+
+        if (p.id === localPlayerId && p.itemType === 'pistol' && p.item.ammo !== undefined) {
+            ctx.font = 'bold 14px "Orbitron"';
+            ctx.fillStyle = '#fff';
+            ctx.shadowBlur = 2;
+            ctx.shadowColor = '#000';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${p.item.ammo}`, handX, handY - 8);
+        }
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+    let label = p.nameTag || 'P?'; if (p.id === localPlayerId) label += ' (YOU)';
+    if (p.eliminated) label += ' 💀';
+    ctx.fillText(label, p.x + p.width / 2, p.y - 20);
+    if (p.isGrounded && p.vy > 5 && !p.isDashing) spawnDustParticles(p.x, p.y + p.height);
+}
+
+function updateAndRenderParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.04;
+        if (p.alpha <= 0) { particles.splice(i, 1); continue; }
+        ctx.save(); ctx.globalAlpha = p.alpha; ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); ctx.restore();
+    }
+}
+
+function drawOffscreenRadarIndicators() {
+    if (!players[localPlayerId]) return;
+    const pad = 25;
+    for (let id in players) {
+        if (id === localPlayerId) continue;
+        let p = players[id];
+        if (p.eliminated) continue;
+        let sx = (p.x + p.width / 2 - camera.x) * camera.zoom;
+        let sy = (p.y + p.height / 2 - camera.y) * camera.zoom;
+        if (sx < 0 || sx > BASE_WIDTH || sy < 0 || sy > BASE_HEIGHT) {
+            let ax = Math.max(pad, Math.min(BASE_WIDTH - pad, sx));
+            let ay = Math.max(pad, Math.min(BASE_HEIGHT - pad, sy));
+            let angle = Math.atan2(sy - ay, sx - ax);
+            ctx.save(); ctx.translate(ax, ay); ctx.rotate(angle);
+            ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+            ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -10); ctx.lineTo(-4, 0); ctx.lineTo(-8, 10); ctx.fill();
+            ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+            ctx.fillText("PLR", -16, 3); ctx.restore();
+        }
+    }
+}
+
+function drawDashCooldownBar(p) {
+    const w = p.width + 10, h = 3, x = p.x - 5, y = p.y - 12;
+    ctx.fillStyle = 'rgba(11,6,18,0.7)'; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
+    const maxCD = 45, cur = Math.max(0, p.dashCooldown || 0);
+    let fill = (maxCD - cur) / maxCD;
+    fill = Math.max(0, Math.min(1, fill));
+    ctx.save();
+    if (fill >= 1) { ctx.shadowBlur = 10; ctx.shadowColor = '#00f2fe'; ctx.fillStyle = '#00f2fe'; }
+    else { ctx.fillStyle = '#ff007f'; }
+    ctx.fillRect(x + 0.5, y + 0.5, (w - 1) * fill, h - 1);
+    ctx.restore();
+}
+
+// ============================================================================
+//  UI DOORS
+// ============================================================================
+
+function drawSkinDoorUI() {
+    if (currentEngineMode !== 'LOBBY') return;
+    ctx.fillStyle = '#fff'; ctx.font = '20px "Orbitron"'; ctx.textAlign = 'center';
+    ctx.shadowColor = '#ff007f'; ctx.shadowBlur = 12;
+    const cx = skinDoor.x + skinDoor.w / 2, cy = skinDoor.y;
+    ctx.fillText("Edit Skin", cx, cy - 20);
+    const local = players[localPlayerId];
+    if (local && checkCollision(local, skinDoor)) {
+        ctx.fillText("[F] | open", cx, cy + skinDoor.h / 2);
+        if (keys.Interact) { openSkinMenu(); keys.Interact = false; }
+    }
+}
+
+function drawStartDoorUI() {
+    if (currentEngineMode !== 'LOBBY') return;
+    ctx.fillStyle = '#fff'; ctx.font = '20px "Orbitron"'; ctx.textAlign = 'center';
+    ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 12;
+    const cx = lobbyDoor.x + lobbyDoor.w / 2, cy = lobbyDoor.y;
+    ctx.fillText("Start", cx, cy - 20);
+    const local = players[localPlayerId];
+    if (local && checkCollision(local, lobbyDoor)) {
+        ctx.fillText("[F] | Ready", cx, cy + lobbyDoor.h / 2);
+        if (keys.Interact) {
+            if (readyPlayers[localPlayerId]) delete readyPlayers[localPlayerId];
+            else readyPlayers[localPlayerId] = true;
+            keys.Interact = false;
+            if (!isHost && hostConnection?.open) {
+                hostConnection.send({ type: 'player_ready_toggle', senderId: localPlayerId, payload: { isReady: !!readyPlayers[localPlayerId] } });
+            }
+        }
+    }
+    const total = Object.keys(players).length, ready = Object.keys(readyPlayers).length;
+    ctx.font = '16px "Orbitron"'; ctx.fillText(`Ready: ${ready}/${total}`, cx, cy - lobbyDoor.h / 2 - 15);
+}
+
+// ============================================================================
+//  MAIN GAME LOOP (with camera bounds)
+// ============================================================================
+
+function enginePipelineTick(timestamp) {
+    if (!lastTime) lastTime = timestamp;
+    let dt = (timestamp - lastTime) / 16.666;
+    lastTime = timestamp;
+    if (dt > 3.0) dt = 3.0;
+    ctx.fillStyle = '#24212a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (currentEngineMode === 'LOBBY' || currentEngineMode === 'GAME') {
+        let localPlayer = players[localPlayerId];
+
+        // --- CRITICAL: Death checks MUST run for ALL players every frame, regardless of spectator status ---
+        if (isHost && currentEngineMode === 'GAME') {
+            hostCheckHazardsForAllPlayers();
+        }
+        checkVoidDeath();
+        // After death checks, evaluate match end
+        if (isHost && currentEngineMode === 'GAME') {
+            checkAllPlayersEliminatedAndEndMatch();
+        }
+
+        if (localPlayer && !spectatorMode) {
+            updateCharacterPhysics(localPlayer, dt);
+            resolvePlayerCollisions();
+            if (currentEngineMode === 'GAME' && isHost) checkAndProcessRaceFinish();
+            if (isHost) {
+                evaluateLobbyDoorTrigger();
+                localPlayer.handAngle = calculateHandAngle(localPlayer);
+                broadcastToRoom('sync_players', { allPlayers: players });
+            } else {
+                // Do NOT send input updates if the local player is grabbed – host controls position
+                if (!localPlayer.grabbedBy) {
+                    hostConnection.send({
+                        type: 'client_input_update', senderId: localPlayerId,
+                        payload: {
+                            x: localPlayer.x, y: localPlayer.y, vx: localPlayer.vx, vy: localPlayer.vy,
+                            isGrounded: localPlayer.isGrounded, facingRight: localPlayer.facingRight,
+                            isDashing: localPlayer.isDashing, handAngle: calculateHandAngle(localPlayer),
+                            resetVersion: clientResetVersion
+                        }
+                    });
+                }
+            }
+
+            if (itemManager) {
+                itemManager.update();
+                if (isHost && localPlayer) {
+                    const picked = itemManager.checkPickup(localPlayer);
+                    if (picked) {
+                        players[localPlayerId].item = picked;
+                        players[localPlayerId].itemType = picked.name === 'pistol' ? 'pistol' : 'robot_hand';
+                        players[localPlayerId].ammo = picked.ammo;
+                        localPlayerItem = picked;
+                        broadcastToRoom('sync_players', { allPlayers: players });
+                        broadcastWorldItems();
+                        playSound('gem');
+                    }
+                } else if (!isHost && localPlayer) {
+                    for (let wi of itemManager.worldItems) {
+                        if (wi.isAvailable && checkCollision(localPlayer, wi)) {
+                            hostConnection.send({ type: 'request_pickup_item', senderId: localPlayerId });
+                            break;
+                        }
+                    }
+                }
+            }
+            if (keys.Drop && !wasDropPressed) {
+                if (localPlayer.item) {
+                    if (!isHost && hostConnection?.open) {
+                        if (localPlayer.item.ammo !== undefined && localPlayer.item.ammo === 0) {
+                            spawnBreakParticles(localPlayer.x + localPlayer.width / 2, localPlayer.y + localPlayer.height / 2);
+                            localPlayer.item = null;
+                            localPlayer.itemType = null;
+                            localPlayer.ammo = 0;
+                            localPlayerItem = null;
+                        }
+                        hostConnection.send({ type: 'request_drop_item', senderId: localPlayerId });
+                    } else if (isHost) {
+                        hostDropItem(localPlayerId);
+                    }
+                }
+            }
+            wasDropPressed = keys.Drop;
+            if (localPlayerItem) localPlayerItem.update(dt);
+        } else if (localPlayer && spectatorMode) {
+            if (spectatorTargetId && players[spectatorTargetId]) {
+                updateCameraToTarget();
+            } else {
+                const alive = getAlivePlayers();
+                if (alive.length > 0) {
+                    spectatorTargetId = alive[0].id;
+                    updateCameraToTarget();
+                }
+            }
+        }
+        camera.zoom += (camera.targetZoom - camera.zoom) * 0.1 * dt;
+        if (!spectatorMode && players[localPlayerId]) {
+            let targetCamX = (players[localPlayerId].x + players[localPlayerId].width / 2) - (BASE_WIDTH / 2) / camera.zoom;
+            let targetCamY = (players[localPlayerId].y + players[localPlayerId].height / 2) - (BASE_HEIGHT / 2) / camera.zoom;
+            let maxX = cameraBounds.maxX - BASE_WIDTH / camera.zoom;
+            let maxY = cameraBounds.maxY - BASE_HEIGHT / camera.zoom;
+            let minX = cameraBounds.minX;
+            let minY = cameraBounds.minY;
+            targetCamX = Math.max(minX, Math.min(targetCamX, maxX));
+            targetCamY = Math.max(minY, Math.min(targetCamY, maxY));
+            camera.x += (targetCamX - camera.x) * 0.1 * dt;
+            camera.y += (targetCamY - camera.y) * 0.1 * dt;
+        }
+
+        // bullets (projectile hit logic with knockback)
+        for (let i = 0; i < projectiles.length; i++) {
+            const p = projectiles[i];
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.life -= dt;
+            if (p.life <= 0) {
+                projectiles.splice(i, 1);
+                i--;
+                continue;
+            }
+            const out = p.x + p.radius < 0 || p.x - p.radius > WORLD_WIDTH ||
+                p.y + p.radius < 0 || p.y - p.radius > WORLD_HEIGHT;
+            if (out) {
+                for (let s = 0; s < 3; s++) particles.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, life: 0.3, age: 0, size: Math.random() * 2 + 1, color: '#ffaa44', alpha: 1 });
+                projectiles.splice(i, 1);
+                i--;
+                continue;
+            }
+            let solid = false;
+            for (let plat of platforms) if (p.x + p.radius > plat.x && p.x - p.radius < plat.x + plat.w && p.y + p.radius > plat.y && p.y - p.radius < plat.y + plat.h) { solid = true; break; }
+            if (solid) {
+                for (let s = 0; s < 3; s++) particles.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, life: 0.3, age: 0, size: Math.random() * 2 + 1, color: '#ffaa44', alpha: 1 });
+                projectiles.splice(i, 1);
+                i--;
+                continue;
+            }
+            for (let h of hazards) if (p.x + p.radius > h.x && p.x - p.radius < h.x + h.w && p.y + p.radius > h.y && p.y - p.radius < h.y + h.h) { solid = true; break; }
+            if (solid) {
+                for (let s = 0; s < 3; s++) particles.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, life: 0.3, age: 0, size: Math.random() * 2 + 1, color: '#ffaa44', alpha: 1 });
+                projectiles.splice(i, 1);
+                i--;
+                continue;
+            }
+            for (let id in players) {
+                if (id === p.ownerId) continue;
+                const t = players[id];
+                if (t.eliminated) continue;
+
+                // Normal knockback projectile
+                const dx = p.x - (t.x + t.width / 2);
+                const dy = p.y - (t.y + t.height / 2);
+                if (Math.hypot(dx, dy) < p.radius + t.width / 2) {
+                    const angle = Math.atan2(p.vy, p.vx);
+                    // Apply knockback with priority
+                    t.knockbackTimer = 0.25;
+                    t.knockbackVx = Math.cos(angle) * p.knockback;
+                    t.knockbackVy = Math.sin(angle) * p.knockback;
+                    projectiles.splice(i, 1);
+                    i--;
+                    playSound('spike');
+                    break;
+                }
+            }
+        }
+
+        // Robot hand stretch/retract updates (host only)
+        if (isHost && (currentEngineMode === 'GAME' || currentEngineMode === 'LOBBY')) {
+            for (let i = 0; i < activeRobotHands.length; i++) {
+                const grab = activeRobotHands[i];
+                const holder = players[grab.holderId];
+
+                // Remove if holder missing or eliminated
+                if (!holder || holder.eliminated) {
+                    if (grab.targetId && players[grab.targetId]) {
+                        players[grab.targetId].grabbedBy = null;
+                        broadcastToRoom('sync_players', { allPlayers: players });
+                    }
+                    activeRobotHands.splice(i, 1);
+                    console.log(`[RobotHand] Removed grab because holder invalid. Remaining: ${activeRobotHands.length}`);
+                    i--;
+                    continue;
+                }
+
+                // STUCK DETECTION: if progress hasn't changed in 2 seconds, force remove
+                const now = Date.now();
+                if (!grab._lastProgressTime) {
+                    grab._lastProgressTime = now;
+                    grab._lastProgress = grab.progress;
+                } else if (now - grab._lastProgressTime > 2000 && Math.abs(grab.progress - grab._lastProgress) < 0.01) {
+                    console.warn(`[RobotHand] Grab stuck for >2s, force removing. Holder: ${grab.holderId}, progress: ${grab.progress}`);
+                    if (grab.targetId && players[grab.targetId]) {
+                        players[grab.targetId].grabbedBy = null;
+                    }
+                    activeRobotHands.splice(i, 1);
+                    i--;
+                    continue;
+                } else {
+                    // Update tracking every 0.5s to avoid spam
+                    if (now - grab._lastProgressTime > 500) {
+                        grab._lastProgressTime = now;
+                        grab._lastProgress = grab.progress;
+                    }
+                }
+
+                const MAX_LENGTH = 400;
+                const EXTEND_SPEED = 20; // 20 (tesing with 5)
+                const RETRACT_SPEED = EXTEND_SPEED + 10;
+
+                const handX = holder.x + holder.width / 2;
+                const handY = holder.y + 32;
+
+                // --- Extending phase ---
+                if (grab.direction === 1) {
+                    const oldProgress = grab.progress;
+                    grab.progress += (EXTEND_SPEED * dt) / MAX_LENGTH;
+                    console.log(`[RobotHand] Extending: progress=${grab.progress.toFixed(3)}, angle=${grab.angle.toFixed(2)}`);
+
+                    if (grab.progress >= 1) {
+                        grab.progress = 1;
+                        grab.direction = -1;
+                        console.log(`[RobotHand] Reached max length, now retracting (no target)`);
+                    } else {
+                        // Check collision at the tip
+                        const tipX = handX + Math.cos(grab.angle) * MAX_LENGTH * grab.progress;
+                        const tipY = handY + Math.sin(grab.angle) * MAX_LENGTH * grab.progress;
+                        for (let id in players) {
+                            if (id === grab.holderId) continue;
+                            const target = players[id];
+                            if (target.eliminated) continue;
+                            const targetCenterX = target.x + target.width / 2;
+                            const targetCenterY = target.y + target.height / 2;
+                            const dx = tipX - targetCenterX;
+                            const dy = tipY - targetCenterY;
+                            const dist = Math.hypot(dx, dy);
+                            if (dist < 25 + target.width / 2) {
+                                grab.targetId = id;
+                                grab.direction = -1;
+                                target.grabbedBy = grab.holderId;
+
+                                // Apply upward offset when first grabbed
+                                const grabOffsetY = -3;
+                                target.x = tipX - target.width / 2;
+                                target.y = tipY - target.height / 2 + grabOffsetY;
+
+                                target.vx = 0;
+                                target.vy = 0;
+                                target.isGrounded = false;
+
+                                // --- NEW: Immediately resolve platform collision on grab ---
+                                resolvePlatformCollision(target);
+
+                                console.log(`[RobotHand] HIT ${target.nameTag} (${id})...`);
+                                playSound('door');
+                                broadcastToRoom('sync_players', { allPlayers: players });
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // --- Retracting phase ---
+                if (grab.direction === -1) {
+                    const oldProgress = grab.progress;
+                    grab.progress -= (RETRACT_SPEED * dt) / MAX_LENGTH;
+
+                    if (grab.progress <= 0) {
+                        // RELEASE TARGET
+                        if (grab.targetId && players[grab.targetId]) {
+                            const target = players[grab.targetId];
+                            const angleToHolder = Math.atan2(handY - target.y, handX - target.x);
+                            target.vx += Math.cos(angleToHolder) * 20;
+                            target.vy += Math.sin(angleToHolder) * 20;
+                            target.grabbedBy = null;
+                            target.isGrounded = false;
+                            // --- NEW: Resolve platform collision so they don't fall through ---
+                            resolvePlatformCollision(target);
+                            broadcastToRoom('sync_players', { allPlayers: players });
+                        }
+                        activeRobotHands.splice(i, 1);
+                        continue;
+                    }
+
+                    if (grab.targetId && players[grab.targetId]) {
+                        const target = players[grab.targetId];
+                        const pulled = (oldProgress - grab.progress) * MAX_LENGTH;
+                        const angle = Math.atan2(handY - target.y, handX - target.x);
+
+                        let newX = target.x + Math.cos(angle) * pulled;
+                        let newY = target.y + Math.sin(angle) * pulled;
+
+                        // Apply upward offset while being pulled
+                        const grabOffsetY = -5;
+                        newY += grabOffsetY;
+
+                        // Clamp to world boundaries
+                        newX = Math.max(0, Math.min(WORLD_WIDTH - target.width, newX));
+                        newY = Math.max(0, Math.min(WORLD_HEIGHT - target.height, newY));
+
+                        target.x = newX;
+                        target.y = newY;
+                        target.vx = 0;
+                        target.vy = 0;
+                        target.isGrounded = false;
+
+                        // --- NEW: Avoid pushing target into platforms during grab ---
+                        resolvePlatformCollision(target);
+                        // Ensure target stays above any platform after adjustment
+                        for (let plat of platforms) {
+                            if (target.x < plat.x + plat.w && target.x + target.width > plat.x &&
+                                target.y + target.height > plat.y && target.y < plat.y + plat.h) {
+                                if (target.vy <= 0 && target.y + target.height - plat.y < 15) {
+                                    target.y = plat.y - target.height;
+                                    target.isGrounded = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Update stored head position for drawing
+                const tipX = handX + Math.cos(grab.angle) * MAX_LENGTH * grab.progress;
+                const tipY = handY + Math.sin(grab.angle) * MAX_LENGTH * grab.progress;
+                grab.headX = tipX;
+                grab.headY = tipY;
+            }
+            broadcastRobotHands();
+        }
+
+        // throwables (player hit logic with knockback)
+        for (let i = 0; i < throwables.length; i++) {
+            const t = throwables[i];
+
+            t.vy += THROWABLE_GRAVITY * dt;
+            t.angularSpeed *= 0.996;
+            const maxStep = 8;
+            let remainingX = t.vx * dt;
+            let remainingY = t.vy * dt;
+            let steps = Math.max(1, Math.ceil(Math.abs(remainingX) / maxStep), Math.ceil(Math.abs(remainingY) / maxStep));
+            const stepX = remainingX / steps;
+            const stepY = remainingY / steps;
+
+            for (let step = 0; step < steps; step++) {
+                t.x += stepX;
+                t.y += stepY;
+                t.life -= dt / steps;
+                t.angle += t.angularSpeed * dt / steps;
+                if (t.life <= 0) break;
+
+                // world boundaries bounce (no bottom bounce)
+                let bounced = false;
+                if (t.x - t.radius < 0 && t.x + t.radius > -BREAK_BOUNDS_OFFSET) {
+                    t.x = t.radius;
+                    t.vx = -t.vx * 0.4;
+                    t.angularSpeed = -t.angularSpeed * 0.8 + (Math.random() - 0.5) * 0.1;
+                    bounced = true;
+                }
+                if (t.x + t.radius > WORLD_WIDTH && t.x - t.radius < WORLD_WIDTH + BREAK_BOUNDS_OFFSET) {
+                    t.x = WORLD_WIDTH - t.radius;
+                    t.vx = -t.vx * 0.4;
+                    bounced = true;
+                }
+                if (t.y - t.radius < 0 && t.y + t.radius > -BREAK_BOUNDS_OFFSET) {
+                    t.y = t.radius;
+                    t.vy = -t.vy * 0.4;
+                    bounced = true;
+                }
+                if (bounced) continue;
+
+                // platform collisions
+                let hitPlatform = false;
+                for (let plat of platforms) {
+                    if (t.x + t.radius > plat.x && t.x - t.radius < plat.x + plat.w &&
+                        t.y + t.radius > plat.y && t.y - t.radius < plat.y + plat.h) {
+                        const left = t.x + t.radius - plat.x;
+                        const right = plat.x + plat.w - (t.x - t.radius);
+                        const top = t.y + t.radius - plat.y;
+                        const bottom = plat.y + plat.h - (t.y - t.radius);
+                        const minOver = Math.min(left, right, top, bottom);
+                        if (minOver === left || minOver === right) {
+                            t.vx = -t.vx * 0.7;
+                            if (minOver === left) t.x = plat.x - t.radius;
+                            else t.x = plat.x + plat.w + t.radius;
+                        } else {
+                            t.vy = -t.vy * 0.5;
+                            t.vx *= 0.92;
+                            t.angularSpeed *= 0.7;
+                            if (Math.abs(t.vx) < 0.2) t.vx = 0;
+                            if (minOver === top) t.y = plat.y - t.radius;
+                            else t.y = plat.y + plat.h + t.radius;
+                            t.life -= 0.5;
+                        }
+                        hitPlatform = true;
+                        break;
+                    }
+                }
+                if (hitPlatform) continue;
+
+                // hazard collisions
+                let hitHazard = false;
+                for (let h of hazards) {
+                    if (t.x + t.radius > h.x && t.x - t.radius < h.x + h.w &&
+                        t.y + t.radius > h.y && t.y - t.radius < h.y + h.h) {
+                        const left = t.x + t.radius - h.x;
+                        const right = h.x + h.w - (t.x - t.radius);
+                        const top = t.y + t.radius - h.y;
+                        const bottom = h.y + h.h - (t.y - t.radius);
+                        const minOver = Math.min(left, right, top, bottom);
+                        if (minOver === left || minOver === right) {
+                            t.vx = -t.vx * 0.6;
+                            t.angularSpeed = -t.angularSpeed * 0.9;
+                            if (minOver === left) t.x = h.x - t.radius;
+                            else t.x = h.x + h.w + t.radius;
+                        } else {
+                            t.vy = -t.vy * 0.6;
+                            if (minOver === top) t.y = h.y - t.radius;
+                            else t.y = h.y + h.h + t.radius;
+                        }
+                        hitHazard = true;
+                        break;
+                    }
+                }
+                if (hitHazard) continue;
+
+                // player collisions
+                let hitPlayer = false;
+                for (let id in players) {
+                    if (id === t.ownerId) continue;
+                    const target = players[id];
+                    if (target.eliminated) continue;
+                    const dx = t.x - (target.x + target.width / 2);
+                    const dy = t.y - (target.y + target.height / 2);
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < t.radius + target.width / 2) {
+                        const angle = Math.atan2(t.vy, t.vx);
+                        if (t.dropItem) {
+                            t.vx = Math.cos(angle) * Math.abs(t.vx) * 0.5;
+                            t.vy = Math.sin(angle) * Math.abs(t.vy) * 0.5;
+                            const pushX = dx / dist * (t.radius + target.width / 2);
+                            const pushY = dy / dist * (t.radius + target.height / 2);
+                            t.x += pushX * 0.5;
+                            t.y += pushY * 0.5;
+                            hitPlayer = true;
+                            break;
+                        }
+                        // Apply knockback to target
+                        target.knockbackTimer = 0.25;
+                        target.knockbackVx = Math.cos(angle) * 15;
+                        target.knockbackVy = Math.sin(angle) * 15;
+                        if (target.item !== null) {
+                            t.vx = Math.cos(angle) * Math.abs(t.vx) * 0.7;
+                            t.vy = Math.sin(angle) * Math.abs(t.vy) * 0.7;
+                            t.life = Math.max(t.life - 30, 30);
+                            const pushX = dx / dist * (t.radius + target.width / 2);
+                            const pushY = dy / dist * (t.radius + target.height / 2);
+                            t.x += pushX * 0.8;
+                            t.y += pushY * 0.8;
+                            playSound('spike');
+                        } else {
+                            const dropX = target.x + target.width / 2 - 12;
+                            const dropY = target.y + target.height - 12;
+                            itemManager.spawnItem(dropX, dropY, t.itemType, 0, false, t.ammo);
+                            broadcastWorldItems();
+                            throwables.splice(i, 1);
+                            i--;
+                        }
+                        hitPlayer = true;
+                        break;
+                    }
+                }
+                if (hitPlayer) break;
+            }
+
+            // life expired → spawn item if not broken
+            if (throwables[i] && t.life <= 0) {
+                const spawnX = t.x - 12;
+                const spawnY = t.y - 12;
+                if (spawnX > -BREAK_BOUNDS_OFFSET && spawnX < WORLD_WIDTH + BREAK_BOUNDS_OFFSET &&
+                    spawnY > -BREAK_BOUNDS_OFFSET && spawnY < WORLD_HEIGHT + BREAK_BOUNDS_OFFSET) {
+                    itemManager.spawnItem(spawnX, spawnY, t.itemType, 0, false, t.ammo);
+                    broadcastWorldItems();
+                }
+                throwables.splice(i, 1);
+                i--;
+                continue;
+            }
+
+            // out-of-bounds break
+            const breakX = (t.x + t.radius < -BREAK_BOUNDS_OFFSET || t.x - t.radius > WORLD_WIDTH + BREAK_BOUNDS_OFFSET);
+            const breakY = (t.y + t.radius < -BREAK_BOUNDS_OFFSET || t.y - t.radius > WORLD_HEIGHT + BREAK_BOUNDS_OFFSET);
+            if (breakX || breakY) {
+                for (let s = 0; s < 8; s++) {
+                    particles.push({
+                        x: t.x, y: t.y,
+                        vx: (Math.random() - 0.5) * 4,
+                        vy: (Math.random() - 0.5) * 4,
+                        life: 0.4, age: 0,
+                        size: Math.random() * 4 + 2,
+                        color: '#ffaa44', alpha: 1
+                    });
+                }
+                playSound('spike');
+                throwables.splice(i, 1);
+                i--;
+            }
+        }
+
+        if (isHost) broadcastThrowables();
+        if (isHost) broadcastProjectiles();
+        ctx.save(); ctx.scale(camera.zoom, camera.zoom); ctx.translate(-camera.x, -camera.y);
+        drawCanvasLevelLayout();
+        updateAndRenderParticles();
+        for (let id in players) {
+            let p = players[id];
+            if (p.eliminated && p.id !== localPlayerId) continue;
+            if (p.isDashing) {
+                for (let i = 0; i < 2; i++) particles.push({
+                    x: p.x + (p.facingRight ? 0 : p.width), y: p.y + Math.random() * p.height,
+                    vx: (p.facingRight ? -3 : 3) + (Math.random() - 0.5), vy: (Math.random() - 0.5) * 1, alpha: 1, size: Math.random() * 5 + 4, color: p.color
+                });
+            }
+            drawCharacterModel(p);
+            if (id === localPlayerId && !spectatorMode) drawDashCooldownBar(p);
+        }
+        drawSkinDoorUI(); drawStartDoorUI();
+        ctx.restore();
+        drawOffscreenRadarIndicators();
+
+        // EXTRA SAFETY: After everything, ensure match ends if no players left (in case something was missed)
+        if (isHost && currentEngineMode === 'GAME') {
+            checkAllPlayersEliminatedAndEndMatch();
+        }
+
+        if (spectatorMode && currentEngineMode === 'GAME') {
+            ctx.font = 'bold 24px "Orbitron"';
+            ctx.fillStyle = '#ffcc00';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#000';
+            ctx.textAlign = 'center';
+            ctx.fillText("👁️ SPECTATOR MODE", canvas.width / 2, 40);
+            ctx.font = '16px "Orbitron"';
+            ctx.fillStyle = '#fff';
+            ctx.fillText("Use ← → to switch players", canvas.width / 2, 80);
+            ctx.shadowBlur = 0;
+        }
+
+        if (lobbyCountdownVal >= 0) {
+            ctx.fillStyle = '#ff007f'; ctx.font = 'bold 36px "Orbitron"'; ctx.textAlign = 'center';
+            ctx.shadowColor = '#ff007f'; ctx.shadowBlur = 15;
+            ctx.fillText(`MATCH STARTING IN: ${lobbyCountdownVal}s`, canvas.width / 2, 60);
+            ctx.shadowBlur = 0;
+        }
+        if (raceCountdownVal > 0 && currentEngineMode === 'GAME') {
+            ctx.fillStyle = '#00ff66'; ctx.font = 'bold 48px "Orbitron"'; ctx.textAlign = 'center';
+            ctx.shadowColor = '#00ff66'; ctx.shadowBlur = 20;
+            ctx.fillText(`${raceCountdownVal}s`, canvas.width / 2, canvas.height / 2);
+            ctx.shadowBlur = 0;
+        }
+    } else {
+        ctx.fillStyle = '#110924'; ctx.font = '20px "Orbitron"'; ctx.textAlign = 'center';
+        ctx.fillText("WAITING IN PLATFORM MENU...", canvas.width / 2, canvas.height / 2);
+    }
+    requestAnimationFrame(enginePipelineTick);
+}
+
+// ============================================================================
+//  INPUT HANDLING (unchanged from earlier version)
+// ============================================================================
+
+window.addEventListener('keydown', (e) => {
+    if (['ArrowLeft', 'a', 'A'].includes(e.key)) keys.ArrowLeft = true;
+    if (['ArrowRight', 'd', 'D'].includes(e.key)) keys.ArrowRight = true;
+    if (['ArrowUp', 'w', 'W', ' '].includes(e.key)) keys.ArrowUp = true;
+    if (['f', 'F'].includes(e.key)) keys.Interact = true;
+    if (e.key === 'q' || e.key === 'Q') keys.Drop = true;
+    if (e.code === 'ShiftLeft') keys.ShiftLeft = true;
+
+    if (spectatorMode && currentEngineMode === 'GAME') {
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            cycleSpectator(-1);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            cycleSpectator(1);
+        }
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    if (['ArrowLeft', 'a', 'A'].includes(e.key)) keys.ArrowLeft = false;
+    if (['ArrowRight', 'd', 'D'].includes(e.key)) keys.ArrowRight = false;
+    if (['ArrowUp', 'w', 'W', ' '].includes(e.key)) keys.ArrowUp = false;
+    if (['f', 'F'].includes(e.key)) keys.Interact = false;
+    if (e.key === 'q' || e.key === 'Q') keys.Drop = false;
+    if (e.code === 'ShiftLeft') keys.ShiftLeft = false;
+});
+
+window.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); camera.isZoomed = !camera.isZoomed; camera.targetZoom = camera.isZoomed ? 1.75 : 1.0; } });
+window.addEventListener('wheel', (e) => {
+    if (currentEngineMode === 'LOBBY' || currentEngineMode === 'GAME') {
+        e.preventDefault();
+        const sens = 0.15;
+        if (e.deltaY < 0) camera.targetZoom = Math.min(camera.maxZoom, camera.targetZoom + sens);
+        else if (e.deltaY > 0) camera.targetZoom = Math.max(camera.minZoom, camera.targetZoom - sens);
+    }
+}, { passive: false });
+
+window.addEventListener('pointerdown', (e) => { if (e.button === 1) e.preventDefault(); });
+
+canvas.addEventListener('mousedown', (e) => {
+    if (spectatorMode) return;
+    if (e.button === 0) {
+        e.preventDefault();
+        performShoot();
+    }
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('mousedown', (e) => {
+    if (spectatorMode) return;
+    if (e.button === 2 && players[localPlayerId] && players[localPlayerId].item) {
+        e.preventDefault();
+        performThrow();
+    }
+});
+
+function bindTouchBtn(id, action) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); touchState[action] = true; });
+    el.addEventListener('touchend', (e) => { e.preventDefault(); touchState[action] = false; });
+    el.addEventListener('touchcancel', (e) => { e.preventDefault(); touchState[action] = false; });
+}
+bindTouchBtn('btn-left', 'left'); bindTouchBtn('btn-right', 'right'); bindTouchBtn('btn-jump', 'jump');
+
+document.addEventListener('DOMContentLoaded', () => {
+    const shootBtn = document.getElementById('btn-shoot');
+    const throwBtn = document.getElementById('btn-throw');
+    if (shootBtn) {
+        shootBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!spectatorMode) performShoot();
+        });
+        shootBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            if (!spectatorMode) performShoot();
+        });
+    }
+    if (throwBtn) {
+        throwBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!spectatorMode) performThrow();
+        });
+        throwBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            if (!spectatorMode) performThrow();
+        });
+    }
+});
+
+// ============================================================================
+//  SKIN MENU & COLOR SELECTION (unchanged)
+// ============================================================================
+
+function selectCharacterColor(hexColor, buttonElement) {
+    if (players[localPlayerId] && players[localPlayerId].color === hexColor) return;
+    if (isColorAlreadyUsed(hexColor, localPlayerId)) return;
+    if (players[localPlayerId]) {
+        players[localPlayerId].color = hexColor;
+        if (isHost) broadcastToRoom('sync_players', { allPlayers: players });
+        else if (hostConnection?.open) hostConnection.send({ type: 'update_skin', senderId: localPlayerId, payload: { color: hexColor } });
+    }
+    if (buttonElement) {
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.classList.remove('border-white', 'scale-105'); btn.classList.add('border-transparent');
+        });
+        buttonElement.classList.remove('border-transparent'); buttonElement.classList.add('border-white', 'scale-105');
+    }
+}
+
+function isColorAlreadyUsed(hex, excludeId) {
+    if (!hex) return false;
+    const clean = hex.trim().toLowerCase();
+    for (let id in players) if (id !== excludeId && players[id]?.color?.trim().toLowerCase() === clean) return true;
+    return false;
+}
+
+function updateColorButtonStates() {
+    const local = players[localPlayerId]?.color?.trim().toLowerCase();
+    document.querySelectorAll('.color-btn').forEach(btn => {
+        const raw = btn.getAttribute('data-color');
+        if (!raw) return;
+        const col = raw.trim().toLowerCase();
+        if (local && col === local) {
+            btn.classList.remove('disabled-color', 'border-transparent'); btn.classList.add('border-white', 'scale-105'); btn.style.pointerEvents = 'auto';
+        } else if (isColorAlreadyUsed(col, localPlayerId)) {
+            btn.classList.add('disabled-color'); btn.classList.remove('border-white', 'scale-105'); btn.classList.add('border-transparent'); btn.style.pointerEvents = 'none';
+        } else {
+            btn.classList.remove('disabled-color'); btn.classList.remove('border-white', 'scale-105'); btn.classList.add('border-transparent'); btn.style.pointerEvents = 'auto';
+        }
+    });
+}
+
+function openSkinMenu() {
+    const modal = document.getElementById('skin-modal');
+    if (modal) modal.classList.remove('hidden');
+    if (typeof updateColorButtonStates === 'function') updateColorButtonStates();
+    const cur = players[localPlayerId]?.color;
+    if (cur) {
+        const norm = cur.trim().toLowerCase();
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            const col = btn.getAttribute('data-color')?.trim().toLowerCase();
+            if (col === norm) { btn.classList.remove('border-transparent'); btn.classList.add('border-white', 'scale-105'); btn.style.pointerEvents = 'auto'; }
+        });
+    }
+}
+function closeSkinMenu() { document.getElementById('skin-modal').classList.add('hidden'); }
+
+// ============================================================================
+//  FACE DRAWING (unchanged)
+// ============================================================================
+
+let faceDrawingCanvas = null, faceDrawingCtx = null, faceOverlayCanvas = null, faceOverlayCtx = null;
+let isDrawingFace = false, currentDrawColorFace = '#FFFFFF', currentBrushSizeFace = 20;
+let eraserActiveFace = false, lastPenColorFace = '#FFFFFF', faceCanvasBgColor = '#0c0516';
+
+function initializeFaceCanvas() {
+    faceDrawingCanvas = document.getElementById('faceDrawingCanvas');
+    faceDrawingCtx = faceDrawingCanvas.getContext('2d');
+    faceOverlayCanvas = document.createElement('canvas');
+    faceOverlayCanvas.width = faceDrawingCanvas.width;
+    faceOverlayCanvas.height = faceDrawingCanvas.height;
+    faceOverlayCtx = faceOverlayCanvas.getContext('2d');
+    const saved = localStorage.getItem('playerFaceDrawing_' + localPlayerId);
+    if (saved) {
+        const img = new Image();
+        img.onload = () => { faceOverlayCtx.drawImage(img, 0, 0); compositeLayers(); };
+        img.src = saved;
+    } else { faceOverlayCtx.clearRect(0, 0, faceOverlayCanvas.width, faceOverlayCanvas.height); compositeLayers(); }
+    drawFaceCanvasBackground();
+    function getCoords(e) {
+        const rect = faceDrawingCanvas.getBoundingClientRect();
+        const sx = faceDrawingCanvas.width / rect.width, sy = faceDrawingCanvas.height / rect.height;
+        let cx, cy;
+        if (e.touches) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+        else { cx = e.clientX; cy = e.clientY; }
+        return { x: Math.max(0, Math.min(faceDrawingCanvas.width, (cx - rect.left) * sx)), y: Math.max(0, Math.min(faceDrawingCanvas.height, (cy - rect.top) * sy)) };
+    }
+    function start(e) { e.preventDefault(); isDrawingFace = true; const { x, y } = getCoords(e); faceOverlayCtx.beginPath(); faceOverlayCtx.moveTo(x, y); applyMode(); }
+    function draw(e) { if (!isDrawingFace) return; e.preventDefault(); const { x, y } = getCoords(e); faceOverlayCtx.lineTo(x, y); faceOverlayCtx.stroke(); compositeLayers(); }
+    function stop() { isDrawingFace = false; faceOverlayCtx.beginPath(); }
+    function applyMode() {
+        if (eraserActiveFace) { faceOverlayCtx.globalCompositeOperation = 'destination-out'; faceOverlayCtx.strokeStyle = 'rgba(0,0,0,1)'; }
+        else { faceOverlayCtx.globalCompositeOperation = 'source-over'; faceOverlayCtx.strokeStyle = currentDrawColorFace; }
+        faceOverlayCtx.lineWidth = currentBrushSizeFace; faceOverlayCtx.lineCap = 'round'; faceOverlayCtx.lineJoin = 'round';
+    }
+    faceDrawingCanvas.addEventListener('mousedown', start); faceDrawingCanvas.addEventListener('mousemove', draw);
+    faceDrawingCanvas.addEventListener('mouseup', stop); faceDrawingCanvas.addEventListener('mouseleave', stop);
+    faceDrawingCanvas.addEventListener('touchstart', start); faceDrawingCanvas.addEventListener('touchmove', draw); faceDrawingCanvas.addEventListener('touchend', stop);
+}
+function compositeLayers() { if (!faceDrawingCtx || !faceOverlayCtx) return; drawFaceCanvasBackground(); faceDrawingCtx.drawImage(faceOverlayCanvas, 0, 0); }
+function drawFaceCanvasBackground() {
+    if (!faceDrawingCtx) return;
+    const col = (players && players[localPlayerId]) ? players[localPlayerId].color : '#0c0516';
+    faceDrawingCtx.fillStyle = col; faceDrawingCtx.fillRect(0, 0, faceDrawingCanvas.width, faceDrawingCanvas.height);
+    faceDrawingCtx.strokeStyle = '#fff'; faceDrawingCtx.lineWidth = 2;
+    faceDrawingCtx.beginPath(); faceDrawingCtx.arc(faceDrawingCanvas.width / 2, faceDrawingCanvas.height / 2, faceDrawingCanvas.width / 2 - 2, 0, Math.PI * 2); faceDrawingCtx.stroke();
+}
+function toggleEraserFace() {
+    const btn = document.getElementById('eraserBtn');
+    if (!eraserActiveFace) { eraserActiveFace = true; lastPenColorFace = currentDrawColorFace; currentDrawColorFace = faceCanvasBgColor; if (btn) { btn.style.backgroundColor = '#ff007f'; btn.style.color = 'white'; btn.innerText = '✏️ PEN MODE'; } }
+    else deactivateEraserFace();
+    if (faceOverlayCtx) applyMode();
+}
+function deactivateEraserFace() { eraserActiveFace = false; currentDrawColorFace = lastPenColorFace; const btn = document.getElementById('eraserBtn'); if (btn) { btn.style.backgroundColor = ''; btn.style.color = '#ff007f'; btn.innerText = '🧽 ERASER MODE'; } if (faceOverlayCtx) applyMode(); }
+function setDrawColorFace(col) { if (eraserActiveFace) deactivateEraserFace(); currentDrawColorFace = col; }
+function setBrushSizeFace(size) { currentBrushSizeFace = parseInt(size); document.getElementById('brushSizeDisplay').innerText = size; }
+function resetFaceDrawing() { if (faceOverlayCtx) { faceOverlayCtx.clearRect(0, 0, faceOverlayCanvas.width, faceOverlayCanvas.height); compositeLayers(); } }
+function saveFaceDrawing() {
+    const data = faceOverlayCanvas.toDataURL('image/png');
+    localStorage.setItem('playerFaceDrawing_' + localPlayerId, data);
+    localStorage.setItem('playerHasCustomFace_' + localPlayerId, 'true');
+    if (isHost) broadcastToRoom('sync_face_drawing', { playerId: localPlayerId, faceData: data });
+    else if (hostConnection?.open) hostConnection.send({ type: 'update_face_drawing', senderId: localPlayerId, payload: { faceData: data } });
+    closeFaceDrawing(); playSound('door');
+}
+function openFaceDrawing() { document.getElementById('face-drawing-modal').classList.remove('hidden'); setTimeout(() => { if (!faceDrawingCanvas) initializeFaceCanvas(); else compositeLayers(); }, 10); }
+function closeFaceDrawing() { document.getElementById('face-drawing-modal').classList.add('hidden'); }
+
+window.setDrawColor = setDrawColorFace;
+window.setBrushSize = setBrushSizeFace;
+window.toggleEraser = toggleEraserFace;
+window.resetFaceDrawing = resetFaceDrawing;
+window.saveFaceDrawing = saveFaceDrawing;
+window.openFaceDrawing = openFaceDrawing;
+window.closeFaceDrawing = closeFaceDrawing;
+
+// ============================================================================
+//  CONSOLE STATUS COMMAND
+// ============================================================================
+
+window.status = function () {
+    console.clear();
+    console.log("%c=== PLAYER STATUS ===", "color: #00f2fe; font-weight: bold;");
+    const playerList = Object.values(players).map(p => ({
+        "ID": p.id,
+        "Name": p.nameTag,
+        "Alive": p.eliminated ? "❌ DEAD" : "✅ ALIVE",
+        "Death Reason": p.deathReason || (p.eliminated ? "unknown" : "—"),
+        "Score": p.score,
+        "Position": `(${Math.floor(p.x)}, ${Math.floor(p.y)})`
+    }));
+    console.table(playerList);
+    const aliveCount = playerList.filter(p => p.Alive === "✅ ALIVE").length;
+    console.log(`%cAlive players: ${aliveCount} / ${playerList.length}`, `color: ${aliveCount === 0 ? "#ff007f" : "#00ff66"}; font-weight: bold;`);
+    if (aliveCount === 0 && currentEngineMode === 'GAME') {
+        console.log("%c⚠️ Match should end immediately! ⚠️", "color: #ffaa00; font-weight: bold;");
+    }
+};
+
+// ------------------------------------------------------------------
+// DEBUG / CONSOLE COMMANDS
+// ------------------------------------------------------------------
+window.forceStartMatch = function () {
+    if (!isHost) {
+        console.warn("forceStartMatch: You are not the host.");
+        return;
+    }
+    if (currentEngineMode !== 'LOBBY') {
+        console.warn("forceStartMatch: Not in LOBBY mode.");
+        return;
+    }
+    console.log("Forcing match start (bypassing door & player count)...");
+    if (lobbyTimerId) {
+        clearInterval(lobbyTimerId);
+        lobbyTimerId = null;
+    }
+    lobbyCountdownVal = -1;
+    broadcastToRoom('sync_lobby_countdown', { value: -1 });
+    executeActiveMatchStart();
+    broadcastToRoom('trigger_match_start');
+};
+
+window.forceHostResetLobby = function () {
+    if (!isHost) {
+        console.warn("forceHostResetLobby: You are not the host.");
+        return;
+    }
+    if (currentEngineMode !== 'LOBBY') {
+        console.warn("forceHostResetLobby: Not in LOBBY mode.");
+        return;
+    }
+    hostResetLobby();
+};
+
+enginePipelineTick();
