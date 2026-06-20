@@ -1,408 +1,188 @@
 <!DOCTYPE html>
-<html lang="en" class="w-full h-full">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>UHCC - Ultimate Hyper Chaos Championship</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap"
-        rel="stylesheet">
+    <link rel="icon" type="image/png" href="Bowling_Icon.png">
+    <title>Bowling 3D</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
     <link rel="stylesheet" href="style.css">
-    <link rel="icon" href="data:,">
-    <link rel="preload" href="assets/sounds/pistol_fire.mp3" as="audio">
 </head>
 
-<body class="w-full h-full flex flex-col justify-between select-none relative overflow-hidden">
+<body>
 
-    <div id="menu-screen"
-        class="absolute inset-0 bg-[#0e071a] flex flex-col items-center justify-center p-4 z-40 transition-opacity duration-300">
-        <div
-            class="max-w-md w-full bg-[#160c2b] border border-[#2d1b54] p-6 rounded-2xl flex flex-col items-center shadow-2xl relative">
-
-            <div class="absolute -top-12 flex flex-col items-center">
-                <span class="orbitron text-3xl font-extrabold text-[#00f2fe] tracking-widest neon-text-blue">UHCC</span>
-                <span class="text-[10px] text-gray-400 tracking-wider">ULTIMATE HYPER CHAOS CHAMPIONSHIP</span>
-            </div>
-
-            <div id="panel-main" class="w-full space-y-4 mt-6">
-                <button onclick="switchPanel('panel-play')"
-                    class="w-full py-4 rounded-xl bg-gradient-to-r from-[#00f2fe] to-[#4facfe] text-black font-extrabold text-lg tracking-wide orbitron hover:brightness-110 active:scale-[0.98] transition shadow-[0_0_20px_rgba(0,242,254,0.3)]">
-                    ▶ START GAME
-                </button>
-                <button onclick="switchPanel('panel-settings')"
-                    class="w-full py-3 rounded-xl bg-[#20113c] border border-[#2d1b54] text-gray-300 font-bold hover:bg-[#2d1b54] transition">
-                    ⚙️ SETTINGS
-                </button>
-                <!-- NEW MAP CREATOR BUTTON -->
-                <button onclick="window.open('map_creator.html', '_blank')"
-                    class="w-full py-3 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 text-black font-bold text-md tracking-wide orbitron hover:brightness-110 active:scale-[0.98] transition shadow-[0_0_10px_rgba(255,200,0,0.3)]">
-                    🗺️ MAP CREATOR
-                </button>
-            </div>
-
-            <div id="panel-play" class="w-full space-y-4 mt-6 hidden">
-                <button onclick="initHost()"
-                    class="w-full py-4 rounded-xl bg-gradient-to-r from-[#ff007f] to-[#ff007f]/70 text-white font-extrabold text-lg tracking-wide orbitron hover:brightness-110 active:scale-[0.98] transition">
-                    👑 CREATE ROOM
-                </button>
-                <div class="flex items-center my-2">
-                    <hr class="flex-grow border-[#2d1b54]">
-                    <span class="px-3 text-xs text-gray-500">or</span>
-                    <hr class="flex-grow border-[#2d1b54]">
-                </div>
-                <div class="flex gap-2">
-                    <input id="room-input" type="text" placeholder="4-digit code..." maxlength="4"
-                        class="flex-grow bg-[#0c0516] border border-[#2d1b54] text-center text-xl text-[#00f2fe] rounded-xl focus:outline-none focus:border-[#00f2fe] placeholder-gray-600 orbitron">
-                    <button onclick="initGuest()"
-                        class="px-6 py-4 rounded-xl bg-[#20113c] border border-[#ff007f] text-[#ff007f] font-bold text-md hover:bg-[#ff007f] hover:text-white transition">
-                        JOIN ROOM
-                    </button>
-                </div>
-                <button onclick="switchPanel('panel-main')"
-                    class="w-full py-2 text-xs text-gray-500 hover:text-gray-300 transition underline text-center block pt-2">
-                    BACK TO MAIN MENU
-                </button>
-            </div>
-
-            <div id="panel-settings" class="w-full space-y-4 mt-6 hidden text-gray-300 text-sm">
-                <h3 class="orbitron text-[#00f2fe] font-bold border-b border-[#2d1b54] pb-2 mb-2 text-center">GAME
-                    CONTROLS</h3>
-                <ul class="space-y-1 list-disc list-inside text-gray-400">
-                    <li>Keyboard controls: <span class="text-white">A / D</span> or <span class="text-white">◀ /
-                            ▶</span> to move</li>
-                    <li>Jump: <span class="text-white">W</span> or <span class="text-white">Spacebar</span></li>
-                    <li>Lobby rules: When <span class="text-[#00f2fe]">2-6 players</span> are present, go to the <span
-                            class="text-yellow-400 font-bold">golden portal</span> on the far right to start the match
-                    </li>
-                </ul>
-                <button onclick="switchPanel('panel-main')"
-                    class="w-full py-3 mt-4 rounded-xl bg-[#20113c] border border-[#2d1b54] text-white font-bold transition">
-                    CONFIRM & RETURN
-                </button>
-            </div>
-
-            <div id="panel-status" class="w-full hidden space-y-4 mt-6">
-                <div class="bg-[#0c0516] border border-[#2d1b54] p-4 rounded-xl text-center">
-                    <div id="status-spinner"
-                        class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00f2fe] mx-auto mb-3"></div>
-                    <div id="status-text" class="text-gray-300 text-sm">Synchronizing with WebRTC server...</div>
-                </div>
-                <div id="room-code-display"
-                    class="hidden text-center bg-[#07030d] p-3 rounded-lg border border-dashed border-[#00f2fe]/40">
-                    <span class="text-xs text-gray-500 block">Room code (share with friends):</span>
-                    <span id="room-code"
-                        class="orbitron text-3xl font-black text-[#00f2fe] tracking-widest neon-text-blue">----</span>
-                </div>
-                <button onclick="cancelConnection()"
-                    class="w-full py-2 bg-red-950/40 border border-red-500/30 text-red-400 rounded-xl text-xs hover:bg-red-900/30 transition">
-                    CANCEL CONNECTION
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <header
-        class="w-full bg-[#0a0514]/90 backdrop-blur-md border-b border-[#1b0f30] px-4 py-3 flex justify-between items-center z-10">
-        <div class="flex items-center gap-4">
-            <div class="flex flex-col">
-                <span class="text-[10px] text-cyan-400 orbitron">PLAYERS</span>
-                <span id="player-count-hud" class="text-xl font-black text-cyan-300 orbitron neon-text-blue">1 /
-                    6</span>
-            </div>
-            <div class="text-gray-600">|</div>
-            <div class="flex flex-col">
-                <span class="text-[10px] text-purple-400 orbitron">STATUS</span>
-                <span id="game-state-hud" class="text-sm font-bold text-yellow-400">MAIN MENU</span>
-            </div>
-        </div>
-
-        <div id="timer-container" class="flex flex-col items-center">
-            <span class="text-[10px] text-gray-500 orbitron">MATCH TIMER</span>
-            <span id="timer" class="text-2xl font-bold text-yellow-400 orbitron">60</span>
-        </div>
-
-        <div class="flex items-center gap-3">
-            <div class="flex flex-col text-right">
-                <span class="text-[9px] text-gray-500">ROOM ID</span>
-                <span id="hud-room" class="text-xs text-[#00f2fe] orbitron">NONE</span>
-            </div>
-            <button id="reset-lobby-btn"
-                class="hidden px-3 py-1.5 bg-yellow-950/40 border border-yellow-500/30 text-yellow-400 rounded-lg text-xs hover:bg-yellow-900/30 transition">
-                ⟳ Reset Lobby
+    <div id="ui-overlay">
+        <div class="chaos-controls" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+            <button id="chaos-toggle-btn" class="chaos-toggle-btn" onclick="toggleChaosBox()" title="切換能力列表">
+                <span id="chaos-btn-icon">🎯</span>
+                <span id="chaos-btn-count" class="chaos-count-badge">0/5</span>
             </button>
-            <button onclick="disconnectGame()"
-                class="px-3 py-1.5 bg-red-950/40 border border-red-500/30 text-red-400 rounded-lg text-xs hover:bg-red-900/30 transition">
-                🚪 DISCONNECT
-            </button>
-        </div>
-    </header>
-
-    <main id="game-container" class="flex-grow w-full relative bg-[#090410] flex items-center justify-center">
-        <canvas id="gameCanvas"
-            class="max-w-full max-h-full block aspect-[16/9] shadow-2xl border-y border-[#180a2b] bg-[#0c0516]">
-        </canvas>
-
-        <div id="countdown-overlay"
-            class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20 hidden">
-            <span id="countdown-num"
-                class="orbitron text-8xl font-black text-[#00f2fe] neon-text-blue animate-ping">3</span>
-            <span id="countdown-sub" class="text-sm text-gray-400 mt-4 tracking-wider">Portal opening soon, prepare to
-                fight...</span>
-        </div>
-
-        <div id="gameover-overlay"
-            class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20 hidden">
-            <div class="max-w-xs w-full bg-[#18082e] border-2 border-yellow-500 p-6 rounded-2xl text-center shadow-lg">
-                <span class="orbitron text-2xl font-black text-yellow-500 tracking-wider">ROUND OVER!</span>
-                <div id="match-result" class="text-md font-bold text-white my-4">Match ended!</div>
-                <div id="waiting-for-host" class="text-gray-400 text-sm mb-3 hidden">Waiting for host to return to
-                    lobby...</div>
-                <button id="back-to-lobby-btn" onclick="backToInteractiveLobby()"
-                    class="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-black text-md orbitron rounded-xl hover:brightness-110 transition">
-                    🔄 BACK TO LOBBY
-                </button>
+            <div id="chaos-events-info" class="chaos-events-box" style="display: none;">
+                <div class="chaos-events-header">活躍能力</div>
+                <div id="active-events-list" class="events-scroll"></div>
             </div>
         </div>
-    </main>
 
-    <div id="touch-controls"
-        class="w-full bg-[#07030d] border-t border-[#140a24] px-4 py-4 grid grid-cols-3 gap-4 select-none z-10 md:hidden">
-        <!-- left/right -->
-        <div class="flex gap-4 items-center justify-start">
-            <button id="btn-left"
-                class="v-btn w-16 h-16 rounded-2xl flex items-center justify-center text-2xl text-white">◀</button>
-            <button id="btn-right"
-                class="v-btn w-16 h-16 rounded-2xl flex items-center justify-center text-2xl text-white">▶</button>
-        </div>
-        <!-- jump -->
-        <div class="flex justify-center items-center">
-            <button id="btn-jump"
-                class="v-btn w-20 h-16 rounded-2xl flex items-center justify-center text-lg text-[#00f2fe] font-black orbitron">JUMP</button>
-        </div>
-        <!-- shoot + throw (mobile only) -->
-        <div class="flex gap-3 justify-end items-center">
-            <button id="btn-shoot"
-                class="v-btn w-20 h-16 rounded-2xl flex items-center justify-center text-md font-black text-white bg-red-800/60 border-red-500">🔫
-                SHOOT</button>
-            <button id="btn-throw"
-                class="v-btn w-20 h-16 rounded-2xl flex items-center justify-center text-md font-black text-white bg-yellow-800/60 border-yellow-500">🎯
-                THROW</button>
-        </div>
-    </div>
-
-    <div id="disconnect-modal" class="hidden fixed inset-0 w-full h-full bg-black/80 backdrop-blur-sm z-50">
-        <div
-            class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#1c0812] border-2 border-red-500 p-8 rounded-2xl text-center w-[90%] max-w-[380px] text-white">
-            <h2 class="orbitron text-red-500 font-extrabold text-2xl tracking-wider mb-4">⚠️ CONNECTION LOST</h2>
-            <p class="text-gray-300 text-sm mb-6">Host closed the room or you lost connection to the PeerJS server.</p>
-            <button onclick="location.reload()"
-                class="w-full py-3 bg-red-600 text-white font-extrabold text-md rounded-xl hover:bg-red-500 transition">
-                RESET TO MAIN MENU
-            </button>
-        </div>
-    </div>
-
-    <!-- Skin Customization Modal Menu -->
-    <div id="skin-modal"
-        class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-        <div
-            class="bg-[#160c2b] border-2 border-[#ff007f] p-6 rounded-2xl max-w-sm w-full shadow-[0_0_25px_rgba(255,0,127,0.4)] text-left">
-            <h3 class="orbitron text-xl font-black text-[#ff007f] mb-1 tracking-wider neon-text-pink text-center">SKIN
-                EDITING SYSTEM</h3>
-            <p class="text-[11px] text-gray-400 mb-4 text-center">Select your color path configuration:</p>
-
-            <div class="mb-2">
-                <span class="orbitron text-xs font-bold text-gray-400 tracking-wider uppercase">Color:</span>
+        <div id="action-cam-container" onclick="toggleActionCamSize(event)"
+            style="cursor: pointer; position: absolute; bottom: 20px; right: 20px; width: 250px; height: 150px; border: 3px solid #e74c3c; border-radius: 10px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(231, 76, 60, 0.5); background: #000; pointer-events: auto !important;">
+            <div
+                style="position:absolute; top:5px; left:5px; color:#e74c3c; font-weight:bold; font-size:10px; z-index:10; pointer-events: none;">
+                動作鏡頭 (點擊放大)
             </div>
-            <div class="grid grid-cols-4 gap-2 mb-4">
-                <button onclick="selectCharacterColor('#FF0000', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#FF0000" style="background-color: #FF0000;"></button>
-                <button onclick="selectCharacterColor('#0000FF', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#0000FF" style="background-color: #0000FF;"></button>
-                <button onclick="selectCharacterColor('#000000', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#000000" style="background-color: #000000;"></button>
-                <button onclick="selectCharacterColor('#ffffff', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#ffffff" style="background-color: #ffffff;"></button>
-                <button onclick="selectCharacterColor('#FF69B4', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#FF69B4" style="background-color: #FF69B4;"></button>
-                <button onclick="selectCharacterColor('#00FFFF', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#00FFFF" style="background-color: #00FFFF;"></button>
-                <button onclick="selectCharacterColor('#8B4513', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#8B4513" style="background-color: #8B4513;"></button>
-                <button onclick="selectCharacterColor('#FFC0CB', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#FFC0CB" style="background-color: #FFC0CB;"></button>
-                <button onclick="selectCharacterColor('#800080', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#800080" style="background-color: #800080;"></button>
-                <button onclick="selectCharacterColor('#FFA500', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#FFA500" style="background-color: #FFA500;"></button>
-                <button onclick="selectCharacterColor('#808080', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#808080" style="background-color: #808080;"></button>
-                <button onclick="selectCharacterColor('#63c363', this)"
-                    class="color-btn h-10 rounded-xl border-2 border-transparent hover:scale-105 active:scale-95 transition"
-                    data-color="#63c363" style="background-color: #63c363;"></button>
-            </div>
-
-            <div class="mb-2">
-                <span class="orbitron text-xs font-bold text-gray-400 tracking-wider uppercase">Draw face:</span>
-            </div>
-            <div class="mb-6">
-                <button onclick="openFaceDrawing()"
-                    class="color-btn w-full h-12 rounded-xl border-2 border-[#00ff66] bg-[#0c0516] hover:scale-[1.02] active:scale-95 transition text-[#00ff66] font-bold text-sm orbitron tracking-wider shadow-[0_0_15px_rgba(0,255,102,0.1)]">
-                    🎨 DRAW FACE
-                </button>
-            </div>
-
-            <button onclick="closeSkinMenu()"
-                class="w-full py-3 bg-[#20113c] border border-[#2d1b54] text-white rounded-xl font-bold hover:bg-[#2d1b54] transition text-sm orbitron tracking-wide text-center">
-                CONFIRM & RETURN
-            </button>
+            <canvas id="action-canvas" style="pointer-events: none;"></canvas>
         </div>
-    </div>
 
-    <!-- Face Drawing Modal -->
-    <div id="face-drawing-modal"
-        class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-        <div
-            class="bg-[#160c2b] border-2 border-[#00ff66] p-6 rounded-2xl w-full max-w-lg text-center shadow-[0_0_25px_rgba(0,255,102,0.4)]">
-            <h3 class="orbitron text-xl font-black text-[#00ff66] mb-4 tracking-wider">FACE DRAWING BOARD</h3>
-
-            <div class="mb-4 relative inline-block">
-                <canvas id="faceDrawingCanvas" width="300" height="300"
-                    class="border-2 border-[#00ff66] rounded-full bg-[#0c0516] cursor-crosshair"
-                    style="max-width: 100%;"></canvas>
+        <div class="menu-container" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"
+            ontouchmove="event.stopPropagation()">
+            <button class="menu-icon-btn" onclick="toggleSettingsMenu()">⚙️</button>
+            <div id="settings-menu" class="settings-popup">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #e67e22;">設定</h3>
+                <label for="volume-slider">音量</label>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5"
+                    oninput="updateVolume(this.value)">
+                <div id="vol-percent">50%</div>
+                <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
+                <label for="mode-toggle-btn">遊戲模式</label>
+                <button id="mode-toggle-btn" class="settings-btn" onclick="toggleGameMode()">10 瓶</button>
+                <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
+                <label for="language-btn">語言</label>
+                <button id="language-btn" class="settings-btn" onclick="toggleLanguage()">🇺🇸 English</button>
+                <hr style="width: 100%; border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0;">
+                <button id="home-btn" class="settings-btn" onclick="goHome()"
+                    style="background: rgba(220, 53, 69, 0.3); border: 1px solid #dc3545;">🏠 主頁</button>
             </div>
+        </div>
 
-            <div class="mb-4">
-                <p class="text-xs text-gray-400 mb-2 text-center">Pen Color:</p>
-                <div class="flex justify-center">
-                    <div class="grid grid-cols-6 gap-10">
-                        <button onclick="setDrawColor('#FF0000')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #FF0000;"></button>
-                        <button onclick="setDrawColor('#00FF00')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #00FF00;"></button>
-                        <button onclick="setDrawColor('#0000FF')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #0000FF;"></button>
-                        <button onclick="setDrawColor('#FFFF00')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #FFFF00;"></button>
-                        <button onclick="setDrawColor('#FF00FF')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #FF00FF;"></button>
-                        <button onclick="setDrawColor('#00FFFF')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #00FFFF;"></button>
-                        <button onclick="setDrawColor('#FFA500')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #FFA500;"></button>
-                        <button onclick="setDrawColor('#FFFFFF')"
-                            class="w-8 h-8 rounded-full border-2 border-gray-400 hover:border-white transition"
-                            style="background-color: #FFFFFF;"></button>
-                        <button onclick="setDrawColor('#000000')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #000000;"></button>
-                        <button onclick="setDrawColor('#555555')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #555555;"></button>
-                        <button onclick="setDrawColor('#AAAAAA')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #AAAAAA;"></button>
-                        <button onclick="setDrawColor('#8B4513')"
-                            class="w-8 h-8 rounded-full border-2 border-transparent hover:border-white transition"
-                            style="background-color: #8B4513;"></button>
-                    </div>
+        <div class="top-ui">
+            <div class="score-board">
+                <div id="score-text" style="font-size: 20px; font-weight: bold; color: #f39c12; margin-bottom: 8px;">
+                    擊倒: 0
+                </div>
+                <table id="score-table">
+                    <thead>
+                        <tr>
+                            <th id="player-header">玩家</th>
+                            <th id="frame1-header">1</th>
+                            <th id="frame2-header">2</th>
+                            <th id="frame3-header">3</th>
+                            <th id="frame4-header">4</th>
+                            <th id="frame5-header">5</th>
+                            <th id="total-header" class="total-col">總分</th>
+                        </tr>
+                    </thead>
+                    <tbody id="score-body">
+                        <tr id="p1-row">
+                            <td id="p1-name">P1</td>
+                            <td id="p1-m0">-</td>
+                            <td id="p1-m1">-</td>
+                            <td id="p1-m2">-</td>
+                            <td id="p1-m3">-</td>
+                            <td id="p1-m4">-</td>
+                            <td id="p1-total" class="total">0</td>
+                        </tr>
+                        <tr id="p2-row" style="display: none;">
+                            <td id="p2-name">P2</td>
+                            <td id="p2-m0">-</td>
+                            <td id="p2-m1">-</td>
+                            <td id="p2-m2">-</td>
+                            <td id="p2-m3">-</td>
+                            <td id="p2-m4">-</td>
+                            <td id="p2-total" class="total">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="instructions" id="hint">拖曳移動位置 &bull; 向上滑動投球</div>
+        <div id="strike-popup">STRIKE!</div>
+        <div id="msg-box" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+            <h1 id="msg-title">全中！</h1>
+            <p id="msg-body">完美擊球！</p>
+            <button id="action-btn" class="btn" onclick="handleMatchEnd()">下一局</button>
+        </div>
+        <div id="mode-switch-modal"
+            style="display:none; position:absolute; top:35%; left:50%; transform:translate(-50%, -50%); width:320px; padding:24px; background:rgba(15,15,25,0.97); border:2px solid #e67e22; border-radius:20px; z-index:5100; box-shadow:0 0 40px rgba(0,0,0,0.75); text-align:center;">
+            <h2 id="mode-switch-title" style="margin:0 0 12px; color:#f1c40f; font-size:20px;">更改模式請求</h2>
+            <p id="mode-switch-body" style="margin:0 0 18px; color:#ddd; font-size:14px; line-height:1.5;"></p>
+            <div id="mode-switch-actions" style="display:flex; justify-content:space-between; gap:10px;">
+                <button id="mode-switch-accept" class="btn" style="flex:1;">接受</button>
+                <button id="mode-switch-decline" class="btn" style="flex:1; background:#888;">拒絕</button>
+            </div>
+        </div>
+        <button id="watch-replay-btn" class="btn" onclick="startReplay()"
+            style="display: none; position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); pointer-events: auto;">
+            觀看重播
+        </button>
+
+        <div id="matchmaking-panel">
+            <h2>多人連線保齡球</h2>
+            <p>與其他玩家線上對戰</p>
+            <div id="matchmaking-status"></div>
+            <div class="matchmaking-buttons">
+                <button id="create-match-btn" onclick="createMatch()">建立房間</button>
+                <button id="join-match-btn" onclick="showJoinMatchPanel()">加入房間</button>
+                <button id="single-player-btn" onclick="startSinglePlayer()">單人遊戲</button>
+            </div>
+            <div id="join-match-panel" style="display:none; margin-top: 10px; position: relative; width: 100%;">
+                <label for="join-code-input" class="sr-only">Join match code</label>
+                <input id="join-code-input" type="text" maxlength="5" placeholder="輸入代碼"
+                    style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.25); color: white; outline: none; text-align: center;" />
+                <div class="join-panel-buttons">
+                    <button id="join-code-btn" class="btn" onclick="attemptJoinMatch()"
+                        style="flex: 1; padding: 10px 0; min-width: 0; margin-top: 0;">加入</button>
+                    <button id="join-cancel-btn" class="btn" onclick="hideJoinMatchPanel()"
+                        style="flex: 1; padding: 10px 0; background: #888; min-width: 0; margin-top: 0;">返回</button>
                 </div>
             </div>
+            <button id="cancel-search-btn" onclick="cancelMatchmaking()"
+                style="display: none; margin-top: 10px;">取消配對</button>
+        </div>
 
-            <div class="mb-4">
-                <p class="text-xs text-gray-400 mb-2">Brush Size: <span id="brushSizeDisplay">20</span>px</p>
-                <input type="range" id="brushSizeSlider" min="1" max="40" value="20" class="w-full"
-                    oninput="setBrushSize(this.value); document.getElementById('brushSizeDisplay').textContent = this.value;">
+        <div id="screen-dimmer"></div>
+        <div id="matchmaking-modal-blocker"></div>
+
+        <div id="mode-select-modal"
+            style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(15,15,25,0.95); padding:30px; padding-left: 10px; padding-right: 10px; border-radius:20px; border:2px solid #e67e22; text-align:center; z-index:5100;">
+            <h2 style="color:#f39c12; margin-top:0;">選擇模式</h2>
+            <div style="display:flex; gap:15px; margin-top:20px;">
+                <button class="btn" style="width: 160px" onclick="startSelectedMode('normal')">一般模式 (Normal)</button>
+                <button class="btn" style="background:#8e44ad; width: 160px" onclick="startSelectedMode('chaos')">大混戰
+                    (Chaos)</button>
             </div>
+        </div>
 
-            <div class="mb-4">
-                <button id="eraserBtn" onclick="toggleEraser()"
-                    class="w-full py-2 bg-[#ff007f]/20 border border-[#ff007f] text-[#ff007f] rounded-xl font-bold hover:bg-[#ff007f]/40 transition orbitron text-sm">
-                    🧽 ERASER MODE
-                </button>
+        <div id="event-select-modal"
+            style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(15,15,25,0.95); padding:30px; border-radius:20px; border:2px solid #9b59b6; text-align:center; z-index:5100; width: 80%; max-width: 400px;">
+            <h2 style="color:#e056fd; margin-top:0;">選擇特殊能力!</h2>
+            <div id="event-choices-container" style="display:flex; flex-direction:column; gap:10px; margin-top:20px;">
             </div>
+        </div>
 
-            <div class="flex gap-3">
-                <button onclick="resetFaceDrawing()"
-                    class="flex-1 py-2 bg-[#ff007f]/20 border border-[#ff007f] text-[#ff007f] rounded-xl font-bold hover:bg-[#ff007f]/40 transition orbitron text-sm">
-                    🔄 RESET
-                </button>
-                <button onclick="closeFaceDrawing()"
-                    class="flex-1 py-2 bg-[#20113c] border border-[#2d1b54] text-gray-300 rounded-xl font-bold hover:bg-[#2d1b54] transition orbitron text-sm">
-                    ✕ CANCEL
-                </button>
-                <button onclick="saveFaceDrawing()"
-                    class="flex-1 py-2 bg-[#00ff66]/20 border border-[#00ff66] text-[#00ff66] rounded-xl font-bold hover:bg-[#00ff66]/40 transition orbitron text-sm">
-                    ✓ SAVE
-                </button>
+        <div id="disconnect-modal"
+            style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 9999; pointer-events: auto;">
+            <div
+                style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(20, 15, 25, 0.98); padding: 35px 25px; border-radius: 20px; border: 3px solid rgb(231, 76, 60); text-align: center; box-shadow: rgba(231, 76, 60, 0.4) 0px 0px 35px; width: 85%; max-width: 380px; color: white; pointer-events: auto;">
+                <h2 style="color:#e74c3c; margin-top:0; font-size: 24px; letter-spacing: 1px;">⚠️ 對手已斷開連線</h2>
+                <p style="margin: 20px 0; color: #ccc; font-size: 15px; line-height: 1.6;">與對方的網絡通道已關閉，無法繼續進行當前的多人對局。
+                </p>
+                <button class="btn"
+                    style="background:#c0392b; border:none; width: 100%; max-width: 220px; padding: 12px; font-weight: bold; font-size: 16px; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); color: white;"
+                    onclick="location.reload()">返回主選單</button>
             </div>
         </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal"
-        class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-        <div
-            class="bg-[#160c2b] border-2 border-[#aa66ff] p-6 rounded-2xl max-w-sm w-full shadow-[0_0_25px_rgba(170,102,255,0.4)] text-left">
-            <h3 class="orbitron text-xl font-black text-[#aa66ff] mb-4 tracking-wider text-center">⚙️ GAME SETTINGS</h3>
-
-            <!-- Game Mode Selection -->
-            <div class="mb-4">
-                <label class="block text-gray-400 text-sm mb-2">Game Mode</label>
-                <select id="settings-game-mode"
-                    class="w-full bg-[#0c0516] border border-[#2d1b54] text-white p-2 rounded-lg">
-                    <option value="active_match">⚔️ Active Match (Classic)</option>
-                    <!-- Future modes can be added here -->
-                </select>
-            </div>
-
-            <!-- Map Selection -->
-            <div class="mb-6">
-                <label class="block text-gray-400 text-sm mb-2">Map</label>
-                <select id="settings-map" class="w-full bg-[#0c0516] border border-[#2d1b54] text-white p-2 rounded-lg">
-                    <option value="match">🏟️ Default Arena</option>
-                    <!-- Future maps can be added here -->
-                </select>
-            </div>
-
-            <!-- Placeholder for future options -->
-            <div class="mb-6 text-xs text-gray-500 italic">
-                More game modes and maps coming soon…
-            </div>
-
-            <button id="close-settings-btn"
-                class="w-full py-3 bg-[#20113c] border border-[#aa66ff] text-white rounded-xl font-bold hover:bg-[#aa66ff]/30 transition text-sm orbitron tracking-wide text-center">
-                SAVE & CLOSE
-            </button>
-        </div>
-    </div>
-
-    <script src="maps.js"></script>
-    <script src="items.js"></script>
-    <!--  <script src="script.js"></script> -->
-    <script src="game_core.js"></script>
-    <script src="game_networking.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="peerjs_network.js"></script>
+    <script src="connection_debug.js"></script>
+    <script src="chaos_events.js"></script>
+    <script src="script.js"></script>
 </body>
 
 </html>
