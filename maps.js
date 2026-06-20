@@ -50,8 +50,8 @@ const MAPS = {
     "spawnPoints": [
       {
         "id": 1,
-        "x": 1380,
-        "y": 1240
+        "x": 1360,
+        "y": 1280
       }
     ],
     "cameraBounds": {
@@ -74,6 +74,13 @@ const MAPS = {
         "w": 70,
         "h": 110,
         "color": "#ffcc00"
+      },
+      "settingsDoor": {
+        "x": 2000,
+        "y": 1028,
+        "w": 70,
+        "h": 110,
+        "color": "#aa66ff"
       }
     },
     "scoreboard": {
@@ -87,7 +94,8 @@ const MAPS = {
       { "x": 1900, "y": 1300, "itemType": "robot_hand", "ammo": 1, "initialDelay": 0, "shouldRespawn": true }
     ],
     "voidYThreshold": 2000
-  },
+  }
+  ,
   "match": {
     "platforms": [
       {
@@ -115,8 +123,8 @@ const MAPS = {
         "h": 20
       },
       {
-        "x": 699,
-        "y": 452,
+        "x": 694,
+        "y": 369,
         "w": 100,
         "h": 20
       },
@@ -127,66 +135,55 @@ const MAPS = {
         "h": 20
       }
     ],
-    "hazards": [
-      {
-        "x": 390,
-        "y": 200,
-        "w": 380,
-        "h": 20
-      }
-    ],
+    "hazards": [],
     "gems": [
       {
-        "id": 1,
-        "x": 660,
-        "y": 340,
-        "collected": false
-      },
-      {
-        "id": 2,
-        "x": 470,
-        "y": 150,
-        "collected": false
-      },
-      {
-        "id": 3,
-        "x": 880,
-        "y": 450,
-        "collected": false
-      },
-      {
         "id": 1780731481623.3682,
-        "x": 1257,
-        "y": 245,
+        "x": 1242,
+        "y": 253,
         "collected": false
       },
       {
         "id": 1780731482919.8333,
-        "x": 1469,
-        "y": 400,
+        "x": 747,
+        "y": 340,
         "collected": false
       }
     ],
     "spawnPoints": [
       {
         "id": 1,
-        "x": 63,
-        "y": 290
+        "x": 105,
+        "y": 300
       }
     ],
     "cameraBounds": {
       "minX": 0,
       "minY": 0,
-      "maxX": 3840,
-      "maxY": 2160
+      "maxX": 1820,
+      "maxY": 1000
     },
+    "safeZones": [
+      {
+        "x": 25,
+        "y": 250,
+        "w": 200,
+        "h": 150
+      },
+      {
+        "x": 1600,
+        "y": 70,
+        "w": 200,
+        "h": 150
+      }
+    ],
     "finishLine": {
-      "x": 1730,
+      "x": 1665,
       "y": 140,
       "w": 70,
       "h": 80,
       "color": "#00ff66"
-    },
+    }
   }
 };
 window.MAPS = MAPS;
